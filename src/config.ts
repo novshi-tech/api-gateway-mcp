@@ -9,9 +9,18 @@ export interface HeadersAuth {
   headers: HeaderField[];
 }
 
+// The client ID and secret come from OAUTH_<SERVICE>_CLIENT_ID / _CLIENT_SECRET.
+export interface OAuth2Auth {
+  type: "oauth2";
+  authorization_url: string;
+  token_url: string;
+  scope?: string;
+  authorize_params?: Record<string, string>;
+}
+
 export interface ServiceConfig {
   base_url: string;
-  auth: HeadersAuth;
+  auth: HeadersAuth | OAuth2Auth;
 }
 
 export type Services = Record<string, ServiceConfig>;
@@ -24,16 +33,32 @@ export function parseServices(raw: unknown): Services {
   const services: Services = {};
   for (const [name, config] of Object.entries(value as Record<string, ServiceConfig>)) {
     if (!SERVICE_NAME.test(name)) throw new Error(`invalid service name: ${name}`);
-    const base = new URL(config.base_url);
-    if (base.protocol !== "https:" && base.hostname !== "localhost" && base.hostname !== "127.0.0.1") {
-      throw new Error(`service ${name}: base_url must be https`);
-    }
-    if (config.auth?.type !== "headers" || !Array.isArray(config.auth.headers) || config.auth.headers.length === 0) {
+    requireHttps(name, "base_url", config.base_url);
+    const auth = config.auth;
+    if (auth?.type === "oauth2") {
+      requireHttps(name, "authorization_url", auth.authorization_url);
+      requireHttps(name, "token_url", auth.token_url);
+    } else if (auth?.type !== "headers" || !Array.isArray(auth.headers) || auth.headers.length === 0) {
       throw new Error(`service ${name}: unsupported auth`);
     }
     services[name] = { base_url: config.base_url.replace(/\/+$/, ""), auth: config.auth };
   }
   return services;
+}
+
+function requireHttps(service: string, field: string, value: string): void {
+  const url = new URL(value);
+  if (url.protocol !== "https:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
+    throw new Error(`service ${service}: ${field} must be https`);
+  }
+}
+
+export function oauthClient(env: Env, service: string): { id: string; secret: string } | null {
+  const prefix = `OAUTH_${service.toUpperCase().replace(/-/g, "_")}_CLIENT_`;
+  const vars = env as unknown as Record<string, unknown>;
+  const id = vars[`${prefix}ID`];
+  const secret = vars[`${prefix}SECRET`];
+  return typeof id === "string" && id && typeof secret === "string" && secret ? { id, secret } : null;
 }
 
 export function splitList(value: string | undefined): string[] {

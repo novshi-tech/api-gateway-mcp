@@ -60,6 +60,13 @@ describe("parseServices", () => {
     expect(() => parseServices({ board: { base_url: "http://api.example.com", auth } })).toThrow();
   });
 
+  it("requires https OAuth endpoints", () => {
+    const oauth = { type: "oauth2", authorization_url: "https://a.example/authorize", token_url: "http://a.example/token" };
+    expect(() => parseServices({ freee: { base_url: "https://api.example.com", auth: oauth } })).toThrow(/token_url/);
+    const ok = parseServices({ freee: { base_url: "https://api.example.com", auth: { ...oauth, token_url: "https://a.example/token" } } });
+    expect(ok.freee.auth.type).toBe("oauth2");
+  });
+
   it("rejects invalid names", () => {
     expect(() => parseServices({ "../x": { base_url: "https://api.example.com", auth } })).toThrow();
   });

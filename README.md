@@ -63,6 +63,27 @@ npx wrangler deploy
 
 `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 
+### 3. OAuth の連携先(freee など)
+
+`SERVICES` で `auth.type` を `oauth2` にした連携先は、Web 画面から OAuth(認可コード + PKCE)で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、サービス名を大文字にした名前で登録します。
+
+```sh
+npx wrangler secret put OAUTH_FREEE_CLIENT_ID
+npx wrangler secret put OAUTH_FREEE_CLIENT_SECRET
+```
+
+アクセストークンは期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、画面に「再接続」が出ます。
+
+### GitHub Actions でデプロイする
+
+`.github/workflows/ci.yml` は、main に push するとテストのあとにデプロイします。リポジトリの Environment `production` に、次のシークレットを登録します。
+
+- `CLOUDFLARE_API_TOKEN`: 「Edit Cloudflare Workers」テンプレートで作った API トークン
+- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare のアカウント ID
+- `WRANGLER_CONFIG`: `wrangler.jsonc` の中身まるごと
+
+Worker のシークレット(`SIGNING_KEY` など)は Cloudflare 側にあるので、ここには要りません。
+
 ## 開発
 
 ```sh

@@ -34,8 +34,19 @@
             { "name": "authorization", "label": "API トークン", "prefix": "Bearer " }
           ]
         }
+      },
+      // OAuth: register ${PUBLIC_URL}/connect/callback as the redirect URI and set
+      // OAUTH_FREEE_CLIENT_ID and OAUTH_FREEE_CLIENT_SECRET with wrangler secret put.
+      "freee": {
+        "base_url": "https://api.freee.co.jp",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.secure.freee.co.jp/public_api/authorize",
+          "token_url": "https://accounts.secure.freee.co.jp/public_api/token"
+        }
       }
     }
   }
-  // Secrets (wrangler secret put): OIDC_CLIENT_SECRET, SIGNING_KEY, ENCRYPTION_KEY
+  // Secrets (wrangler secret put): OIDC_CLIENT_SECRET, SIGNING_KEY, ENCRYPTION_KEY,
+  // and OAUTH_<SERVICE>_CLIENT_ID / OAUTH_<SERVICE>_CLIENT_SECRET for each OAuth service
 }
