@@ -220,6 +220,16 @@ describe("web ui", () => {
     expect(page).not.toContain(">k<");
   });
 
+  it("signs out without starting a new sign-in", async () => {
+    const res = await SELF.fetch(`${BASE}/logout`, {
+      method: "POST",
+      headers: { cookie: await sessionCookie(carol), origin: new URL(BASE).origin },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toMatch(/^__Host-gw-session=; .*Max-Age=0/);
+  });
+
   it("rejects cross-site form posts", async () => {
     const res = await SELF.fetch(`${BASE}/credentials`, {
       method: "POST",

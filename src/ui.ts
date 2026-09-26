@@ -93,7 +93,12 @@ export async function loginCallback(request: Request, env: Env): Promise<Respons
 
 export function logout(request: Request, env: Env): Response {
   if (!sameOrigin(request, env)) return new Response("forbidden", { status: 403 });
-  return redirect("/login", new Headers({ "set-cookie": cookie(SESSION_COOKIE, "", 0) }));
+  // Stop here: going straight to /login would sign the user back in through the IdP's own session.
+  return page(
+    "サインアウト",
+    `<h1>サインアウトしました</h1><p><a href="/login">もう一度サインイン</a></p>`,
+    new Headers({ "set-cookie": cookie(SESSION_COOKIE, "", 0) }),
+  );
 }
 
 function credentialRows(credentials: CredentialInfo[]): string {
