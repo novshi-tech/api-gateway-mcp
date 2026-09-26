@@ -48,6 +48,7 @@
       // Microsoft Graph with a separate Entra app: register ${PUBLIC_URL}/connect/callback as a
       // Web redirect URI and set OAUTH_GRAPH_CLIENT_ID and OAUTH_GRAPH_CLIENT_SECRET.
       "graph": {
+        "display_name": "Microsoft Graph",
         "base_url": "https://graph.microsoft.com",
         "auth": {
           "type": "oauth2",

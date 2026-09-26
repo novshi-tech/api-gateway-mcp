@@ -26,7 +26,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
-USER_AGENT = "api-gateway-client/1"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gwlib import USER_AGENT, gateway_env, service_url, split_pair  # noqa: E402
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -67,13 +68,6 @@ def multipart(fields, files):
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
-def split_pair(value):
-    key, sep, val = value.partition("=")
-    if not sep:
-        raise SystemExit(f"expected key=value: {value}")
-    return key, val
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("method")
@@ -90,20 +84,8 @@ def main():
     parser.add_argument("--no-follow", action="store_true", help="do not follow redirects")
     args = parser.parse_args()
 
-    token = os.environ.get("GW_TOKEN")
-    base = os.environ.get("GW_BASE_URL", "").rstrip("/")
-    if not token or not base:
-        raise SystemExit("GW_TOKEN and GW_BASE_URL must be set (from the issue_token tool)")
-
-    path = args.path if args.path.startswith("/") else "/" + args.path
-    # Percent-encode what is not allowed in a URL path (non-ASCII, spaces);
-    # "%" is kept so an already-encoded path passes through unchanged.
-    path = urllib.parse.quote(path, safe="/%:@!$&'()*+,;=-._~?")
-    url = f"{base}/{args.service}{path}"
-    if args.query:
-        # Spaces become %20 rather than "+", which not every API reads as a space.
-        query = urllib.parse.urlencode([split_pair(q) for q in args.query], quote_via=urllib.parse.quote, safe="$")
-        url += ("&" if "?" in url else "?") + query
+    base, token = gateway_env()
+    url = service_url(base, args.service, args.path, [split_pair(q) for q in args.query])
 
     headers = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT, "Accept": "application/json, */*"}
     data = None

@@ -19,6 +19,8 @@ export interface OAuth2Auth {
 }
 
 export interface ServiceConfig {
+  // Shown in the web UI; defaults to the service name.
+  display_name?: string;
   base_url: string;
   auth: HeadersAuth | OAuth2Auth;
 }
@@ -41,7 +43,7 @@ export function parseServices(raw: unknown): Services {
     } else if (auth?.type !== "headers" || !Array.isArray(auth.headers) || auth.headers.length === 0) {
       throw new Error(`service ${name}: unsupported auth`);
     }
-    services[name] = { base_url: config.base_url.replace(/\/+$/, ""), auth: config.auth };
+    services[name] = { display_name: config.display_name || name, base_url: config.base_url.replace(/\/+$/, ""), auth: config.auth };
   }
   return services;
 }

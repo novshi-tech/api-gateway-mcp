@@ -1,7 +1,7 @@
 {
   "name": "api-gateway",
   "displayName": "API Gateway",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "API ゲートウェイ経由で board・freee・Microsoft Graph などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
   "author": {
     "name": "novshi-tech"

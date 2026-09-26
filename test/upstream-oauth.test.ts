@@ -190,7 +190,7 @@ describe("refreshing upstream tokens", () => {
     expect(issued.isError).toBe(true);
 
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(alice) } })).text();
-    expect(page).toContain("再接続");
+    expect(page).toContain("つなぎ直す");
   });
 
   it("reconnects the same credential", async () => {

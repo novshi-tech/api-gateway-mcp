@@ -24,22 +24,24 @@ function consentPage(client: ClientInfo, request: AuthRequest, handle: string, h
     : "このアプリは自己登録されたもので、名前は検証されていません。";
   return page(
     `${client.clientName ?? "アプリ"} の接続`,
-    `<h1>${name} に API ゲートウェイへのアクセスを許可しますか?</h1>
+    `<div class="card">
+<h1>${name} に API ゲートウェイへのアクセスを許可しますか?</h1>
 <p>${origin}</p>
 <p>アクセス権は <strong>${escape(redirectHost)}</strong> に送られます。</p>
 ${local ? "<p><strong>このコンピューター上のアプリにアクセス権を渡します。</strong>自分でサインインを始めた場合だけ続けてください。</p>" : ""}
-<p>許可すると、このアプリはあなたが登録した連携先の認証情報を使って API を呼び出せるようになります。</p>
-<form method="post">
+<p>許可すると、このアプリはあなたがつないだサービスの API を呼び出せるようになります。</p>
+<form method="post" class="actions">
   <input type="hidden" name="handle" value="${escape(handle)}">
-  <button name="decision" value="approve">許可して組織のアカウントでサインイン</button>
-  <button name="decision" value="deny">拒否</button>
-</form>`,
+  <button name="decision" value="approve">許可して会社のアカウントでサインイン</button>
+  <button name="decision" value="deny" class="quiet">許可しない</button>
+</form>
+</div>`,
     headers,
   );
 }
 
 function renderError(message: string, status = 400): Response {
-  return page("エラー", `<h1>エラー</h1><p>${escape(message)}</p>`, undefined, status);
+  return page("エラー", `<div class="card"><h1>続けられませんでした</h1><p>${escape(message)}</p></div>`, undefined, status);
 }
 
 function redirectToClient(redirectUri: string, params: Record<string, string | undefined>, headers = new Headers()): Response {
