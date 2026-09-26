@@ -76,6 +76,9 @@ export function exchangeCode(
 // Upstreams that rotate refresh tokens return a new one; others keep the old one.
 export async function refreshTokens(auth: OAuth2Auth, client: OAuthClient, current: TokenSet): Promise<TokenSet> {
   if (!current.refresh_token) throw new UpstreamOAuthError("no refresh token", true);
-  const next = await tokenRequest(auth, client, { grant_type: "refresh_token", refresh_token: current.refresh_token });
+  const grant: Record<string, string> = { grant_type: "refresh_token", refresh_token: current.refresh_token };
+  // Entra expects the scopes again on refresh.
+  if (auth.scope) grant.scope = auth.scope;
+  const next = await tokenRequest(auth, client, grant);
   return { ...next, refresh_token: next.refresh_token ?? current.refresh_token };
 }
