@@ -133,7 +133,7 @@ Worker ────────────────────────�
 | 手段 | 評価 |
 |---|---|
 | Cloudflare Code Mode(AI が書いたコードを Worker の中の隔離環境で動かす) | ファイルの受け渡しとトークン削減には効く。ただしまだベータで、ゲートウェイが API 仕様を知る必要がある。サンドボックスから外に出られない環境(Enterprise の初期設定、スクリプトを実行できない ChatGPT のチャット)向けの代わりの手段として残す |
-| Executor(executor.sh、MIT) | 既存のものではいちばん近い。評価中 |
+| Executor(executor.sh、MIT) | 採用もフォークもしない。部品の考え方だけ参考にする(下記) |
 | Composio / Pipedream / Zapier / Arcade | 第三者に認証情報を預けることになる。顧客ごとにデプロイする方針と合わない |
 | IBM ContextForge / Obot / MetaMCP / Microsoft mcp-gateway / Kong | MCP サーバーを束ねるものが中心で、小さな会社には重い |
 | n8n / Power Automate でフローを作り、MCP のツールとして公開する | 決まった手順の業務には強い。ただし認証情報が共有になり、業務ごとにフローの作成が要る。スキルに同梱するスクリプトで代われる |
@@ -148,6 +148,24 @@ Worker ────────────────────────�
 
 ## 次にやること
 
-- [ ] Executor を評価する(複数ユーザーの OAuth、API 仕様なしで素通しに中継できるか、Workers で動くか)
+- [x] Executor を評価する(下記)
 - [ ] Team プランの Cowork で、ゲートウェイのドメインへの通信が通るかを検証する
 - [ ] 「先に決めておくこと」の 1〜6 を決める
+
+## Executor の評価(2026-09-26)
+
+結論: **採用もフォークもしない。部品の考え方だけ参考にする。**
+
+- **設計の軸が逆。** すべての連携先を OpenAPI / GraphQL / MCP の仕様から型付きのツールにして、コードの実行も Executor の中で行う。仕様なしで素通しに中継する仕組みはない。バイナリは JSON の中に base64 で入れて運ぶので、ボディは素通しにならない。
+- **Cloudflare 版には MCP の OAuth サーバーがない。** 認証は Cloudflare Access だけに頼っている(`apps/host-cloudflare/src/mcp/auth.ts`)。そのため、claude.ai のコネクタからはそのままでは接続できない。Docker 版には Better Auth による OAuth(DCR)があるが、Bun と libSQL で動いており Workers ではない。CIMD には対応していない。
+- **短命トークンの発行や、外部のスクリプトから呼べる REST の中継もない。** 操作ログは OpenTelemetry に出すだけで、呼び出しごとのログは残らない。
+- **成熟度:** スター数は約 4k。ただしコミットのほとんどが作者ひとりによるもので、v2 のベータに移行している最中。変更がとても速い。
+- **フォークした場合:** 素通しの中継、Workers 上の OAuth サーバー、トークンの発行、操作ログ、リフレッシュの直列化を足すことになる。目標の大半を、大きくて変化の速いコードベースの上に作ることになるので、小さな Worker を自作するほうが軽い。
+
+参考にする部品(https://github.com/UsefulSoftwareCo/executor):
+- 上流 OAuth のリフレッシュとローテーションの扱い(`packages/core/sdk/src/oauth-service.ts`)。一回しか使えないリフレッシュトークンを使う前に、保存先へ書き込めるかを確かめている。ただし、同時リフレッシュを防ぐ仕組みは同じインスタンスの中でしか効かない。そのため、こちらは Durable Object で直列化する。
+- 組織所有とユーザー所有の二本立ての権限モデル(`packages/core/sdk/src/owner-policy.ts`)。ユーザーは、自分のものと組織のものを見られる。
+- 1 つの連携先に複数の接続を持ち、呼び出すときに選ぶ仕組み。
+- 許可 / 承認が必要 / 拒否 のポリシーと、承認待ちで処理を止めて再開する仕組み(`packages/core/sdk/src/policies.ts`)。
+- 秘密情報の AES-256-GCM 暗号化(`packages/plugins/encrypted-secrets`)。
+- OIDC ログインの受け入れ条件(メールアドレスが確認済みであることと、ドメインの許可リスト。`apps/host-selfhost/src/auth/sso.ts`)。
