@@ -26,7 +26,7 @@ async function upstream(request: Request): Promise<Response> {
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: "./wrangler.jsonc" },
+      wrangler: { configPath: "./wrangler.example.jsonc" },
       miniflare: {
         bindings: {
           SIGNING_KEY: "test-signing-key-test-signing-key-0123456789",

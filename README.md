@@ -34,9 +34,10 @@ Entra ID はシングルテナントのアプリとして登録し、`OIDC_ISSUE
 
 ### 2. 設定する
 
-`wrangler.jsonc` の `vars` に、`PUBLIC_URL`、IdP の設定、`SERVICES`(連携先)を書きます。KV ネームスペースを作って ID を設定します。
+`wrangler.example.jsonc` を `wrangler.jsonc` にコピーし(`wrangler.jsonc` は git の管理外です)、`vars` に `PUBLIC_URL`、IdP の設定、`SERVICES`(連携先)を書きます。KV ネームスペースを作って ID を設定します。
 
 ```sh
+cp wrangler.example.jsonc wrangler.jsonc
 npx wrangler kv namespace create OAUTH_KV
 npx wrangler secret put OIDC_CLIENT_SECRET
 openssl rand -base64 32 | npx wrangler secret put SIGNING_KEY
@@ -50,6 +51,7 @@ npx wrangler deploy
 
 ```sh
 npm install
+cp wrangler.example.jsonc wrangler.jsonc
 cp .dev.vars.example .dev.vars   # 値を埋める
 npm run dev
 npm run typecheck
