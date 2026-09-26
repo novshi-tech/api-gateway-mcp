@@ -96,9 +96,14 @@ def main():
         raise SystemExit("GW_TOKEN and GW_BASE_URL must be set (from the issue_token tool)")
 
     path = args.path if args.path.startswith("/") else "/" + args.path
+    # Percent-encode what is not allowed in a URL path (non-ASCII, spaces);
+    # "%" is kept so an already-encoded path passes through unchanged.
+    path = urllib.parse.quote(path, safe="/%:@!$&'()*+,;=-._~?")
     url = f"{base}/{args.service}{path}"
     if args.query:
-        url += ("&" if "?" in url else "?") + urllib.parse.urlencode([split_pair(q) for q in args.query])
+        # Spaces become %20 rather than "+", which not every API reads as a space.
+        query = urllib.parse.urlencode([split_pair(q) for q in args.query], quote_via=urllib.parse.quote, safe="$")
+        url += ("&" if "?" in url else "?") + query
 
     headers = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT, "Accept": "application/json, */*"}
     data = None
@@ -128,7 +133,7 @@ def main():
         ok = False
 
     print(f"HTTP {status} {reason}", file=sys.stderr)
-    for name in ("X-Total-Count", "X-Page", "X-Per-Page", "Location"):
+    for name in ("X-Total-Count", "X-Page", "X-Per-Page", "Location", "Retry-After"):
         if resp_headers.get(name):
             print(f"{name}: {resp_headers[name]}", file=sys.stderr)
 
