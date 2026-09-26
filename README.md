@@ -27,6 +27,9 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v
 
 - Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` をインストールします。
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
+- zip でアップロードする場合: `npm run plugin:zip` で `dist/api-gateway-<version>.zip` を作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。
+
+2026-09 時点では、個人の Cowork で GitHub のマーケットプレイスからのインストールが同期に失敗しました(Claude Code では同じマーケットプレイスからインストールできます)。その場合は zip を使ってください。
 
 board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
 

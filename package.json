@@ -9,7 +9,8 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && python3 -m unittest discover -s test/scripts",
-    "cf-typegen": "wrangler types -c wrangler.example.jsonc"
+    "cf-typegen": "wrangler types -c wrangler.example.jsonc",
+    "plugin:zip": "python3 tools/build-plugin-zip.py"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.1.0",
