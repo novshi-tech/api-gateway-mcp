@@ -89,7 +89,8 @@ export async function signIn(
 
 export class SignInError extends Error {}
 
-// Decides who may sign in and derives a stable user ID.
+// Decides who may sign in and derives a stable user ID. IDs must not contain
+// ":", which the OAuth provider uses as a separator inside its tokens.
 export function admit(env: Env, claims: JWTPayload): IdentityUser {
   const name = String(claims.name ?? claims.email ?? claims.preferred_username ?? claims.sub);
   const email = typeof claims.email === "string" ? claims.email : undefined;
@@ -100,7 +101,7 @@ export function admit(env: Env, claims: JWTPayload): IdentityUser {
     if (!tid || !oid) throw new SignInError("missing tid/oid claim");
     const tenants = splitList(env.ALLOWED_TENANTS);
     if (tenants.length > 0 && !tenants.includes(tid)) throw new SignInError("tenant not allowed");
-    return { id: `entra:${tid}:${oid}`, name, email: email ?? (claims.preferred_username as string | undefined) };
+    return { id: `entra_${tid}_${oid}`, name, email: email ?? (claims.preferred_username as string | undefined) };
   }
 
   if ((env.IDP_TYPE as string) === "google") {
@@ -108,7 +109,7 @@ export function admit(env: Env, claims: JWTPayload): IdentityUser {
     if (domains.length === 0) throw new SignInError("ALLOWED_DOMAINS is required for google");
     if (claims.email_verified !== true) throw new SignInError("email not verified");
     if (typeof claims.hd !== "string" || !domains.includes(claims.hd)) throw new SignInError("domain not allowed");
-    return { id: `google:${claims.sub}`, name, email };
+    return { id: `google_${claims.sub}`, name, email };
   }
 
   throw new SignInError(`unsupported IDP_TYPE: ${env.IDP_TYPE}`);

@@ -57,7 +57,7 @@ OAuth の認可サーバーは、どのアプリ(クライアント)がアクセ
 - タイムアウト: メタデータ取得・登録・トークン発行は 10 秒、リフレッシュは 30 秒。
 - 送信元 IP は `160.79.104.0/21`。WAF やボット対策でこの範囲をブロックしないこと。IPv4 の A レコードが必須。
 - Team / Enterprise では Owner が組織全体にコネクタを追加し、メンバーはそれぞれ自分のアカウントで接続する(トークンはユーザー単位)。
-- claude.ai / Cowork の CIMD の client_id URL は公開されていない(Claude Code は `https://claude.ai/oauth/claude-code-client-metadata`)。そのため、特定の URL を決め打ちせず、仕様どおりに検証する。
+- claude.ai / Cowork の CIMD の client_id URL は公開されていないが、実際の接続では `https://claude.ai/oauth/mcp-oauth-client-metadata` だった(2026-09-26 確認。Claude Code は `https://claude.ai/oauth/claude-code-client-metadata`)。変わる可能性があるので、特定の URL を決め打ちせず、仕様どおりに検証する。
 
 出典: https://claude.com/docs/connectors/building/authentication 、 https://claude.com/docs/connectors/building/troubleshooting
 
@@ -133,7 +133,7 @@ Cloudflare Access for SaaS を **上流の IdP として** 使う案(Access が 
 | ログインできる人の制限 | シングルテナントのアプリ登録。authority は `https://login.microsoftonline.com/{tenantId}/v2.0`(`common` や `organizations` は使わない)。ID トークンの `iss` / `tid` を許可リストで照合する。必要に応じて「割り当てが必要」を有効にするか、groups / roles のクレームを見る | ID トークンの `hd` と `email_verified` をサーバー側で検証する(認可 URL に付ける `hd=` は画面のヒントにすぎない)。OAuth 同意画面は Internal にする |
 | ユーザー ID | `tid` + `oid`(`sub` はアプリごとに変わる。email / UPN は変わりうる) | `sub` |
 
-- `completeAuthorization` に渡す userId は `<idp>:<tenant>:<oid|sub>` の形にする。`props` には最小限のクレームだけ入れる。
+- `completeAuthorization` に渡す userId は `entra_<tid>_<oid>` / `google_<sub>` の形にする。ライブラリがトークンの中で `:` を区切り文字に使うので、userId に `:` を含めてはいけない。`props` には最小限のクレームだけ入れる。
 - 連携先ごとの認証情報(freee、Graph など)は、この userId をキーにして別のストア(D1 または KV、暗号化)に保存する。登録は連携先ごとの接続フローで行う。これは別途設計する。
 
 ## 既知のリスクと未確認事項
@@ -143,7 +143,6 @@ Cloudflare Access for SaaS を **上流の IdP として** 使う案(Access が 
   - #43: ひとつ前のリフレッシュトークンも使えてしまう。
   - #264: CIMD クライアントの `private_key_jwt` に未対応。そのため ChatGPT は DCR で登録してくる見込み。
   - #278: JWT のアクセストークンに未対応(不透明トークンのみ)。
-- claude.ai / Cowork の CIMD の client_id が不明。初回接続時にログへ記録して確認する。
 - ChatGPT のワークスペースエージェントがスケジュール実行時にユーザーのトークンをどう扱うかは、資料がない。実機で検証する。
 - Entra が CIMD や ID-JAG(Enterprise-Managed Authorization)に対応したら見直す。workers-oauth-provider には ID-JAG の実験的な対応がすでにある。
 

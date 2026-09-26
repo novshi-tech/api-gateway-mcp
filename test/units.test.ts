@@ -70,7 +70,7 @@ describe("admit", () => {
   const google = { IDP_TYPE: "google", ALLOWED_TENANTS: "", ALLOWED_DOMAINS: "example.com" } as unknown as Env;
 
   it("uses tid and oid for Entra", () => {
-    expect(admit(entra, { tid: "t1", oid: "o1", sub: "s", name: "Ada" })).toMatchObject({ id: "entra:t1:o1", name: "Ada" });
+    expect(admit(entra, { tid: "t1", oid: "o1", sub: "s", name: "Ada" })).toMatchObject({ id: "entra_t1_o1", name: "Ada" });
   });
 
   it("rejects other Entra tenants", () => {
@@ -78,7 +78,7 @@ describe("admit", () => {
   });
 
   it("requires a verified email in an allowed Google domain", () => {
-    expect(admit(google, { sub: "g1", hd: "example.com", email_verified: true }).id).toBe("google:g1");
+    expect(admit(google, { sub: "g1", hd: "example.com", email_verified: true }).id).toBe("google_g1");
     expect(() => admit(google, { sub: "g1", hd: "other.com", email_verified: true })).toThrow(SignInError);
     expect(() => admit(google, { sub: "g1", email_verified: true })).toThrow(SignInError);
     expect(() => admit(google, { sub: "g1", hd: "example.com", email_verified: false })).toThrow(SignInError);
