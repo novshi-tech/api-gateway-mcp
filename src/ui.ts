@@ -1,13 +1,16 @@
-import { parseServices, publicUrl } from "./config";
+import { oauthClient, parseServices, publicUrl, type Services } from "./config";
 import { randomToken, s256 } from "./crypto";
 import { escape, page } from "./html";
 import { authorizationUrl, SignInError, signIn } from "./idp";
 import { signToken, verifyToken } from "./tokens";
+import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "./upstream-oauth";
 import { vaultFor, type CredentialInfo } from "./vault";
 
 export const LOGIN_CALLBACK_PATH = "/login/callback";
+export const CONNECT_CALLBACK_PATH = "/connect/callback";
 const SESSION_COOKIE = "__Host-gw-session";
 const LOGIN_COOKIE = "__Host-gw-login";
+const CONNECT_COOKIE = "__Host-gw-connect";
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const LOGIN_TTL_SECONDS = 10 * 60;
 
@@ -104,12 +107,40 @@ export function logout(request: Request, env: Env): Response {
 function credentialRows(credentials: CredentialInfo[]): string {
   if (credentials.length === 0) return "<p>まだ登録されていません。</p>";
   const rows = credentials
-    .map(
-      (c) => `<tr><td>${escape(c.service)}</td><td>${escape(c.label)}</td><td><code>${escape(c.id)}</code></td>
-<td><form method="post" action="/credentials/${escape(c.id)}/delete"><button>削除</button></form></td></tr>`,
-    )
+    .map((c) => {
+      const reconnect = c.needsReconnect
+        ? `<form method="post" action="/connect"><input type="hidden" name="service" value="${escape(c.service)}">
+<input type="hidden" name="credential" value="${escape(c.id)}"><strong>接続が切れています</strong> <button>再接続</button></form>`
+        : "";
+      return `<tr><td>${escape(c.service)}</td><td>${escape(c.label)}${reconnect}</td><td><code>${escape(c.id)}</code></td>
+<td><form method="post" action="/credentials/${escape(c.id)}/delete"><button>削除</button></form></td></tr>`;
+    })
     .join("");
   return `<table><tr><th>サービス</th><th>名前</th><th>ID</th><th></th></tr>${rows}</table>`;
+}
+
+function credentialForms(services: Services): string {
+  return Object.entries(services)
+    .map(([name, config]) => {
+      const label = `<input type="hidden" name="service" value="${escape(name)}">
+<label>名前(アカウントの区別用)<input type="text" name="label" placeholder="${escape(name)}"></label>`;
+      if (config.auth.type === "oauth2") {
+        return `<form method="post" action="/connect"><fieldset>
+<legend>${escape(name)} を追加</legend>
+${label}
+<button>${escape(name)} に接続</button>
+</fieldset></form>`;
+      }
+      return `<form method="post" action="/credentials"><fieldset>
+<legend>${escape(name)} を追加</legend>
+${label}
+${config.auth.headers
+  .map((h) => `<label>${escape(h.label)}<input type="password" name="h:${escape(h.name.toLowerCase())}" required autocomplete="off"></label>`)
+  .join("\n")}
+<button>登録</button>
+</fieldset></form>`;
+    })
+    .join("\n");
 }
 
 function connectorSection(env: Env): string {
@@ -128,19 +159,6 @@ export async function home(request: Request, env: Env): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
   const credentials = await vaultFor(env, user.sub).list();
-  const forms = Object.entries(parseServices(env.SERVICES))
-    .map(
-      ([name, config]) => `<form method="post" action="/credentials"><fieldset>
-<legend>${escape(name)} を追加</legend>
-<input type="hidden" name="service" value="${escape(name)}">
-<label>名前(アカウントの区別用)<input type="text" name="label" placeholder="${escape(name)}"></label>
-${config.auth.headers
-  .map((h) => `<label>${escape(h.label)}<input type="password" name="h:${escape(h.name.toLowerCase())}" required autocomplete="off"></label>`)
-  .join("\n")}
-<button>登録</button>
-</fieldset></form>`,
-    )
-    .join("\n");
   return page(
     "API ゲートウェイ",
     `<h1>API ゲートウェイ</h1>
@@ -149,7 +167,7 @@ ${connectorSection(env)}
 <h2>登録済みの認証情報</h2>
 ${credentialRows(credentials)}
 <h2>認証情報を追加</h2>
-${forms}`,
+${credentialForms(parseServices(env.SERVICES))}`,
   );
 }
 
@@ -175,4 +193,75 @@ export async function deleteCredential(request: Request, env: Env, id: string): 
   if (!user) return redirect("/login");
   await vaultFor(env, user.sub).remove(id);
   return redirect("/");
+}
+
+function errorPage(title: string, message: string, status: number): Response {
+  return page("エラー", `<h1>${escape(title)}</h1><p>${escape(message)}</p><p><a href="/">戻る</a></p>`, undefined, status);
+}
+
+type PendingConnect = {
+  verifier: string;
+  user: string;
+  service: string;
+  label: string;
+  credential?: string;
+};
+
+export async function connectStart(request: Request, env: Env): Promise<Response> {
+  if (!sameOrigin(request, env)) return new Response("forbidden", { status: 403 });
+  const user = await session(request, env);
+  if (!user) return redirect("/login");
+  const form = await request.formData();
+  const service = String(form.get("service") ?? "");
+  const config = parseServices(env.SERVICES)[service];
+  if (config?.auth.type !== "oauth2") return errorPage("接続できませんでした", `OAuth の連携先ではありません: ${service}`, 400);
+  const client = oauthClient(env, service);
+  if (!client) return errorPage("接続できませんでした", `${service} の OAuth クライアントが設定されていません。`, 500);
+  const credential = String(form.get("credential") ?? "") || undefined;
+  if (credential && (await vaultFor(env, user.sub).get(credential))?.service !== service) {
+    return errorPage("接続できませんでした", "認証情報が見つかりません。", 400);
+  }
+
+  const state = randomToken();
+  const verifier = randomToken();
+  const pending: PendingConnect = { verifier, user: user.sub, service, label: String(form.get("label") ?? ""), credential };
+  const { token } = await signToken(env.SIGNING_KEY, publicUrl(env), "connect", state, { ...pending }, LOGIN_TTL_SECONDS);
+  const location = upstreamAuthorizationUrl(config.auth, client, {
+    redirectUri: `${publicUrl(env)}${CONNECT_CALLBACK_PATH}`,
+    state,
+    codeChallenge: await s256(verifier),
+  });
+  return redirect(location, new Headers({ "set-cookie": cookie(CONNECT_COOKIE, token, LOGIN_TTL_SECONDS) }));
+}
+
+export async function connectCallback(request: Request, env: Env): Promise<Response> {
+  const params = new URL(request.url).searchParams;
+  const user = await session(request, env);
+  const stored = readCookie(request, CONNECT_COOKIE);
+  const pending = stored
+    ? await verifyToken<PendingConnect>(env.SIGNING_KEY, publicUrl(env), "connect", stored)
+    : null;
+  if (!user || !pending || pending.sub !== params.get("state") || pending.user !== user.sub) {
+    return errorPage("接続できませんでした", "画面からもう一度接続してください。", 400);
+  }
+  const code = params.get("code");
+  if (!code) return errorPage("接続できませんでした", `${pending.service} での許可が得られませんでした。`, 400);
+  const config = parseServices(env.SERVICES)[pending.service];
+  const client = oauthClient(env, pending.service);
+  if (config?.auth.type !== "oauth2" || !client) return errorPage("接続できませんでした", "連携先の設定が変わりました。", 500);
+
+  try {
+    const tokens = await exchangeCode(config.auth, client, {
+      code,
+      verifier: pending.verifier,
+      redirectUri: `${publicUrl(env)}${CONNECT_CALLBACK_PATH}`,
+    });
+    const result = await vaultFor(env, user.sub).addOAuth(pending.service, pending.label, tokens, pending.credential);
+    if ("error" in result) return errorPage("接続できませんでした", result.error, 400);
+  } catch (error) {
+    if (!(error instanceof UpstreamOAuthError)) throw error;
+    console.warn(JSON.stringify({ type: "connect_failed", service: pending.service, reason: error.message }));
+    return errorPage("接続できませんでした", `${pending.service} からトークンを受け取れませんでした。`, 502);
+  }
+  return redirect("/", new Headers({ "set-cookie": cookie(CONNECT_COOKIE, "", 0) }));
 }

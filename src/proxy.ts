@@ -55,14 +55,20 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   const credentialId = claims.creds?.[service];
   if (!credentialId) return denied(403, `token does not cover service: ${service}`);
 
-  const injected = await vaultFor(env, claims.sub).headers(credentialId);
-  if (!injected) return denied(403, "credential no longer exists");
+  const result = await vaultFor(env, claims.sub).headers(credentialId);
+  if ("error" in result) {
+    if (result.error === "missing") return denied(403, "credential no longer exists");
+    if (result.error === "reconnect") {
+      return denied(403, `credential must be reconnected by the user at ${publicUrl(env)}/`);
+    }
+    return denied(502, "could not refresh the upstream access token; try again later");
+  }
 
   const upstreamUrl = `${config.base_url}${upstreamPath}${url.search}`;
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const upstream = await fetch(upstreamUrl, {
     method: request.method,
-    headers: forwardHeaders(request.headers, injected),
+    headers: forwardHeaders(request.headers, result.headers),
     body: hasBody ? request.body : undefined,
     // Redirects go back to the caller; a signed download URL needs no credentials.
     redirect: "manual",

@@ -31,8 +31,8 @@ describe("vault", () => {
     const cred = await addBoard(alice);
     expect(await vaultFor(env, alice).list()).toEqual([expect.objectContaining({ id: cred.id, service: "board", label: "main" })]);
     expect(await vaultFor(env, bob).list()).toEqual([]);
-    expect(await vaultFor(env, alice).headers(cred.id)).toEqual({ "x-api-key": "the-key", authorization: "Bearer board-token" });
-    expect(await vaultFor(env, bob).headers(cred.id)).toBeNull();
+    expect(await vaultFor(env, alice).headers(cred.id)).toEqual({ headers: { "x-api-key": "the-key", authorization: "Bearer board-token" } });
+    expect(await vaultFor(env, bob).headers(cred.id)).toEqual({ error: "missing" });
   });
 
   it("rejects unknown services and missing fields", async () => {
@@ -140,7 +140,7 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board"]);
+    expect(listed.services).toEqual(["board", "freee"]);
     expect(listed.credentials).toEqual([expect.objectContaining({ id: cred.id, service: "board" })]);
   });
 
@@ -213,7 +213,7 @@ describe("web ui", () => {
     expect(res.status).toBe(303);
     const [cred] = await vaultFor(env, carol).list();
     expect(cred).toMatchObject({ service: "board", label: "form" });
-    expect(await vaultFor(env, carol).headers(cred.id)).toEqual({ "x-api-key": "k", authorization: "Bearer t" });
+    expect(await vaultFor(env, carol).headers(cred.id)).toEqual({ headers: { "x-api-key": "k", authorization: "Bearer t" } });
 
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
     expect(page).toContain(cred.id);

@@ -1,7 +1,7 @@
 import { jwtVerify, SignJWT, type JWTPayload } from "jose";
 
 // One HS256 key signs every token; the audience keeps the kinds apart.
-export type TokenKind = "api" | "session" | "login";
+export type TokenKind = "api" | "session" | "login" | "connect";
 
 export const GATEWAY_TOKEN_TTL_SECONDS = 15 * 60;
 

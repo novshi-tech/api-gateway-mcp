@@ -3,7 +3,18 @@ import { authorizeCallback, authorizeGet, authorizePost, MCP_CALLBACK_PATH, MCP_
 import { publicUrl } from "./config";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
-import { addCredential, deleteCredential, home, login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./ui";
+import {
+  addCredential,
+  CONNECT_CALLBACK_PATH,
+  connectCallback,
+  connectStart,
+  deleteCredential,
+  home,
+  login,
+  LOGIN_CALLBACK_PATH,
+  loginCallback,
+  logout,
+} from "./ui";
 
 export { UserVault } from "./vault";
 
@@ -24,6 +35,8 @@ const defaultHandler: ExportedHandler<Env> = {
     if (pathname === LOGIN_CALLBACK_PATH && method === "GET") return loginCallback(request, env);
     if (pathname === "/logout" && method === "POST") return logout(request, env);
     if (pathname === "/credentials" && method === "POST") return addCredential(request, env);
+    if (pathname === "/connect" && method === "POST") return connectStart(request, env);
+    if (pathname === CONNECT_CALLBACK_PATH && method === "GET") return connectCallback(request, env);
     const del = pathname.match(/^\/credentials\/([0-9a-f-]+)\/delete$/);
     if (del && method === "POST") return deleteCredential(request, env, del[1]);
     return new Response("not found", { status: 404 });

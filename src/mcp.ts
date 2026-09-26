@@ -59,6 +59,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       for (const id of new Set(credential_ids)) {
         const info = await vault.get(id);
         if (!info) return error(`unknown credential: ${id}`);
+        if (info.needsReconnect) return error(`credential ${id} must be reconnected by the user at ${base}/`);
         if (creds[info.service]) return error(`more than one credential for service: ${info.service}`);
         creds[info.service] = id;
       }
