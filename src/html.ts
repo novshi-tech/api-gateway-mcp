@@ -85,20 +85,20 @@ form { margin: 0; }
 .tags { list-style: none; margin: 0; padding: 0; display: grid; align-items: start; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); gap: 1.25rem 1rem; }
 .tag {
   position: relative;
-  padding: 1rem 1rem 1rem 3rem;
+  padding: 1rem 1rem 1rem 2.75rem;
   background: var(--tag, #d9b453);
   color: #1d2833;
-  border-radius: 1.6rem .45rem .45rem 1.6rem;
-  -webkit-mask: radial-gradient(circle at 1.5rem 1.6rem, transparent .42rem, #000 .47rem);
-  mask: radial-gradient(circle at 1.5rem 1.6rem, transparent .42rem, #000 .47rem);
+  border-radius: .6rem;
 }
+/* The punched hole and its reinforcement ring share one center, level with the service name. */
 .tag::before {
   content: "";
   position: absolute;
-  left: .95rem; top: 1.05rem;
-  width: 1.1rem; height: 1.1rem;
+  left: 1.1rem; top: 1.35rem;
+  width: .75rem; height: .75rem;
   border-radius: 50%;
-  border: 2px solid rgba(29, 40, 51, .35);
+  background: var(--bg);
+  box-shadow: 0 0 0 .2rem rgba(255, 255, 255, .55), inset 0 1px 2px rgba(0, 0, 0, .35);
 }
 .tag .service { font-size: 1.0625rem; font-weight: 700; line-height: 1.35; margin: 0; }
 .tag .label { margin: .1rem 0 .6rem; font-size: .9375rem; }
