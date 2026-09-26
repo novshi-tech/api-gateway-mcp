@@ -19,6 +19,8 @@ Claude Cowork や ChatGPT から、既存のコネクタではできない API �
 curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v1/clients"
 ```
 
+スクリプトでは `User-Agent` を明示してください。Python の `urllib` の既定値などは、Cloudflare に Error 1010 で拒否されることがあります。
+
 Team / Enterprise では、組織の管理者がコード実行のネットワーク設定で、ゲートウェイのドメインを許可する必要があります。
 
 ## デプロイ

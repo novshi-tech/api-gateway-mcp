@@ -47,7 +47,8 @@ export function buildServer(env: Env, props: McpProps): McpServer {
         `Issues a short-lived (${GATEWAY_TOKEN_TTL_SECONDS / 60} min) token for calling upstream APIs through the gateway's REST endpoint. ` +
         "Pass at most one credential per service. Send requests to `<base_url>/<service>/<upstream path>` " +
         "with `Authorization: Bearer <token>`; the gateway replaces that header with the upstream credentials. " +
-        "Request a new token when it expires.",
+        "Request a new token when it expires. " +
+        "Always set an explicit User-Agent header (for example `api-gateway-client`): Cloudflare rejects some default client user agents such as Python-urllib with error 1010.",
       inputSchema: {
         credential_ids: z.array(z.string()).min(1).describe("Credential IDs from list_credentials"),
       },
