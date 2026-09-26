@@ -70,3 +70,7 @@ npm run dev
 npm run typecheck
 npm test          # Worker のテストと、スキルのスクリプトのテスト
 ```
+
+## License
+
+[MIT](LICENSE).

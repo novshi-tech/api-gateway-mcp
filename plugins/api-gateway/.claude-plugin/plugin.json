@@ -5,5 +5,6 @@
   "description": "API ゲートウェイ経由で board などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
   "author": {
     "name": "novshi-tech"
-  }
+  },
+  "license": "MIT"
 }
