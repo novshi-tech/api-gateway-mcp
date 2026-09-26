@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && python3 -m unittest discover -s test/scripts",
     "cf-typegen": "wrangler types -c wrangler.example.jsonc"
   },
   "dependencies": {

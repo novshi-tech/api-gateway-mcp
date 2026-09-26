@@ -1,0 +1,16 @@
+{
+  "name": "api-gateway-mcp",
+  "owner": {
+    "name": "novshi-tech"
+  },
+  "metadata": {
+    "description": "API ゲートウェイ(api-gateway-mcp)と組み合わせて使うスキル集"
+  },
+  "plugins": [
+    {
+      "name": "api-gateway",
+      "source": "./plugins/api-gateway",
+      "description": "API ゲートウェイ経由で board などの外部サービスの API を呼び出すスキル"
+    }
+  ]
+}

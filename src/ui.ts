@@ -112,6 +112,18 @@ function credentialRows(credentials: CredentialInfo[]): string {
   return `<table><tr><th>サービス</th><th>名前</th><th>ID</th><th></th></tr>${rows}</table>`;
 }
 
+function connectorSection(env: Env): string {
+  const mcpUrl = `${publicUrl(env)}/mcp`;
+  const params = `modal=add-custom-connector&connectorName=${encodeURIComponent("API Gateway")}&connectorUrl=${encodeURIComponent(mcpUrl)}`;
+  return `<h2>Claude に接続する</h2>
+<p>MCP の URL: <code>${escape(mcpUrl)}</code></p>
+<ul>
+<li><a href="https://claude.ai/customize/connectors?${params}" target="_blank" rel="noopener">個人のアカウントにコネクタを追加</a>(Pro / Max)</li>
+<li><a href="https://claude.ai/admin-settings/connectors?${params}" target="_blank" rel="noopener">組織にコネクタを追加</a>(Team / Enterprise の Owner)</li>
+</ul>
+<p>スキルは、プラグイン <code>api-gateway</code> として配布しています。</p>`;
+}
+
 export async function home(request: Request, env: Env): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
@@ -133,6 +145,7 @@ ${config.auth.headers
     "API ゲートウェイ",
     `<h1>API ゲートウェイ</h1>
 <p>${escape(user.name)} としてサインイン中 <form method="post" action="/logout" style="display:inline"><button>サインアウト</button></form></p>
+${connectorSection(env)}
 <h2>登録済みの認証情報</h2>
 ${credentialRows(credentials)}
 <h2>認証情報を追加</h2>

@@ -218,6 +218,7 @@ describe("web ui", () => {
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
     expect(page).toContain(cred.id);
     expect(page).not.toContain(">k<");
+    expect(page).toContain(`connectorUrl=${encodeURIComponent(`${BASE}/mcp`)}`);
   });
 
   it("signs out without starting a new sign-in", async () => {

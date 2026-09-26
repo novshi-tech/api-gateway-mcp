@@ -10,7 +10,9 @@ Claude Cowork や ChatGPT から、既存のコネクタではできない API �
 
 ## 使い方(クライアント側)
 
-1. Claude の組織設定で、カスタムコネクタとして `https://<ゲートウェイ>/mcp` を追加します。
+1. コネクタを追加します。ゲートウェイの Web 画面(`https://<ゲートウェイ>/`)に、追加用のリンクがあります。
+   - Pro / Max: 個人の設定でカスタムコネクタとして `https://<ゲートウェイ>/mcp` を追加します。
+   - Team / Enterprise: Owner が組織の設定で同じ URL を追加し、各メンバーが接続します。
 2. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します。
 3. Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取ります。
 4. サンドボックス内のスクリプトは、そのトークンで REST を呼びます。
@@ -18,6 +20,15 @@ Claude Cowork や ChatGPT から、既存のコネクタではできない API �
 ```sh
 curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v1/clients"
 ```
+
+## スキル(プラグイン)
+
+このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。`plugins/api-gateway` に、ゲートウェイの共通手順(`api-gateway`)とサービス別のスキル(`board` など)が入っています。プラグインにはコネクタの URL を含めていないので、どのデプロイでも同じものを使えます。
+
+- Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` をインストールします。
+- Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
+
+board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
 
 スクリプトでは `User-Agent` を明示してください。Python の `urllib` の既定値などは、Cloudflare に Error 1010 で拒否されることがあります。
 
@@ -57,5 +68,5 @@ cp wrangler.example.jsonc wrangler.jsonc
 cp .dev.vars.example .dev.vars   # 値を埋める
 npm run dev
 npm run typecheck
-npm test
+npm test          # Worker のテストと、スキルのスクリプトのテスト
 ```
