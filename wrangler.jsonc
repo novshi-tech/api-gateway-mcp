@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "api-gateway-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "observability": { "enabled": true },
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }],
+  "durable_objects": {
+    "bindings": [{ "name": "VAULT", "class_name": "UserVault" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserVault"] }],
+  "vars": {
+    // Public origin of this Worker, without a trailing slash.
+    "PUBLIC_URL": "http://localhost:8787",
+    // "entra" or "google".
+    "IDP_TYPE": "entra",
+    // Entra: https://login.microsoftonline.com/<tenant-id>/v2.0
+    // Google: https://accounts.google.com
+    "OIDC_ISSUER": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/v2.0",
+    "OIDC_CLIENT_ID": "REPLACE_WITH_CLIENT_ID",
+    // Comma-separated. Entra: tenant IDs. Google: Workspace domains (required).
+    "ALLOWED_TENANTS": "",
+    "ALLOWED_DOMAINS": "",
+    "SERVICES": {
+      "board": {
+        "base_url": "https://api.the-board.jp",
+        "auth": {
+          "type": "headers",
+          "headers": [
+            { "name": "x-api-key", "label": "API キー" },
+            { "name": "authorization", "label": "API トークン", "prefix": "Bearer " }
+          ]
+        }
+      }
+    }
+  }
+  // Secrets (wrangler secret put): OIDC_CLIENT_SECRET, SIGNING_KEY, ENCRYPTION_KEY
+}
