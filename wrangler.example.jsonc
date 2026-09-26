@@ -44,6 +44,17 @@
           "authorization_url": "https://accounts.secure.freee.co.jp/public_api/authorize",
           "token_url": "https://accounts.secure.freee.co.jp/public_api/token"
         }
+      },
+      // Microsoft Graph with a separate Entra app: register ${PUBLIC_URL}/connect/callback as a
+      // Web redirect URI and set OAUTH_GRAPH_CLIENT_ID and OAUTH_GRAPH_CLIENT_SECRET.
+      "graph": {
+        "base_url": "https://graph.microsoft.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/authorize",
+          "token_url": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/token",
+          "scope": "offline_access User.Read Files.ReadWrite.All Sites.ReadWrite.All Mail.ReadWrite Mail.Send Calendars.ReadWrite Chat.ReadWrite ChannelMessage.Send ChannelMessage.Read.All Team.ReadBasic.All Channel.ReadBasic.All"
+        }
       }
     }
   }

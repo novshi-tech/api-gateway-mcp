@@ -42,20 +42,30 @@ async function idp(request: Request): Promise<Response> {
 }
 
 const FREEE_ACCOUNTS = "https://accounts.secure.freee.co.jp";
-const FREEE_CLIENT = { id: "freee-client", secret: "freee-secret" };
+const FREEE = { tokenPath: "/public_api/token", client: { id: "freee-client", secret: "freee-secret" } };
+const ENTRA = "https://login.microsoftonline.com";
+const GRAPH = {
+  tokenPath: "/REPLACE_WITH_TENANT_ID/oauth2/v2.0/token",
+  client: { id: "graph-client", secret: "graph-secret" },
+  requireScope: true,
+};
 const usedRefreshTokens = new Set<string>();
 const refreshCalls = new Map<string, number>();
 
-// A fake OAuth server for freee. The authorization code is base64url JSON of
-// { challenge, tokens }: the token response to return once the PKCE check
-// passes. Refresh tokens rotate; "revoked-*" is refused, "down-*" fails, and
-// "short-*" yields an access token that is already expired.
-async function freeeAccounts(request: Request): Promise<Response> {
+// A fake OAuth server for freee and Entra. The authorization code is base64url
+// JSON of { challenge, tokens }: the token response to return once the PKCE
+// check passes. Refresh tokens rotate; "revoked-*" is refused, "down-*" fails,
+// and "short-*" yields an access token that is already expired. With
+// `requireScope`, a refresh must send the scopes again, as Entra expects.
+async function oauthServer(
+  request: Request,
+  server: { tokenPath: string; client: { id: string; secret: string }; requireScope?: boolean },
+): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/stats") return Response.json({ calls: refreshCalls.get(url.searchParams.get("rt") ?? "") ?? 0 });
-  if (url.pathname !== "/public_api/token" || request.method !== "POST") return new Response("not found", { status: 404 });
+  if (url.pathname !== server.tokenPath || request.method !== "POST") return new Response("not found", { status: 404 });
   const form = new URLSearchParams(await request.text());
-  if (form.get("client_id") !== FREEE_CLIENT.id || form.get("client_secret") !== FREEE_CLIENT.secret) {
+  if (form.get("client_id") !== server.client.id || form.get("client_secret") !== server.client.secret) {
     return Response.json({ error: "invalid_client" }, { status: 401 });
   }
   if (form.get("grant_type") === "authorization_code") {
@@ -70,6 +80,7 @@ async function freeeAccounts(request: Request): Promise<Response> {
     const rt = form.get("refresh_token") ?? "";
     refreshCalls.set(rt, (refreshCalls.get(rt) ?? 0) + 1);
     await sleep(50);
+    if (server.requireScope && !form.get("scope")?.split(" ").includes("offline_access")) return Response.json({ error: "invalid_scope" }, { status: 400 });
     if (rt.startsWith("down-")) return new Response("unavailable", { status: 503 });
     if (rt.startsWith("revoked-") || usedRefreshTokens.has(rt)) return Response.json({ error: "invalid_grant" }, { status: 400 });
     usedRefreshTokens.add(rt);
@@ -82,7 +93,8 @@ async function freeeAccounts(request: Request): Promise<Response> {
 async function upstream(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (url.origin === IDP) return idp(request);
-  if (url.origin === FREEE_ACCOUNTS) return freeeAccounts(request);
+  if (url.origin === FREEE_ACCOUNTS) return oauthServer(request, FREEE);
+  if (url.origin === ENTRA) return oauthServer(request, GRAPH);
   if (url.pathname === "/redirect") {
     return new Response(null, { status: 302, headers: { location: "https://download.example.com/file" } });
   }
@@ -114,8 +126,10 @@ export default defineConfig({
           OIDC_ISSUER,
           OIDC_CLIENT_ID,
           ALLOWED_TENANTS: "tenant-1",
-          OAUTH_FREEE_CLIENT_ID: FREEE_CLIENT.id,
-          OAUTH_FREEE_CLIENT_SECRET: FREEE_CLIENT.secret,
+          OAUTH_FREEE_CLIENT_ID: FREEE.client.id,
+          OAUTH_FREEE_CLIENT_SECRET: FREEE.client.secret,
+          OAUTH_GRAPH_CLIENT_ID: GRAPH.client.id,
+          OAUTH_GRAPH_CLIENT_SECRET: GRAPH.client.secret,
         },
         outboundService: upstream,
       },

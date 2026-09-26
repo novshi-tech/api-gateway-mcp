@@ -1,6 +1,6 @@
 ---
 name: api-gateway
-description: API ゲートウェイ(API Gateway MCP コネクタ)経由で外部サービスの API を呼び出すための共通手順。認証情報の確認、短命トークンの発行、スクリプトからの REST 呼び出し、ファイルのダウンロードとアップロードを扱う。Board や freee など、ゲートウェイに登録されたサービスの API を叩くときは、サービス別のスキルと合わせて必ず使う。
+description: API ゲートウェイ(API Gateway MCP コネクタ)経由で外部サービスの API を呼び出すための共通手順。認証情報の確認、短命トークンの発行、スクリプトからの REST 呼び出し、ファイルのダウンロードとアップロードを扱う。Board、freee、Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)など、ゲートウェイに登録されたサービスの API を叩くときは、サービス別のスキルと合わせて必ず使う。
 ---
 
 # API ゲートウェイの使い方
@@ -30,12 +30,16 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py GET board /v1/projects -q per_
 1 回の HTTP リクエストを送る。ステータスは標準エラー、ボディは標準出力(JSON は整形)に出る。
 
 ```sh
-gw_request.py <METHOD> <service> <path> [-q key=value ...] [--json '{...}' | --json @body.json]
+gw_request.py <METHOD> <service> <path> [-q key=value ...] [-H Name=value ...]
+              [--json '{...}' | --json @body.json | --data file.bin]
               [-f key=value ... --file field=path ...] [-o out.bin] [--no-follow]
 ```
 
-- `-q`: クエリパラメータ(自動で URL エンコードされる)
+- `<path>`: 上流のパス。日本語や空白はそのまま書いてよい(自動で URL エンコードされる)。`$` を含むパスやクエリは、シェルで展開されないようにシングルクォートで囲む。
+- `-q`: クエリパラメータ(自動で URL エンコードされる。空白は `%20` になる)
+- `-H`: 追加のリクエストヘッダー
 - `--json`: JSON ボディ
+- `--data`: ファイルの中身をそのままボディにする(`-H Content-Type=...` と合わせて使う)
 - `-f` / `--file`: multipart/form-data(ファイルのアップロード)
 - `-o`: レスポンスをファイルに保存する(PDF などのバイナリ)
 - リダイレクトは自動で追う。別ホストへのリダイレクト(署名付きのダウンロード URL など)には、トークンを送らない。
@@ -47,4 +51,5 @@ gw_request.py <METHOD> <service> <path> [-q key=value ...] [--json '{...}' | --j
 - ファイル本体は会話に貼らず、スクリプトで保存・送信する。
 - 更新・削除のリクエストは、実行前に内容をユーザーに確認する。
 - 上流の権限は、登録された API キーやトークン側で決まる。403 が返ったら、その認証情報に必要な権限があるかをユーザーに確認してもらう。
+- OAuth で接続するサービス(freee、Microsoft Graph など)は、ゲートウェイが上流のトークンを注入し、更新もする。Claude が上流のトークンやクライアント ID を扱うことはない。ゲートウェイが `credential must be reconnected by the user at ...` の 403 を返したら、その URL でユーザーに接続し直してもらう。
 - 接続先のネットワークが制限されている環境(Team / Enterprise のコード実行設定)では、ゲートウェイのドメインを管理者に許可してもらう必要がある。

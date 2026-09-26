@@ -57,8 +57,8 @@ async function connect(userId: string, tokens: Tokens, fields: Record<string, st
   });
 }
 
-async function connected(userId: string, tokens: Tokens) {
-  const res = await connect(userId, tokens);
+async function connected(userId: string, tokens: Tokens, service = "freee") {
+  const res = await connect(userId, tokens, { service, label: "main" });
   expect(res.status).toBe(303);
   const credentials = await vaultFor(env, userId).list();
   return credentials[credentials.length - 1];
@@ -208,6 +208,13 @@ describe("refreshing upstream tokens", () => {
     const cred = await connected(alice, { access_token: "stale", refresh_token: "down-g", expires_in: 0 });
     expect((await callFreee(alice, cred.id)).status).toBe(502);
     expect(await vaultFor(env, alice).get(cred.id)).not.toHaveProperty("needsReconnect");
+  });
+
+  it("sends the scopes again when refreshing a Graph token", async () => {
+    const cred = await connected(alice, { access_token: "stale", refresh_token: "rt-graph", expires_in: 0 }, "graph");
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "api", alice, { creds: { graph: cred.id } }, 60);
+    const res = await SELF.fetch(`${BASE}/api/graph/v1.0/me`, { headers: { authorization: `Bearer ${token}` } });
+    expect(await upstreamAuthorization(res)).toBe("Bearer access-after-rt-graph");
   });
 
   it("keeps using a token without an expiry", async () => {

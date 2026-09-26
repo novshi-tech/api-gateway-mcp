@@ -72,6 +72,8 @@ npx wrangler secret put OAUTH_FREEE_CLIENT_ID
 npx wrangler secret put OAUTH_FREEE_CLIENT_SECRET
 ```
 
+Microsoft Graph は、サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`wrangler.example.jsonc` の `scope` にある委任のアクセス許可を付けて、管理者の同意を与えます。
+
 アクセストークンは期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、画面に「再接続」が出ます。
 
 ### GitHub Actions でデプロイする
