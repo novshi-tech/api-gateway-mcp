@@ -53,20 +53,33 @@ def service_url(base, service, path, pairs=()):
     return url + (("&" if "?" in url else "?") + query if query else "")
 
 
-def get_json(url, token, retries=4):
-    """GETs JSON, retrying on 429 and 503 (honoring Retry-After). Returns (data, headers)."""
-    headers = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT, "Accept": "application/json"}
+def request_json(url, token, body=None, headers=None, retries=4):
+    """Sends a request expecting JSON back, retrying on 429 and 503 (honoring
+    Retry-After). GET by default; a body (JSON-serializable) makes it a POST.
+    Returns (data, headers)."""
+    request_headers = {"Authorization": f"Bearer {token}", "User-Agent": USER_AGENT, "Accept": "application/json"}
+    data = None
+    if body is not None:
+        request_headers["Content-Type"] = "application/json"
+        data = json.dumps(body).encode()
+    request_headers.update(headers or {})
     for attempt in range(retries + 1):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as response:
+            request = urllib.request.Request(url, data=data, headers=request_headers)
+            with urllib.request.urlopen(request) as response:
                 return json.load(response), response.headers
         except urllib.error.HTTPError as error:
             if error.code in (429, 503) and attempt < retries:
                 retry_after = error.headers.get("Retry-After", "")
                 time.sleep(int(retry_after) if retry_after.isdigit() else 2 ** attempt)
                 continue
-            body = error.read().decode(errors="replace")
-            raise SystemExit(f"HTTP {error.code} for {url}: {body}")
+            body_text = error.read().decode(errors="replace")
+            raise SystemExit(f"HTTP {error.code} for {url}: {body_text}")
+
+
+def get_json(url, token, retries=4):
+    """GETs JSON, retrying on 429 and 503 (honoring Retry-After). Returns (data, headers)."""
+    return request_json(url, token, retries=retries)
 
 
 def list_parser(doc, path_help, max_pages=100):

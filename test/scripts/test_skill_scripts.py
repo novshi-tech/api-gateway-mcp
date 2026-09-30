@@ -20,11 +20,14 @@ GW_REQUEST = os.path.join(SKILLS, "api-gateway", "scripts", "gw_request.py")
 BOARD_ALL = os.path.join(SKILLS, "board", "scripts", "board_all.py")
 GRAPH_ALL = os.path.join(SKILLS, "microsoft-graph", "scripts", "graph_all.py")
 FREEE_ALL = os.path.join(SKILLS, "freee", "scripts", "freee_all.py")
+BM_NEXT_GRAPHQL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_graphql.py")
+BM_NEXT_ALL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_all.py")
 
 TOTAL_ITEMS = 250
 
 
 GRAPH_PAGE = 100
+BM_NEXT_PAGE = 100
 
 
 class FakeGateway(http.server.BaseHTTPRequestHandler):
@@ -90,7 +93,26 @@ class FakeGateway(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self.record(body)
+        if urllib.parse.urlsplit(self.path).path == "/api/bm-next/graphql":
+            self.send(200, json.dumps(self.graphql(json.loads(body))).encode())
+            return
         self.send(201, json.dumps({"ok": True}).encode())
+
+    def graphql(self, request):
+        query, variables = request["query"], request.get("variables") or {}
+        if "boom" in query:
+            # ビルメンNEXT answers GraphQL errors with HTTP 200.
+            return {"errors": [{"message": "boom", "extensions": {"code": "AUTH_NOT_AUTHENTICATED"}}], "data": None}
+        if "notpaged" in query:
+            return {"data": {"myScopes": ["a"]}}
+        if "works" in query:
+            start = int(variables.get("from") or 0)
+            end = min(start + BM_NEXT_PAGE, TOTAL_ITEMS)
+            return {"data": {"works": {
+                "results": [{"id": f"w{i}", "name": f"work {i}"} for i in range(start, end)],
+                "continuationToken": str(end) if end < TOTAL_ITEMS else None,
+            }}}
+        return {"data": {"echo": {"variables": variables, "actAs": self.headers.get("X-Act-As-Organization")}}}
 
 
 class SkillScriptsTest(unittest.TestCase):
@@ -245,6 +267,55 @@ class SkillScriptsTest(unittest.TestCase):
         result = self.run_script(FREEE_ALL, "/api/1/ambiguous", "-q", "company_id=1", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--key", result.stderr.decode())
+
+    def test_bm_next_graphql_sends_query_variables_and_org_header(self):
+        out = self.run_script(BM_NEXT_GRAPHQL, "{ echo }", "--vars", '{"year": 2026}', "--act-as", "org-1")
+        self.assertEqual(json.loads(out.stdout), {"echo": {"variables": {"year": 2026}, "actAs": "org-1"}})
+        req = FakeGateway.requests[0]
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["path"], "/api/bm-next/graphql")
+        self.assertEqual(req["headers"]["Authorization"], "Bearer tok")
+        self.assertEqual(req["headers"]["Content-Type"], "application/json")
+        self.assertIn("api-gateway-client", req["headers"]["User-Agent"])
+        self.assertEqual(json.loads(req["body"])["query"], "{ echo }")
+
+    def test_bm_next_graphql_reads_query_and_vars_from_files(self):
+        for name, text in (("q.graphql", "{ echo }"), ("v.json", '{"month": 9}')):
+            with open(os.path.join(self.tmp.name, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        out = self.run_script(BM_NEXT_GRAPHQL, "@q.graphql", "--vars", "@v.json")
+        self.assertEqual(json.loads(out.stdout)["echo"]["variables"], {"month": 9})
+        self.assertIsNone(json.loads(out.stdout)["echo"]["actAs"])
+
+    def test_bm_next_graphql_exits_non_zero_on_graphql_errors_despite_http_200(self):
+        result = self.run_script(BM_NEXT_GRAPHQL, "{ boom }", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
+
+    def test_bm_next_all_follows_continuation_token_as_from(self):
+        self.run_script(BM_NEXT_ALL, "query($from: String) { works(from: $from) { results { id } continuationToken } }", "-o", "works.json")
+        with open(os.path.join(self.tmp.name, "works.json"), encoding="utf-8") as f:
+            items = json.load(f)
+        self.assertEqual([i["id"] for i in items], [f"w{i}" for i in range(TOTAL_ITEMS)])
+        sent = [json.loads(r["body"]).get("variables", {}).get("from") for r in FakeGateway.requests]
+        self.assertEqual(sent, [None, "100", "200"])
+
+    def test_bm_next_all_keeps_other_variables_and_csv(self):
+        out = self.run_script(BM_NEXT_ALL, "{ works }", "--vars", '{"name": "x"}', "--csv", "id,name")
+        rows = list(csv.reader(io.StringIO(out.stdout.decode())))
+        self.assertEqual(rows[:2], [["id", "name"], ["w0", "work 0"]])
+        self.assertEqual(len(rows), TOTAL_ITEMS + 1)
+        self.assertTrue(all(json.loads(r["body"])["variables"]["name"] == "x" for r in FakeGateway.requests))
+
+    def test_bm_next_all_rejects_a_query_that_is_not_a_page(self):
+        result = self.run_script(BM_NEXT_ALL, "{ notpaged }", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("continuationToken", result.stderr.decode())
+
+    def test_bm_next_all_exits_non_zero_on_graphql_errors(self):
+        result = self.run_script(BM_NEXT_ALL, "{ boom }", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
 
 
 if __name__ == "__main__":

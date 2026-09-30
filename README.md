@@ -33,6 +33,16 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v
 
 board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
 
+ビルメンNEXT(`bm-next` スキル)を使うには、`SERVICES` に次を足します(`wrangler.example.jsonc` には載せていません)。GraphQL のリファレンスは `tools/gen-bm-next-reference.py` で、公開のスキーマから生成しています。
+
+```jsonc
+"bm-next": {
+  "display_name": "ビルメンNEXT",
+  "base_url": "https://api.bm-next.ai",
+  "auth": { "type": "headers", "headers": [{ "name": "x-api-key", "label": "ビルメンNEXT の API キー" }] }
+}
+```
+
 スクリプトでは `User-Agent` を明示してください。Python の `urllib` の既定値などは、Cloudflare に Error 1010 で拒否されることがあります。
 
 Team / Enterprise では、組織の管理者がコード実行のネットワーク設定で、ゲートウェイのドメインを許可する必要があります。
