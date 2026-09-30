@@ -16,7 +16,7 @@ board の API を、API ゲートウェイ経由で呼び出す。トークン�
    - 一覧の全件取得: `scripts/board_all.py`(ページングとレート制限を処理する)
 
 ```sh
-GW=${CLAUDE_SKILL_DIR}/../api-gateway/scripts/gw_request.py
+GW=$(ls ${CLAUDE_SKILL_DIR}/../*api-gateway/scripts/gw_request.py)
 python3 $GW GET board /v1/projects -q per_page=5 -q name_cont=保守
 python3 ${CLAUDE_SKILL_DIR}/scripts/board_all.py /v1/projects -q order_status_in[]=4 -o projects.json
 python3 ${CLAUDE_SKILL_DIR}/scripts/board_all.py /v1/clients --csv id,name,name_disp -o clients.csv

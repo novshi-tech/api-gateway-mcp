@@ -7,6 +7,7 @@ import http.server
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -316,6 +317,22 @@ class SkillScriptsTest(unittest.TestCase):
         result = self.run_script(BM_NEXT_ALL, "{ boom }", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
+
+    def test_scripts_find_gwlib_when_skill_dirs_are_prefixed_with_the_plugin_name(self):
+        # Cowork installs a plugin's skills as "<plugin>:<skill>", e.g. "api-gateway:api-gateway".
+        skills = os.path.join(self.tmp.name, "skills")
+        for name in os.listdir(SKILLS):
+            shutil.copytree(os.path.join(SKILLS, name), os.path.join(skills, f"api-gateway:{name}"), ignore=shutil.ignore_patterns("__pycache__"))
+        scripts = [
+            ("board", "board_all.py", ["/v1/projects", "--max-pages", "1"]),
+            ("freee", "freee_all.py", ["/api/1/deals", "-q", "company_id=1", "--max-pages", "1"]),
+            ("microsoft-graph", "graph_all.py", ["/v1.0/me/messages", "--max-pages", "1"]),
+            ("bm-next", "bm_next_graphql.py", ["{ echo }"]),
+            ("bm-next", "bm_next_all.py", ["{ works }", "--max-pages", "1"]),
+        ]
+        for skill, script, args in scripts:
+            with self.subTest(script=script):
+                self.run_script(os.path.join(skills, f"api-gateway:{skill}", "scripts", script), *args)
 
 
 if __name__ == "__main__":

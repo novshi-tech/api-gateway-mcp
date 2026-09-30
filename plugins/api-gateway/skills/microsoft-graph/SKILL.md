@@ -17,7 +17,7 @@ Microsoft Graph を、API ゲートウェイ経由で呼び出す。トークン
    - 一覧の全件取得: `scripts/graph_all.py`(`@odata.nextLink` をゲートウェイ経由でたどる)
 
 ```sh
-GW=${CLAUDE_SKILL_DIR}/../api-gateway/scripts/gw_request.py
+GW=$(ls ${CLAUDE_SKILL_DIR}/../*api-gateway/scripts/gw_request.py)
 python3 $GW GET graph /v1.0/me -q '$select=displayName,mail'
 python3 $GW GET graph /v1.0/me/messages -q '$search="請求書"' -q '$select=id,subject,from,receivedDateTime,hasAttachments' -q '$top=10'
 python3 $GW GET graph /v1.0/drives/{drive-id}/items/{item-id}/content -o invoice.pdf

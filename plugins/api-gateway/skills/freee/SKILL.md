@@ -19,7 +19,7 @@ freee の API を、API ゲートウェイ経由で呼び出す。トークン�
    - 一覧の全件取得: `scripts/freee_all.py`(offset / limit のページングと 429 の再試行を処理する)
 
 ```sh
-GW=${CLAUDE_SKILL_DIR}/../api-gateway/scripts/gw_request.py
+GW=$(ls ${CLAUDE_SKILL_DIR}/../*api-gateway/scripts/gw_request.py)
 python3 $GW GET freee /api/1/companies
 python3 $GW GET freee /api/1/deals -q company_id=123 -q start_issue_date=2026-09-01 -q limit=20
 python3 ${CLAUDE_SKILL_DIR}/scripts/freee_all.py /api/1/deals -q company_id=123 -q type=expense -o deals.json

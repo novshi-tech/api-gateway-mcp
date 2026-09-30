@@ -20,7 +20,9 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "api-gateway", "scripts"))
+# Cowork installs skills as "<plugin>:<skill>", so the directory is not always plain "api-gateway".
+SKILLS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+sys.path += [os.path.join(SKILLS, d, "scripts") for d in sorted(os.listdir(SKILLS)) if d == "api-gateway" or d.endswith(":api-gateway")]
 import gwlib  # noqa: E402
 
 SERVICE = "bm-next"

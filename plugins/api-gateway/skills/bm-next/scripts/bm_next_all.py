@@ -19,8 +19,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "api-gateway", "scripts"))
-import bm_next_graphql  # noqa: E402
+import bm_next_graphql  # noqa: E402  (also puts the api-gateway scripts on sys.path)
 import gwlib  # noqa: E402
 
 MAX_PAGES = 1000

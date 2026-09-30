@@ -1,9 +1,8 @@
 """Shared helpers for scripts that call upstream APIs through the API gateway.
 
-Service skills import this from their own scripts:
-
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "api-gateway", "scripts"))
-    import gwlib
+Service skills import this from their own scripts. Look at how board_all.py
+puts this directory on sys.path: Cowork names it "api-gateway:api-gateway", so
+the path cannot be hard-coded.
 """
 import argparse
 import csv
