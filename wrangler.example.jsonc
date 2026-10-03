@@ -45,6 +45,44 @@
           "token_url": "https://accounts.secure.freee.co.jp/public_api/token"
         }
       },
+      // Google OAuth: enable Gmail API / Google Drive API and register
+      // ${PUBLIC_URL}/connect/callback as a Web application redirect URI.
+      // Set OAUTH_GMAIL_CLIENT_ID / _SECRET and OAUTH_DRIVE_CLIENT_ID / _SECRET.
+      "gmail": {
+        "display_name": "Gmail",
+        "base_url": "https://gmail.googleapis.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scope": "https://www.googleapis.com/auth/gmail.modify",
+          "authorize_params": { "access_type": "offline", "prompt": "consent" }
+        }
+      },
+      "drive": {
+        "display_name": "Google Drive",
+        "base_url": "https://www.googleapis.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scope": "https://www.googleapis.com/auth/drive",
+          "authorize_params": { "access_type": "offline", "prompt": "consent" }
+        }
+      },
+      // Google Calendar: enable Calendar API, then set
+      // OAUTH_CALENDAR_CLIENT_ID and OAUTH_CALENDAR_CLIENT_SECRET.
+      "calendar": {
+        "display_name": "Google Calendar",
+        "base_url": "https://www.googleapis.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.freebusy",
+          "authorize_params": { "access_type": "offline", "prompt": "consent" }
+        }
+      },
       // Microsoft Graph with a separate Entra app: register ${PUBLIC_URL}/connect/callback as a
       // Web redirect URI and set OAUTH_GRAPH_CLIENT_ID and OAUTH_GRAPH_CLIENT_SECRET.
       "graph": {
