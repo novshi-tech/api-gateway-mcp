@@ -7,6 +7,7 @@ import http.server
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,8 @@ import tempfile
 import threading
 import unittest
 import urllib.parse
+import zipfile
+from xml.sax.saxutils import escape, quoteattr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKILLS = os.path.join(ROOT, "plugins", "api-gateway", "skills")
@@ -23,6 +26,7 @@ GRAPH_ALL = os.path.join(SKILLS, "microsoft-graph", "scripts", "graph_all.py")
 FREEE_ALL = os.path.join(SKILLS, "freee", "scripts", "freee_all.py")
 BM_NEXT_GRAPHQL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_graphql.py")
 BM_NEXT_ALL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_all.py")
+BM_NEXT_TEMPLATE_CHECK = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_template_check.py")
 
 TOTAL_ITEMS = 250
 
@@ -114,6 +118,45 @@ class FakeGateway(http.server.BaseHTTPRequestHandler):
                 "continuationToken": str(end) if end < TOTAL_ITEMS else None,
             }}}
         return {"data": {"echo": {"variables": variables, "actAs": self.headers.get("X-Act-As-Organization")}}}
+
+
+SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+RELATIONSHIPS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+
+def write_xlsx(path, sheets):
+    """Writes the parts of an .xlsx that bm_next_template_check.py reads.
+
+    sheets is [(name, {"A1": "text", ...}, ["A1:C2", ...table refs])]. Cells are
+    inline strings; targets are relative, the way Excel writes them.
+    """
+    with zipfile.ZipFile(path, "w") as z:
+        entries, links, table_no = [], [], 0
+        for i, (name, cells, tables) in enumerate(sheets, 1):
+            entries.append(f'<sheet name={quoteattr(name)} sheetId="{i}" r:id="rId{i}"/>')
+            links.append(f'<Relationship Id="rId{i}" Target="worksheets/sheet{i}.xml" Type="ws"/>')
+            rows = {}
+            for ref, text in cells.items():
+                rows.setdefault(int(ref.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")), []).append(
+                    f'<c r="{ref}" t="inlineStr"><is><t>{escape(text)}</t></is></c>')
+            sheet_rels, parts = [], []
+            for j, ref in enumerate(tables, 1):
+                table_no += 1
+                sheet_rels.append(f'<Relationship Id="rId{j}" Target="../tables/table{table_no}.xml" Type="table"/>')
+                parts.append(f'<tablePart r:id="rId{j}"/>')
+                z.writestr(f"xl/tables/table{table_no}.xml",
+                           f'<table xmlns="{SPREADSHEET}" id="{table_no}" name="T{table_no}" displayName="T{table_no}" ref="{ref}"/>')
+            body = "".join(f'<row r="{r}">{"".join(c)}</row>' for r, c in sorted(rows.items()))
+            z.writestr(f"xl/worksheets/sheet{i}.xml",
+                       f'<worksheet xmlns="{SPREADSHEET}" xmlns:r="{RELATIONSHIPS}"><sheetData>{body}</sheetData>'
+                       f'{"<tableParts>" + "".join(parts) + "</tableParts>" if parts else ""}</worksheet>')
+            if sheet_rels:
+                z.writestr(f"xl/worksheets/_rels/sheet{i}.xml.rels",
+                           f'<Relationships xmlns="{PACKAGE}">{"".join(sheet_rels)}</Relationships>')
+        z.writestr("xl/workbook.xml",
+                   f'<workbook xmlns="{SPREADSHEET}" xmlns:r="{RELATIONSHIPS}"><sheets>{"".join(entries)}</sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", f'<Relationships xmlns="{PACKAGE}">{"".join(links)}</Relationships>')
 
 
 class SkillScriptsTest(unittest.TestCase):
@@ -318,6 +361,72 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
 
+    def check_template(self, kind, sheets, *args):
+        write_xlsx(os.path.join(self.tmp.name, "t.xlsx"), sheets)
+        result = self.run_script(BM_NEXT_TEMPLATE_CHECK, kind, "t.xlsx", *args, check=False)
+        return result.returncode, result.stdout.decode(), result.stderr.decode()
+
+    def test_template_check_accepts_a_table_template_with_one_token_row(self):
+        code, out, _ = self.check_template("schedule", [("予定", {
+            "A1": "{{filter.name}} 作業予定", "A3": "日付", "B3": "作業",
+            "A4": "{{schedule.date}}", "B4": "{{schedule.workName}}"}, ["A3:B4"])])
+        self.assertEqual(code, 0)
+        self.assertIn("engine: table", out)
+
+    def test_template_check_rejects_unknown_tokens_with_their_cell(self):
+        code, _, err = self.check_template("schedule", [("予定", {
+            "A1": "日付", "A2": "{{schedule.date}}", "A5": "{{report.foo}}"}, ["A1:A2"])])
+        self.assertEqual(code, 1)
+        self.assertIn("予定!A5: 未知のトークン: {{report.foo}}", err)
+
+    def test_template_check_rejects_two_token_rows_in_a_table(self):
+        code, _, err = self.check_template("meter", [("検針値", {
+            "A1": "名前", "B1": "値", "A2": "{{meter.name}}", "B2": "{{meter.value}}",
+            "A3": "{{meter.name}}", "B3": "{{meter.value}}"}, ["A1:B3"])])
+        self.assertEqual(code, 1)
+        self.assertIn("検針値!A3", err)
+
+    def test_template_check_checks_tag_keys_when_given(self):
+        sheets = [("予定", {"A1": "棟", "A2": "{{schedule.tag[building]}}"}, ["A1:A2"])]
+        self.assertEqual(self.check_template("schedule", sheets, "--tag-key", "building")[0], 0)
+        code, _, err = self.check_template("schedule", sheets, "--tag-key", "floor")
+        self.assertEqual(code, 1)
+        self.assertIn("{{schedule.tag[building]}}", err)
+
+    def test_template_check_legacy_template_needs_a_token_row(self):
+        code, _, err = self.check_template("meter", [("検針表", {"A1": "{{facility.name}}"}, [])])
+        self.assertEqual(code, 1)
+        self.assertIn("トークン行がありません", err)
+        code, out, _ = self.check_template("meter", [("検針表", {"A1": "{{facility.name}}", "A2": "{{meter.name}}"}, [])])
+        self.assertEqual(code, 0)
+        self.assertIn("engine: legacy", out)
+
+    def test_template_check_fixed_cell_tokens_must_be_alone_and_not_mixed(self):
+        ok = [("検針表", {"A1": "{{report.measureDate}}", "B2": "{{meter[k-1].value}}"}, [])]
+        code, out, _ = self.check_template("meter", ok)
+        self.assertEqual((code, "engine: fixed-cell" in out), (0, True))
+        code, _, err = self.check_template("meter", [("検針表", {
+            "B2": "{{meter[k-1].value}} kWh", "B3": "{{meter.name}}", "B4": "{{meter[k-2].foo}}"}, [])])
+        self.assertEqual(code, 1)
+        self.assertIn("検針表!B2: キー付きトークンはセルに単独で", err)
+        self.assertIn("検針表!B3: 固定セル方式に繰り返し", err)
+        self.assertIn("検針表!B4: 不正なキー付きトークン", err)
+
+    def test_template_check_sheet_name_tokens(self):
+        table = {"A1": "名前", "A2": "{{meter.name}}"}
+        self.assertEqual(self.check_template("meter", [("{{report.measureDateCompact}}", table, ["A1:A2"])])[0], 0)
+        code, _, err = self.check_template("meter", [("{{meter.name}}", table, ["A1:A2"])])
+        self.assertEqual(code, 1)
+        self.assertIn("シート名に使えるのはスカラートークンだけ", err)
+        code, _, err = self.check_template("meter", [("{{facility.name}}", table, [])])
+        self.assertEqual(code, 1)
+        self.assertIn("テーブル方式と固定セル方式でだけ", err)
+
+    def test_template_check_warns_about_text_around_row_tokens(self):
+        code, out, _ = self.check_template("schedule", [("予定", {"A1": "作業", "A2": "{{schedule.workName}} 様"}, ["A1:A2"])])
+        self.assertEqual(code, 0)
+        self.assertIn("warning: 予定!A2", out)
+
     def test_scripts_find_gwlib_when_skill_dirs_are_prefixed_with_the_plugin_name(self):
         # Cowork installs a plugin's skills as "<plugin>:<skill>", e.g. "api-gateway:api-gateway".
         skills = os.path.join(self.tmp.name, "skills")
@@ -333,6 +442,45 @@ class SkillScriptsTest(unittest.TestCase):
         for skill, script, args in scripts:
             with self.subTest(script=script):
                 self.run_script(os.path.join(skills, f"api-gateway:{skill}", "scripts", script), *args)
+
+
+class SkillDocsTest(unittest.TestCase):
+    def skill_docs(self):
+        for root, _, files in os.walk(SKILLS):
+            for name in files:
+                if name.endswith(".md"):
+                    yield os.path.join(root, name)
+
+    def test_every_skill_has_a_name_and_description(self):
+        for skill in os.listdir(SKILLS):
+            with self.subTest(skill=skill), open(os.path.join(SKILLS, skill, "SKILL.md"), encoding="utf-8") as f:
+                head = f.read().split("---")[1]
+                self.assertIn(f"\nname: {skill}\n", head)
+                self.assertRegex(head, r"\ndescription: \S")
+
+    def test_relative_links_point_at_files(self):
+        for path in self.skill_docs():
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            for target in re.findall(r"\]\(([^)#]+)(?:#[^)]*)?\)", text):
+                if "://" not in target:
+                    with self.subTest(doc=os.path.relpath(path, SKILLS), link=target):
+                        self.assertTrue(os.path.exists(os.path.join(os.path.dirname(path), target)))
+
+    def test_report_template_tokens_match_the_checker(self):
+        sys.path.insert(0, os.path.dirname(BM_NEXT_TEMPLATE_CHECK))
+        try:
+            import bm_next_template_check as checker
+        finally:
+            sys.path.pop(0)
+        with open(os.path.join(SKILLS, "bm-next", "references", "report-templates.md"), encoding="utf-8") as f:
+            sections = re.split(r"^## ", f.read(), flags=re.M)
+        for kind, heading in (("schedule", "作業予定のテンプレート"), ("meter", "検針表のテンプレート")):
+            section = next(s for s in sections if s.startswith(heading))
+            documented = set(re.findall(r"^\| `\{\{([^}]+)\}\}`", section, flags=re.M))
+            expected = checker.SCALARS[kind] | checker.ROWS[kind] | ({"schedule.tag[<key>]"} if kind == "schedule" else set())
+            with self.subTest(kind=kind):
+                self.assertEqual(documented, expected)
 
 
 if __name__ == "__main__":

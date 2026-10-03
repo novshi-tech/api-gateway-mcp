@@ -1,6 +1,6 @@
 ---
 name: bm-next
-description: ビルメンNEXT(ビルメンテナンス向けの業務プラットフォーム)の GraphQL API を API ゲートウェイ経由で操作する。業務(work)・割当(assignment)・不在・パートナー・実施月・月次の業務状況、施設・メーターと検針、組織・メンバー・ロール・API キーなどの検索、一覧の取得・集計、登録・更新を扱う。「ビルメンNEXT の業務を一覧して」「今月の割当を集計して」「施設のメーター一覧を出して」「不在を登録して」などの依頼で使う。
+description: ビルメンNEXT(ビルメンテナンス向けの業務プラットフォーム)の GraphQL API を API ゲートウェイ経由で操作する。業務(work)・割当(assignment)・不在・パートナー・実施月・月次の業務状況、施設・メーターと検針、組織・メンバー・ロール・API キーなどの検索、一覧の取得・集計、登録・更新と、作業予定・検針表の Excel 帳票テンプレートの作成・登録・出力を扱う。「ビルメンNEXT の業務を一覧して」「今月の割当を集計して」「施設のメーター一覧を出して」「不在を登録して」「作業予定の Excel テンプレートを作って」「検針表のテンプレートを登録して」などの依頼で使う。
 ---
 
 # ビルメンNEXT API
@@ -49,6 +49,14 @@ python3 $BM/bm_next_all.py 'query($from: String) { works(from: $from) { results 
 | パートナー(取引先の組織) | `partners`、`organizationLinks` |
 | 施設・メーター・検針 | `facilities`、`facility`、`meters`、`meterChanges` |
 | メンバー・ロール・API キー | `members`、`roles`、`myApiKeys` |
+| Excel 帳票のテンプレート | `savedWorkFilters`、`facilityReportTemplate`、`uploadScheduleReportTemplate`、`uploadFacilityReportTemplate` |
+
+## Excel 帳票のテンプレート
+
+作業予定(保存済みフィルタごと)と検針表(施設ごと)は、登録した Excel テンプレートに差し込んで出力できる。テンプレートを作る・直す・登録する・出力を確かめるときは、[references/report-templates.md](references/report-templates.md) を読む。トークンの書き方(`{{report.month}}`、`{{schedule.date}}`、`{{meter.value}}` など)、方式(テーブル方式・旧方式・固定セル方式)、`openpyxl` での作り方、登録と出力の手順がある。
+
+- 登録の前に `scripts/bm_next_template_check.py` で、サーバーに拒否されないかを確かめる。
+- 出力は GraphQL ではなく REST(`/api/works/saved-filters/{id}/report`、`/api/meter-reading/facilities/{id}/reports/{yyyyMM}/export`)。`api-gateway` スキルの `gw_request.py` でダウンロードする。
 
 ## 注意
 
