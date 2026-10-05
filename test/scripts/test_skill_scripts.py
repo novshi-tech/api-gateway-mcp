@@ -3,6 +3,9 @@
 Run: python3 -m unittest discover -s test/scripts
 """
 import csv
+import base64
+from email import policy
+from email.parser import BytesParser
 import http.server
 import io
 import json
@@ -27,6 +30,10 @@ FREEE_ALL = os.path.join(SKILLS, "freee", "scripts", "freee_all.py")
 BM_NEXT_GRAPHQL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_graphql.py")
 BM_NEXT_ALL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_all.py")
 BM_NEXT_TEMPLATE_CHECK = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_template_check.py")
+GMAIL_ALL = os.path.join(SKILLS, "gmail", "scripts", "gmail_all.py")
+GMAIL_MIME = os.path.join(SKILLS, "gmail", "scripts", "gmail_mime.py")
+DRIVE_ALL = os.path.join(SKILLS, "google-drive", "scripts", "drive_all.py")
+CALENDAR_ALL = os.path.join(SKILLS, "google-calendar", "scripts", "calendar_all.py")
 
 TOTAL_ITEMS = 250
 
@@ -84,6 +91,27 @@ class FakeGateway(http.server.BaseHTTPRequestHandler):
             self.send(200, json.dumps(body).encode())
         elif url.path == "/api/graph/v1.0/me/elsewhere":
             self.send(200, json.dumps({"value": [], "@odata.nextLink": "https://evil.example.com/v1.0/x"}).encode())
+        elif url.path in ("/api/gmail/gmail/v1/users/me/messages", "/api/drive/drive/v3/files", "/api/calendar/calendar/v3/calendars/primary/events", "/api/calendar/calendar/v3/users/me/calendarList", "/api/calendar/calendar/v3/calendars/primary/events/series1/instances"):
+            if query.get("throttle") and not FakeGateway.throttled:
+                FakeGateway.throttled = True
+                self.send(429, b"{}", headers={"Retry-After": "0"})
+                return
+            key = "items" if "/api/calendar/" in url.path else ("messages" if "/api/gmail/" in url.path else "files")
+            start = int(query.get("pageToken", 0))
+            rows = [{"id": i, "name": f"file{i}", "threadId": f"thread{i}"} for i in range(start, min(start + 100, TOTAL_ITEMS))]
+            if query.get("empty") and start == 100:
+                rows = []
+            body = {key: rows}
+            if start + 100 < TOTAL_ITEMS:
+                body["nextPageToken"] = str(start + 100)
+            if query.get("loop"):
+                body["nextPageToken"] = "100"
+            if query.get("incomplete"):
+                body["incompleteSearch"] = True
+            # Model Google's partial-response field selection for the cursor.
+            if "fields" in query and query["fields"] != "*" and "nextPageToken" not in query["fields"]:
+                body.pop("nextPageToken", None)
+            self.send(200, json.dumps(body).encode())
         elif url.path == "/api/freee/api/1/deals":
             offset, limit = int(query.get("offset", 0)), int(query.get("limit", 20))
             deals = [{"id": i, "amount": i * 10} for i in range(offset, min(offset + limit, TOTAL_ITEMS))]
@@ -427,6 +455,100 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("warning: 予定!A2", out)
 
+    def test_google_lists_keep_query_and_gateway_auth_across_pages(self):
+        for script, path, key in ((GMAIL_ALL, "/gmail/v1/users/me/messages", "messages"), (DRIVE_ALL, "/drive/v3/files", "files"), (CALENDAR_ALL, "/calendar/v3/calendars/primary/events", "items")):
+            with self.subTest(script=script):
+                FakeGateway.requests = []
+                out = self.run_script(script, path, "-q", "q=請求書", "-q", f"fields={key}(id)")
+                self.assertEqual([row["id"] for row in json.loads(out.stdout)], list(range(TOTAL_ITEMS)))
+                queries = [dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(r["path"]).query)) for r in FakeGateway.requests]
+                self.assertEqual([q.get("pageToken") for q in queries], [None, "100", "200"])
+                self.assertTrue(all(q["q"] == "請求書" and "nextPageToken" in q["fields"] for q in queries))
+                self.assertTrue(all(r["headers"]["Authorization"] == "Bearer tok" for r in FakeGateway.requests))
+                self.assertTrue(all(r["headers"]["User-Agent"].startswith("api-gateway-client") for r in FakeGateway.requests))
+
+    def test_google_lists_continue_after_empty_page(self):
+        for script, path in ((DRIVE_ALL, "/drive/v3/files"), (CALENDAR_ALL, "/calendar/v3/calendars/primary/events")):
+            with self.subTest(script=script):
+                FakeGateway.requests = []
+                out = self.run_script(script, path, "-q", "empty=1")
+                self.assertEqual([r["id"] for r in json.loads(out.stdout)], list(range(100)) + list(range(200, 250)))
+                self.assertEqual(len(FakeGateway.requests), 3)
+
+    def test_calendar_lists_and_instances_use_items_array(self):
+        for path in ("/calendar/v3/users/me/calendarList", "/calendar/v3/calendars/primary/events/series1/instances"):
+            with self.subTest(path=path):
+                out = self.run_script(CALENDAR_ALL, path, "--csv", "id", "--max-pages", "1")
+                rows = list(csv.reader(io.StringIO(out.stdout.decode())))
+                self.assertEqual(rows[:2], [["id"], ["0"]])
+                self.assertEqual(len(rows), 101)
+                self.assertIn("more items remain", out.stderr.decode())
+
+    def test_calendar_preserves_period_and_timezone_on_every_page(self):
+        params = {"timeMin": "2026-10-01T00:00:00+09:00", "timeMax": "2026-10-08T00:00:00+09:00", "timeZone": "Asia/Tokyo", "singleEvents": "true", "orderBy": "startTime"}
+        args = [arg for key, value in params.items() for arg in ("-q", f"{key}={value}")]
+        out = self.run_script(CALENDAR_ALL, "/calendar/v3/calendars/primary/events", *args)
+        self.assertEqual(len(json.loads(out.stdout)), TOTAL_ITEMS)
+        self.assertEqual(len(FakeGateway.requests), 3)
+        for req in FakeGateway.requests:
+            query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(req["path"]).query))
+            self.assertEqual({key: query[key] for key in params}, params)
+
+    def test_google_list_csv_and_partial_result_warnings(self):
+        out = self.run_script(DRIVE_ALL, "/drive/v3/files", "--max-pages", "1", "--csv", "id,name", "-q", "incomplete=1")
+        rows = list(csv.reader(io.StringIO(out.stdout.decode())))
+        self.assertEqual(rows[:2], [["id", "name"], ["0", "file0"]])
+        self.assertIn("incompleteSearch=true", out.stderr.decode())
+        self.assertIn("more items remain", out.stderr.decode())
+
+    def test_google_list_retries_and_stops_cursor_loop(self):
+        self.run_script(GMAIL_ALL, "/gmail/v1/users/me/messages", "-q", "throttle=1", "--max-pages", "1")
+        self.assertEqual(len(FakeGateway.requests), 2)
+        FakeGateway.requests = []
+        result = self.run_script(DRIVE_ALL, "/drive/v3/files", "-q", "loop=1", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("repeated nextPageToken", result.stderr.decode())
+        self.assertEqual(len(FakeGateway.requests), 2)
+
+    def test_google_list_rejects_invalid_page_limit_before_requests(self):
+        result = self.run_script(GMAIL_ALL, "/gmail/v1/users/me/messages", "--max-pages", "0", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(FakeGateway.requests, [])
+
+    def test_gmail_mime_builds_unicode_reply_draft_with_attachment_locally(self):
+        body_path = os.path.join(self.tmp.name, "body.txt")
+        attachment = os.path.join(self.tmp.name, "請求書.pdf")
+        with open(body_path, "w", encoding="utf-8") as f:
+            f.write("請求書をお送りします。")
+        with open(attachment, "wb") as f:
+            f.write(bytes(range(256)))
+        out = self.run_script(GMAIL_MIME, "build", "--from", "sender@example.com", "--to", "user@example.com", "--to", "other@example.com", "--subject", "Re: 請求書", "--body", "@" + body_path, "--attach", attachment, "--thread-id", "thread1", "--in-reply-to", "<original@example.com>", "--draft")
+        data = json.loads(out.stdout)["message"]
+        self.assertEqual(data["threadId"], "thread1")
+        message = BytesParser(policy=policy.default).parsebytes(base64.urlsafe_b64decode(data["raw"]))
+        self.assertEqual(str(message["Subject"]), "Re: 請求書")
+        self.assertEqual(str(message["References"]), "<original@example.com>")
+        self.assertIn("other@example.com", str(message["To"]))
+        self.assertEqual(message.get_body(preferencelist=("plain",)).get_content().strip(), "請求書をお送りします。")
+        part = next(message.iter_attachments())
+        self.assertEqual(part.get_filename(), "請求書.pdf")
+        self.assertEqual(part.get_payload(decode=True), bytes(range(256)))
+        self.assertEqual(FakeGateway.requests, [])
+
+    def test_gmail_decode_restores_unpadded_binary_attachment(self):
+        payload = bytes(range(256))
+        path = os.path.join(self.tmp.name, "attachment.json")
+        with open(path, "w") as f:
+            json.dump({"data": base64.urlsafe_b64encode(payload).decode().rstrip("=")}, f)
+        self.run_script(GMAIL_MIME, "decode", path, "-o", "attachment.pdf")
+        with open(os.path.join(self.tmp.name, "attachment.pdf"), "rb") as f:
+            self.assertEqual(f.read(), payload)
+
+    def test_gmail_reply_requires_thread_and_rfc_message_id(self):
+        result = self.run_script(GMAIL_MIME, "build", "--from", "a@example.com", "--to", "b@example.com", "--subject", "Reply", "--body", "body", "--thread-id", "thread", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--in-reply-to", result.stderr.decode())
+
     def test_scripts_find_gwlib_when_skill_dirs_are_prefixed_with_the_plugin_name(self):
         # Cowork installs a plugin's skills as "<plugin>:<skill>", e.g. "api-gateway:api-gateway".
         skills = os.path.join(self.tmp.name, "skills")
@@ -438,6 +560,9 @@ class SkillScriptsTest(unittest.TestCase):
             ("microsoft-graph", "graph_all.py", ["/v1.0/me/messages", "--max-pages", "1"]),
             ("bm-next", "bm_next_graphql.py", ["{ echo }"]),
             ("bm-next", "bm_next_all.py", ["{ works }", "--max-pages", "1"]),
+            ("gmail", "gmail_all.py", ["/gmail/v1/users/me/messages", "--max-pages", "1"]),
+            ("google-drive", "drive_all.py", ["/drive/v3/files", "--max-pages", "1"]),
+            ("google-calendar", "calendar_all.py", ["/calendar/v3/users/me/calendarList", "--max-pages", "1"]),
         ]
         for skill, script, args in scripts:
             with self.subTest(script=script):

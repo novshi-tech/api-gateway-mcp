@@ -31,6 +31,10 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v
 
 2026-09 時点では、個人の Cowork で GitHub のマーケットプレイスからのインストールが同期に失敗しました(Claude Code では同じマーケットプレイスからインストールできます)。その場合は zip を使ってください。
 
+Gmail (`gmail`)、Google Drive (`google-drive`)、Google Calendar (`google-calendar`) のスキルも同梱しています。ゲートウェイのサービス名はそれぞれ `gmail` / `drive` / `calendar` です。各スキルは認証情報のラベルで接続アカウントを選び、一覧のページングに対応します。Gmail には送信・返信・下書き用の MIME 生成と添付ファイルの復号、Drive には共有ドライブ・ダウンロード・エクスポート・アップロード、Calendar には予定の検索・作成・更新・空き時間の確認の手順があります。
+
+gBizINFO(`gbizinfo` スキル)は、経済産業省の法人情報の REST API(v2)で法人を検索し、基本情報・財務・補助金などを取得します。ゲートウェイのサービス名は `gbizinfo` で、認証情報には gBizINFO の Web API 利用申請で取得した API トークンを登録します(`wrangler.example.jsonc` に設定例があります)。
+
 board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
 
 ビルメンNEXT(`bm-next` スキル)を使うには、`SERVICES` に次を足します(`wrangler.example.jsonc` には載せていません)。GraphQL のリファレンスは `tools/gen-bm-next-reference.py` で、公開のスキーマから生成しています。
@@ -83,6 +87,28 @@ npx wrangler secret put OAUTH_FREEE_CLIENT_SECRET
 ```
 
 Microsoft Graph は、サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`wrangler.example.jsonc` の `scope` にある委任のアクセス許可を付けて、管理者の同意を与えます。
+
+Gmail (`gmail`) と Google Drive (`drive`) は、Google Cloud のプロジェクトで Gmail API と Google Drive API を有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `wrangler.example.jsonc` のスコープを設定します。同じ OAuth クライアントを両サービスに使うこともできますが、シークレットはサービスごとに登録します。
+
+```sh
+npx wrangler secret put OAUTH_GMAIL_CLIENT_ID
+npx wrangler secret put OAUTH_GMAIL_CLIENT_SECRET
+npx wrangler secret put OAUTH_DRIVE_CLIENT_ID
+npx wrangler secret put OAUTH_DRIVE_CLIENT_SECRET
+```
+
+Gmail の `gmail.modify` はメールの読み書き・送信、Drive の `drive` は既存ファイルを含む全ファイルの閲覧・管理に使います。読み取り専用にする場合は、それぞれ `gmail.readonly` / `drive.readonly` に変更してください。スコープの詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes) と [Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) の公式ドキュメントを参照してください。`authorize_params` の `access_type: offline` と `prompt: consent` は、リフレッシュトークンを取得するための設定です。
+
+デプロイ後、Web 画面からサービスごとに接続します。REST の呼び出し先は、例えば Gmail が `/api/gmail/gmail/v1/users/me/messages`、Drive が `/api/drive/drive/v3/files`、Drive のアップロードが `/api/drive/upload/drive/v3/files` です。
+
+Google Calendar (`calendar`) は、同じ Google Cloud プロジェクトで Calendar API を有効にし、OAuth 同意画面に `wrangler.example.jsonc` の3つのスコープを追加します。予定の読み書き、カレンダー一覧の参照、アクセス可能なカレンダーの空き時間の参照を許可する設定です。Gmail / Drive と同じ OAuth クライアントを使えますが、次の名前でもシークレットを登録し、Web 画面から Calendar に接続します。
+
+```sh
+npx wrangler secret put OAUTH_CALENDAR_CLIENT_ID
+npx wrangler secret put OAUTH_CALENDAR_CLIENT_SECRET
+```
+
+REST の例は `/api/calendar/calendar/v3/users/me/calendarList` と `/api/calendar/calendar/v3/calendars/primary/events` です。スコープの詳細は [Calendar の公式ドキュメント](https://developers.google.com/workspace/calendar/api/auth)を参照してください。
 
 アクセストークンは期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、画面に「再接続」が出ます。
 

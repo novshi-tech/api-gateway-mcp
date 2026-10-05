@@ -1,8 +1,8 @@
 {
   "name": "api-gateway",
   "displayName": "API Gateway",
-  "version": "0.4.0",
-  "description": "API ゲートウェイ経由で board・freee・Microsoft Graph・ビルメンNEXT などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
+  "version": "0.7.0",
+  "description": "API ゲートウェイ経由で board・freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・ビルメンNEXT・gBizINFO などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
   "author": {
     "name": "novshi-tech"
   },

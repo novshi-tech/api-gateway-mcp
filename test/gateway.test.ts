@@ -48,6 +48,20 @@ describe("vault", () => {
 });
 
 describe("proxy", () => {
+  it("sends the gBizINFO API token in its own header", async () => {
+    const cred = await vaultFor(env, alice).add("gbizinfo", "main", { "x-hojininfo-api-token": "gbiz-token" });
+    expect("error" in cred).toBe(false);
+    const id = (cred as { id: string }).id;
+    const res = await SELF.fetch(`${BASE}/api/gbizinfo/hojin/v2/hojin?name=%E3%83%86%E3%82%B9%E3%83%88`, {
+      headers: { authorization: `Bearer ${await apiToken(alice, { gbizinfo: id })}` },
+    });
+    expect(res.status).toBe(200);
+    const echoed = (await res.json()) as { url: string; headers: Record<string, string> };
+    expect(echoed.url).toBe("https://api.info.gbiz.go.jp/hojin/v2/hojin?name=%E3%83%86%E3%82%B9%E3%83%88");
+    expect(echoed.headers["x-hojininfo-api-token"]).toBe("gbiz-token");
+    expect(echoed.headers.authorization).toBeUndefined();
+  });
+
   it("forwards to the upstream with injected credentials", async () => {
     const cred = await addBoard(alice);
     const res = await SELF.fetch(`${BASE}/api/board/v1/clients?page=2`, {
@@ -140,7 +154,7 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board", "freee", "graph"]);
+    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "graph"]);
     expect(listed.credentials).toEqual([expect.objectContaining({ id: cred.id, service: "board" })]);
   });
 
