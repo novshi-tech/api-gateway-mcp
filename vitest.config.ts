@@ -3,6 +3,24 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { defineConfig } from "vitest/config";
+import { experimental_readRawConfig } from "wrangler";
+
+const CONFIG = "./wrangler.example.jsonc";
+// The example's services, plus "board" for tests of a service that takes two
+// headers, one with a prefix. Board itself is no longer in the example.
+const SERVICES = {
+  board: {
+    base_url: "https://api.the-board.jp",
+    auth: {
+      type: "headers",
+      headers: [
+        { name: "x-api-key", label: "API キー" },
+        { name: "authorization", label: "API トークン", prefix: "Bearer " },
+      ],
+    },
+  },
+  ...(experimental_readRawConfig({ config: CONFIG }).rawConfig.vars?.SERVICES as object),
+};
 
 const IDP = "https://idp.test";
 const OIDC_ISSUER = `${IDP}/tenant/v2.0`;
@@ -117,9 +135,10 @@ async function upstream(request: Request): Promise<Response> {
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      wrangler: { configPath: "./wrangler.example.jsonc" },
+      wrangler: { configPath: CONFIG },
       miniflare: {
         bindings: {
+          SERVICES,
           SIGNING_KEY: "test-signing-key-test-signing-key-0123456789",
           ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           OIDC_CLIENT_SECRET: "test",

@@ -8,8 +8,8 @@ connector's `issue_token` tool:
     export GW_BASE_URL=...         # "base_url", e.g. https://gw.example.com/api
 
 Examples:
-    gw_request.py GET board /v1/projects -q per_page=5
-    gw_request.py POST board /v1/clients --json '{"name": "..."}'
+    gw_request.py GET freee /api/1/companies
+    gw_request.py POST freee /api/1/partners --json '{"company_id": 1, "name": "..."}'
     gw_request.py GET graph /v1.0/drives/ID/items/ID/content -o invoice.pdf
     gw_request.py POST freee /api/1/receipts -f company_id=1 --file receipt=invoice.pdf
 

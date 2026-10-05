@@ -18,12 +18,12 @@ Claude Cowork や ChatGPT から、既存のコネクタではできない API �
 4. サンドボックス内のスクリプトは、そのトークンで REST を呼びます。
 
 ```sh
-curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v1/clients"
+curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/api/1/companies"
 ```
 
 ## スキル(プラグイン)
 
-このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。`plugins/api-gateway` に、ゲートウェイの共通手順(`api-gateway`)とサービス別のスキル(`board` など)が入っています。プラグインにはコネクタの URL を含めていないので、どのデプロイでも同じものを使えます。
+このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。`plugins/api-gateway` に、ゲートウェイの共通手順(`api-gateway`)と、よく使うサービスのスキル(freee、Microsoft Graph、Gmail、Google Drive、Google Calendar、gBizINFO)が入っています。プラグインにはコネクタの URL を含めていないので、どのデプロイでも同じものを使えます。
 
 - Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` をインストールします。
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
@@ -35,17 +35,7 @@ Gmail (`gmail`)、Google Drive (`google-drive`)、Google Calendar (`google-calen
 
 gBizINFO(`gbizinfo` スキル)は、経済産業省の法人情報の REST API(v2)で法人を検索し、基本情報・財務・補助金などを取得します。ゲートウェイのサービス名は `gbizinfo` で、認証情報には gBizINFO の Web API 利用申請で取得した API トークンを登録します(`wrangler.example.jsonc` に設定例があります)。
 
-board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
-
-ビルメンNEXT(`bm-next` スキル)を使うには、`SERVICES` に次を足します(`wrangler.example.jsonc` には載せていません)。GraphQL のリファレンスは `tools/gen-bm-next-reference.py` で、公開のスキーマから生成しています。
-
-```jsonc
-"bm-next": {
-  "display_name": "ビルメンNEXT",
-  "base_url": "https://api.bm-next.ai",
-  "auth": { "type": "headers", "headers": [{ "name": "x-api-key", "label": "ビルメンNEXT の API キー" }] }
-}
-```
+ほかのサービスは、自分のプラグインにスキルを作って足します(手順は下の「Claude Code で整える」)。業務に寄ったサービスのスキルは、このリポジトリに入れず、別のプラグインに分けて運用するのがおすすめです。
 
 スクリプトでは `User-Agent` を明示してください。Python の `urllib` の既定値などは、Cloudflare に Error 1010 で拒否されることがあります。
 
@@ -112,15 +102,14 @@ REST の例は `/api/calendar/calendar/v3/users/me/calendarList` と `/api/calen
 
 アクセストークンは期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、画面に「再接続」が出ます。
 
-### GitHub Actions でデプロイする
+## Claude Code で整える
 
-`.github/workflows/ci.yml` は、main に push するとテストのあとにデプロイします。リポジトリの Environment `production` に、次のシークレットを登録します。
+このリポジトリには、作業用のエージェントスキルを `.agents/skills` に置いています(`.claude/skills` はそこへのリンクです)。Claude Code でリポジトリを開いて頼むと、手順に沿って対話で進めます。
 
-- `CLOUDFLARE_API_TOKEN`: 「Edit Cloudflare Workers」テンプレートで作った API トークン
-- `CLOUDFLARE_ACCOUNT_ID`: Cloudflare のアカウント ID
-- `WRANGLER_CONFIG`: `wrangler.jsonc` の中身まるごと
+- `deploy`: 自分の Cloudflare アカウントへの初回のデプロイ(IdP のアプリ登録、`wrangler.jsonc`、KV、シークレット、コネクタの追加)と、再デプロイ
+- `add-service`: 新しいサービスを足す(認証方式の調査、`SERVICES` の定義、OAuth のシークレット、サービス別のスキルの作成)
 
-Worker のシークレット(`SIGNING_KEY` など)は Cloudflare 側にあるので、ここには要りません。
+例: 「ゲートウェイをデプロイしたい」「kintone の API をゲートウェイに足して」
 
 ## 開発
 
