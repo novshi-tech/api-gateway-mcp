@@ -33,6 +33,8 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/board/v
 
 Gmail (`gmail`)、Google Drive (`google-drive`)、Google Calendar (`google-calendar`) のスキルも同梱しています。ゲートウェイのサービス名はそれぞれ `gmail` / `drive` / `calendar` です。各スキルは認証情報のラベルで接続アカウントを選び、一覧のページングに対応します。Gmail には送信・返信・下書き用の MIME 生成と添付ファイルの復号、Drive には共有ドライブ・ダウンロード・エクスポート・アップロード、Calendar には予定の検索・作成・更新・空き時間の確認の手順があります。
 
+gBizINFO(`gbizinfo` スキル)は、経済産業省の法人情報の REST API(v2)で法人を検索し、基本情報・財務・補助金などを取得します。ゲートウェイのサービス名は `gbizinfo` で、認証情報には gBizINFO の Web API 利用申請で取得した API トークンを登録します(`wrangler.example.jsonc` に設定例があります)。
+
 board のエンドポイント一覧は `tools/gen-board-reference.py` で board の OpenAPI から生成しています。
 
 ビルメンNEXT(`bm-next` スキル)を使うには、`SERVICES` に次を足します(`wrangler.example.jsonc` には載せていません)。GraphQL のリファレンスは `tools/gen-bm-next-reference.py` で、公開のスキーマから生成しています。

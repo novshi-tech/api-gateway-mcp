@@ -10,7 +10,7 @@
     {
       "name": "api-gateway",
       "source": "./plugins/api-gateway",
-      "description": "API ゲートウェイ経由で board・freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・ビルメンNEXT などの外部サービスの API を呼び出すスキル"
+      "description": "API ゲートウェイ経由で board・freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・ビルメンNEXT・gBizINFO などの外部サービスの API を呼び出すスキル"
     }
   ]
 }

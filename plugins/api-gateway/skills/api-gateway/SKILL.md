@@ -1,6 +1,6 @@
 ---
 name: api-gateway
-description: API ゲートウェイ(API Gateway MCP コネクタ)経由で外部サービスの API を呼び出すための共通手順。認証情報の確認、短命トークンの発行、スクリプトからの REST 呼び出し、ファイルのダウンロードとアップロードを扱う。Board、freee、Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)、Gmail、Google Drive、Google Calendar、ビルメンNEXT(GraphQL)など、ゲートウェイに登録されたサービスの API を叩くときは、サービス別のスキルと合わせて必ず使う。
+description: API ゲートウェイ(API Gateway MCP コネクタ)経由で外部サービスの API を呼び出すための共通手順。認証情報の確認、短命トークンの発行、スクリプトからの REST 呼び出し、ファイルのダウンロードとアップロードを扱う。Board、freee、Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)、Gmail、Google Drive、Google Calendar、ビルメンNEXT(GraphQL)、gBizINFO など、ゲートウェイに登録されたサービスの API を叩くときは、サービス別のスキルと合わせて必ず使う。
 ---
 
 # API ゲートウェイの使い方

@@ -35,6 +35,15 @@
           ]
         }
       },
+      // gBizINFO: the API token comes from the Web API application at info.gbiz.go.jp.
+      "gbizinfo": {
+        "display_name": "gBizINFO",
+        "base_url": "https://api.info.gbiz.go.jp",
+        "auth": {
+          "type": "headers",
+          "headers": [{ "name": "X-hojinInfo-api-token", "label": "gBizINFO の API トークン" }]
+        }
+      },
       // OAuth: register ${PUBLIC_URL}/connect/callback as the redirect URI and set
       // OAUTH_FREEE_CLIENT_ID and OAUTH_FREEE_CLIENT_SECRET with wrangler secret put.
       "freee": {
