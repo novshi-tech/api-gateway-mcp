@@ -1,8 +1,10 @@
 """Shared helpers for scripts that call upstream APIs through the API gateway.
 
-Service skills import this from their own scripts. Look at how board_all.py
+Service skills import this from their own scripts. Look at how freee_all.py
 puts this directory on sys.path: Cowork names it "api-gateway:api-gateway", so
-the path cannot be hard-coded.
+the path cannot be hard-coded. A skill in another plugin cannot rely on this,
+since Claude Code installs each plugin in its own tree; copy this file next to
+its scripts instead.
 """
 import argparse
 import csv

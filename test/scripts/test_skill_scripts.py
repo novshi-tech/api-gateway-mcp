@@ -18,18 +18,12 @@ import tempfile
 import threading
 import unittest
 import urllib.parse
-import zipfile
-from xml.sax.saxutils import escape, quoteattr
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKILLS = os.path.join(ROOT, "plugins", "api-gateway", "skills")
 GW_REQUEST = os.path.join(SKILLS, "api-gateway", "scripts", "gw_request.py")
-BOARD_ALL = os.path.join(SKILLS, "board", "scripts", "board_all.py")
 GRAPH_ALL = os.path.join(SKILLS, "microsoft-graph", "scripts", "graph_all.py")
 FREEE_ALL = os.path.join(SKILLS, "freee", "scripts", "freee_all.py")
-BM_NEXT_GRAPHQL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_graphql.py")
-BM_NEXT_ALL = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_all.py")
-BM_NEXT_TEMPLATE_CHECK = os.path.join(SKILLS, "bm-next", "scripts", "bm_next_template_check.py")
 GMAIL_ALL = os.path.join(SKILLS, "gmail", "scripts", "gmail_all.py")
 GMAIL_MIME = os.path.join(SKILLS, "gmail", "scripts", "gmail_mime.py")
 DRIVE_ALL = os.path.join(SKILLS, "google-drive", "scripts", "drive_all.py")
@@ -39,7 +33,6 @@ TOTAL_ITEMS = 250
 
 
 GRAPH_PAGE = 100
-BM_NEXT_PAGE = 100
 
 
 class FakeGateway(http.server.BaseHTTPRequestHandler):
@@ -126,65 +119,7 @@ class FakeGateway(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         self.record(body)
-        if urllib.parse.urlsplit(self.path).path == "/api/bm-next/graphql":
-            self.send(200, json.dumps(self.graphql(json.loads(body))).encode())
-            return
         self.send(201, json.dumps({"ok": True}).encode())
-
-    def graphql(self, request):
-        query, variables = request["query"], request.get("variables") or {}
-        if "boom" in query:
-            # ビルメンNEXT answers GraphQL errors with HTTP 200.
-            return {"errors": [{"message": "boom", "extensions": {"code": "AUTH_NOT_AUTHENTICATED"}}], "data": None}
-        if "notpaged" in query:
-            return {"data": {"myScopes": ["a"]}}
-        if "works" in query:
-            start = int(variables.get("from") or 0)
-            end = min(start + BM_NEXT_PAGE, TOTAL_ITEMS)
-            return {"data": {"works": {
-                "results": [{"id": f"w{i}", "name": f"work {i}"} for i in range(start, end)],
-                "continuationToken": str(end) if end < TOTAL_ITEMS else None,
-            }}}
-        return {"data": {"echo": {"variables": variables, "actAs": self.headers.get("X-Act-As-Organization")}}}
-
-
-SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-RELATIONSHIPS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-PACKAGE = "http://schemas.openxmlformats.org/package/2006/relationships"
-
-
-def write_xlsx(path, sheets):
-    """Writes the parts of an .xlsx that bm_next_template_check.py reads.
-
-    sheets is [(name, {"A1": "text", ...}, ["A1:C2", ...table refs])]. Cells are
-    inline strings; targets are relative, the way Excel writes them.
-    """
-    with zipfile.ZipFile(path, "w") as z:
-        entries, links, table_no = [], [], 0
-        for i, (name, cells, tables) in enumerate(sheets, 1):
-            entries.append(f'<sheet name={quoteattr(name)} sheetId="{i}" r:id="rId{i}"/>')
-            links.append(f'<Relationship Id="rId{i}" Target="worksheets/sheet{i}.xml" Type="ws"/>')
-            rows = {}
-            for ref, text in cells.items():
-                rows.setdefault(int(ref.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")), []).append(
-                    f'<c r="{ref}" t="inlineStr"><is><t>{escape(text)}</t></is></c>')
-            sheet_rels, parts = [], []
-            for j, ref in enumerate(tables, 1):
-                table_no += 1
-                sheet_rels.append(f'<Relationship Id="rId{j}" Target="../tables/table{table_no}.xml" Type="table"/>')
-                parts.append(f'<tablePart r:id="rId{j}"/>')
-                z.writestr(f"xl/tables/table{table_no}.xml",
-                           f'<table xmlns="{SPREADSHEET}" id="{table_no}" name="T{table_no}" displayName="T{table_no}" ref="{ref}"/>')
-            body = "".join(f'<row r="{r}">{"".join(c)}</row>' for r, c in sorted(rows.items()))
-            z.writestr(f"xl/worksheets/sheet{i}.xml",
-                       f'<worksheet xmlns="{SPREADSHEET}" xmlns:r="{RELATIONSHIPS}"><sheetData>{body}</sheetData>'
-                       f'{"<tableParts>" + "".join(parts) + "</tableParts>" if parts else ""}</worksheet>')
-            if sheet_rels:
-                z.writestr(f"xl/worksheets/_rels/sheet{i}.xml.rels",
-                           f'<Relationships xmlns="{PACKAGE}">{"".join(sheet_rels)}</Relationships>')
-        z.writestr("xl/workbook.xml",
-                   f'<workbook xmlns="{SPREADSHEET}" xmlns:r="{RELATIONSHIPS}"><sheets>{"".join(entries)}</sheets></workbook>')
-        z.writestr("xl/_rels/workbook.xml.rels", f'<Relationships xmlns="{PACKAGE}">{"".join(links)}</Relationships>')
 
 
 class SkillScriptsTest(unittest.TestCase):
@@ -262,21 +197,6 @@ class SkillScriptsTest(unittest.TestCase):
         result = subprocess.run([sys.executable, GW_REQUEST, "GET", "board", "/v1"], env=env, capture_output=True)
         self.assertNotEqual(result.returncode, 0)
 
-    def test_board_all_fetches_every_page(self):
-        self.run_script(BOARD_ALL, "/v1/projects", "-q", "order_status_in[]=4", "-o", "all.json")
-        with open(os.path.join(self.tmp.name, "all.json"), encoding="utf-8") as f:
-            items = json.load(f)
-        self.assertEqual([i["id"] for i in items], list(range(TOTAL_ITEMS)))
-        self.assertEqual(len(FakeGateway.requests), 3)
-        self.assertTrue(all("order_status_in%5B%5D=4" in r["path"] for r in FakeGateway.requests))
-
-    def test_board_all_csv(self):
-        out = self.run_script(BOARD_ALL, "/v1/projects", "--csv", "id,name")
-        rows = list(csv.reader(io.StringIO(out.stdout.decode())))
-        self.assertEqual(rows[0], ["id", "name"])
-        self.assertEqual(rows[1], ["0", "p0"])
-        self.assertEqual(len(rows), TOTAL_ITEMS + 1)
-
     def test_path_and_query_are_percent_encoded(self):
         self.run_script(
             GW_REQUEST, "GET", "graph", "/v1.0/me/drive/root:/請求書 2026:/children", "-q", "$filter=isRead eq false",
@@ -339,121 +259,6 @@ class SkillScriptsTest(unittest.TestCase):
         result = self.run_script(FREEE_ALL, "/api/1/ambiguous", "-q", "company_id=1", check=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--key", result.stderr.decode())
-
-    def test_bm_next_graphql_sends_query_variables_and_org_header(self):
-        out = self.run_script(BM_NEXT_GRAPHQL, "{ echo }", "--vars", '{"year": 2026}', "--act-as", "org-1")
-        self.assertEqual(json.loads(out.stdout), {"echo": {"variables": {"year": 2026}, "actAs": "org-1"}})
-        req = FakeGateway.requests[0]
-        self.assertEqual(req["method"], "POST")
-        self.assertEqual(req["path"], "/api/bm-next/graphql")
-        self.assertEqual(req["headers"]["Authorization"], "Bearer tok")
-        self.assertEqual(req["headers"]["Content-Type"], "application/json")
-        self.assertIn("api-gateway-client", req["headers"]["User-Agent"])
-        self.assertEqual(json.loads(req["body"])["query"], "{ echo }")
-
-    def test_bm_next_graphql_reads_query_and_vars_from_files(self):
-        for name, text in (("q.graphql", "{ echo }"), ("v.json", '{"month": 9}')):
-            with open(os.path.join(self.tmp.name, name), "w", encoding="utf-8") as f:
-                f.write(text)
-        out = self.run_script(BM_NEXT_GRAPHQL, "@q.graphql", "--vars", "@v.json")
-        self.assertEqual(json.loads(out.stdout)["echo"]["variables"], {"month": 9})
-        self.assertIsNone(json.loads(out.stdout)["echo"]["actAs"])
-
-    def test_bm_next_graphql_exits_non_zero_on_graphql_errors_despite_http_200(self):
-        result = self.run_script(BM_NEXT_GRAPHQL, "{ boom }", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
-
-    def test_bm_next_all_follows_continuation_token_as_from(self):
-        self.run_script(BM_NEXT_ALL, "query($from: String) { works(from: $from) { results { id } continuationToken } }", "-o", "works.json")
-        with open(os.path.join(self.tmp.name, "works.json"), encoding="utf-8") as f:
-            items = json.load(f)
-        self.assertEqual([i["id"] for i in items], [f"w{i}" for i in range(TOTAL_ITEMS)])
-        sent = [json.loads(r["body"]).get("variables", {}).get("from") for r in FakeGateway.requests]
-        self.assertEqual(sent, [None, "100", "200"])
-
-    def test_bm_next_all_keeps_other_variables_and_csv(self):
-        out = self.run_script(BM_NEXT_ALL, "{ works }", "--vars", '{"name": "x"}', "--csv", "id,name")
-        rows = list(csv.reader(io.StringIO(out.stdout.decode())))
-        self.assertEqual(rows[:2], [["id", "name"], ["w0", "work 0"]])
-        self.assertEqual(len(rows), TOTAL_ITEMS + 1)
-        self.assertTrue(all(json.loads(r["body"])["variables"]["name"] == "x" for r in FakeGateway.requests))
-
-    def test_bm_next_all_rejects_a_query_that_is_not_a_page(self):
-        result = self.run_script(BM_NEXT_ALL, "{ notpaged }", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("continuationToken", result.stderr.decode())
-
-    def test_bm_next_all_exits_non_zero_on_graphql_errors(self):
-        result = self.run_script(BM_NEXT_ALL, "{ boom }", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("AUTH_NOT_AUTHENTICATED", result.stderr.decode())
-
-    def check_template(self, kind, sheets, *args):
-        write_xlsx(os.path.join(self.tmp.name, "t.xlsx"), sheets)
-        result = self.run_script(BM_NEXT_TEMPLATE_CHECK, kind, "t.xlsx", *args, check=False)
-        return result.returncode, result.stdout.decode(), result.stderr.decode()
-
-    def test_template_check_accepts_a_table_template_with_one_token_row(self):
-        code, out, _ = self.check_template("schedule", [("予定", {
-            "A1": "{{filter.name}} 作業予定", "A3": "日付", "B3": "作業",
-            "A4": "{{schedule.date}}", "B4": "{{schedule.workName}}"}, ["A3:B4"])])
-        self.assertEqual(code, 0)
-        self.assertIn("engine: table", out)
-
-    def test_template_check_rejects_unknown_tokens_with_their_cell(self):
-        code, _, err = self.check_template("schedule", [("予定", {
-            "A1": "日付", "A2": "{{schedule.date}}", "A5": "{{report.foo}}"}, ["A1:A2"])])
-        self.assertEqual(code, 1)
-        self.assertIn("予定!A5: 未知のトークン: {{report.foo}}", err)
-
-    def test_template_check_rejects_two_token_rows_in_a_table(self):
-        code, _, err = self.check_template("meter", [("検針値", {
-            "A1": "名前", "B1": "値", "A2": "{{meter.name}}", "B2": "{{meter.value}}",
-            "A3": "{{meter.name}}", "B3": "{{meter.value}}"}, ["A1:B3"])])
-        self.assertEqual(code, 1)
-        self.assertIn("検針値!A3", err)
-
-    def test_template_check_checks_tag_keys_when_given(self):
-        sheets = [("予定", {"A1": "棟", "A2": "{{schedule.tag[building]}}"}, ["A1:A2"])]
-        self.assertEqual(self.check_template("schedule", sheets, "--tag-key", "building")[0], 0)
-        code, _, err = self.check_template("schedule", sheets, "--tag-key", "floor")
-        self.assertEqual(code, 1)
-        self.assertIn("{{schedule.tag[building]}}", err)
-
-    def test_template_check_legacy_template_needs_a_token_row(self):
-        code, _, err = self.check_template("meter", [("検針表", {"A1": "{{facility.name}}"}, [])])
-        self.assertEqual(code, 1)
-        self.assertIn("トークン行がありません", err)
-        code, out, _ = self.check_template("meter", [("検針表", {"A1": "{{facility.name}}", "A2": "{{meter.name}}"}, [])])
-        self.assertEqual(code, 0)
-        self.assertIn("engine: legacy", out)
-
-    def test_template_check_fixed_cell_tokens_must_be_alone_and_not_mixed(self):
-        ok = [("検針表", {"A1": "{{report.measureDate}}", "B2": "{{meter[k-1].value}}"}, [])]
-        code, out, _ = self.check_template("meter", ok)
-        self.assertEqual((code, "engine: fixed-cell" in out), (0, True))
-        code, _, err = self.check_template("meter", [("検針表", {
-            "B2": "{{meter[k-1].value}} kWh", "B3": "{{meter.name}}", "B4": "{{meter[k-2].foo}}"}, [])])
-        self.assertEqual(code, 1)
-        self.assertIn("検針表!B2: キー付きトークンはセルに単独で", err)
-        self.assertIn("検針表!B3: 固定セル方式に繰り返し", err)
-        self.assertIn("検針表!B4: 不正なキー付きトークン", err)
-
-    def test_template_check_sheet_name_tokens(self):
-        table = {"A1": "名前", "A2": "{{meter.name}}"}
-        self.assertEqual(self.check_template("meter", [("{{report.measureDateCompact}}", table, ["A1:A2"])])[0], 0)
-        code, _, err = self.check_template("meter", [("{{meter.name}}", table, ["A1:A2"])])
-        self.assertEqual(code, 1)
-        self.assertIn("シート名に使えるのはスカラートークンだけ", err)
-        code, _, err = self.check_template("meter", [("{{facility.name}}", table, [])])
-        self.assertEqual(code, 1)
-        self.assertIn("テーブル方式と固定セル方式でだけ", err)
-
-    def test_template_check_warns_about_text_around_row_tokens(self):
-        code, out, _ = self.check_template("schedule", [("予定", {"A1": "作業", "A2": "{{schedule.workName}} 様"}, ["A1:A2"])])
-        self.assertEqual(code, 0)
-        self.assertIn("warning: 予定!A2", out)
 
     def test_google_lists_keep_query_and_gateway_auth_across_pages(self):
         for script, path, key in ((GMAIL_ALL, "/gmail/v1/users/me/messages", "messages"), (DRIVE_ALL, "/drive/v3/files", "files"), (CALENDAR_ALL, "/calendar/v3/calendars/primary/events", "items")):
@@ -555,11 +360,8 @@ class SkillScriptsTest(unittest.TestCase):
         for name in os.listdir(SKILLS):
             shutil.copytree(os.path.join(SKILLS, name), os.path.join(skills, f"api-gateway:{name}"), ignore=shutil.ignore_patterns("__pycache__"))
         scripts = [
-            ("board", "board_all.py", ["/v1/projects", "--max-pages", "1"]),
             ("freee", "freee_all.py", ["/api/1/deals", "-q", "company_id=1", "--max-pages", "1"]),
             ("microsoft-graph", "graph_all.py", ["/v1.0/me/messages", "--max-pages", "1"]),
-            ("bm-next", "bm_next_graphql.py", ["{ echo }"]),
-            ("bm-next", "bm_next_all.py", ["{ works }", "--max-pages", "1"]),
             ("gmail", "gmail_all.py", ["/gmail/v1/users/me/messages", "--max-pages", "1"]),
             ("google-drive", "drive_all.py", ["/drive/v3/files", "--max-pages", "1"]),
             ("google-calendar", "calendar_all.py", ["/calendar/v3/users/me/calendarList", "--max-pages", "1"]),
@@ -592,20 +394,6 @@ class SkillDocsTest(unittest.TestCase):
                     with self.subTest(doc=os.path.relpath(path, SKILLS), link=target):
                         self.assertTrue(os.path.exists(os.path.join(os.path.dirname(path), target)))
 
-    def test_report_template_tokens_match_the_checker(self):
-        sys.path.insert(0, os.path.dirname(BM_NEXT_TEMPLATE_CHECK))
-        try:
-            import bm_next_template_check as checker
-        finally:
-            sys.path.pop(0)
-        with open(os.path.join(SKILLS, "bm-next", "references", "report-templates.md"), encoding="utf-8") as f:
-            sections = re.split(r"^## ", f.read(), flags=re.M)
-        for kind, heading in (("schedule", "作業予定のテンプレート"), ("meter", "検針表のテンプレート")):
-            section = next(s for s in sections if s.startswith(heading))
-            documented = set(re.findall(r"^\| `\{\{([^}]+)\}\}`", section, flags=re.M))
-            expected = checker.SCALARS[kind] | checker.ROWS[kind] | ({"schedule.tag[<key>]"} if kind == "schedule" else set())
-            with self.subTest(kind=kind):
-                self.assertEqual(documented, expected)
 
 
 if __name__ == "__main__":

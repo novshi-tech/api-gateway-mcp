@@ -25,16 +25,6 @@
     "ALLOWED_TENANTS": "",
     "ALLOWED_DOMAINS": "",
     "SERVICES": {
-      "board": {
-        "base_url": "https://api.the-board.jp",
-        "auth": {
-          "type": "headers",
-          "headers": [
-            { "name": "x-api-key", "label": "API キー" },
-            { "name": "authorization", "label": "API トークン", "prefix": "Bearer " }
-          ]
-        }
-      },
       // gBizINFO: the API token comes from the Web API application at info.gbiz.go.jp.
       "gbizinfo": {
         "display_name": "gBizINFO",
