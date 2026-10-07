@@ -1,8 +1,8 @@
 {
   "name": "api-gateway",
   "displayName": "API Gateway",
-  "version": "0.8.0",
-  "description": "API ゲートウェイ経由で freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・gBizINFO などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
+  "version": "0.9.0",
+  "description": "API ゲートウェイ経由で freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・Google Docs・gBizINFO などの外部サービスの API を呼び出すスキル。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
   "author": {
     "name": "novshi-tech"
   },
