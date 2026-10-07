@@ -60,6 +60,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
 | `google-drive` | `drive` | ファイルの検索・ダウンロード・エクスポート・アップロード、共有ドライブ |
 | `google-calendar` | `calendar` | 予定の検索・作成・更新、空き時間の確認 |
+| `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
 | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
 
 インストールの方法:
@@ -122,9 +123,9 @@ freee のアプリ管理でアプリを作成し、コールバック URL を設
 
 サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`wrangler.example.jsonc` の `scope` にある委任のアクセス許可を付けて、管理者の同意を与えます。`authorization_url` と `token_url` のテナント ID を書き換えます。シークレットは `OAUTH_GRAPH_CLIENT_ID` / `OAUTH_GRAPH_CLIENT_SECRET` です。
 
-#### Google(`gmail`・`drive`・`calendar`)
+#### Google(`gmail`・`drive`・`calendar`・`docs`)
 
-Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `wrangler.example.jsonc` のスコープを追加します。同じ OAuth クライアントを 3 つのサービスで共有できますが、シークレットはサービスごとに登録します。
+Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `wrangler.example.jsonc` のスコープを追加します。同じ OAuth クライアントを 4 つのサービスで共有できますが、シークレットはサービスごとに登録します。
 
 ```sh
 npx wrangler secret put OAUTH_GMAIL_CLIENT_ID
@@ -133,11 +134,13 @@ npx wrangler secret put OAUTH_DRIVE_CLIENT_ID
 npx wrangler secret put OAUTH_DRIVE_CLIENT_SECRET
 npx wrangler secret put OAUTH_CALENDAR_CLIENT_ID
 npx wrangler secret put OAUTH_CALENDAR_CLIENT_SECRET
+npx wrangler secret put OAUTH_DOCS_CLIENT_ID
+npx wrangler secret put OAUTH_DOCS_CLIENT_SECRET
 ```
 
-- スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照に使います。読み取り専用にするなら `gmail.readonly` / `drive.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth) の公式ドキュメントにあります。
+- スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書きに使います。読み取り専用にするなら `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
 - `authorize_params` の `access_type: offline` と `prompt: consent` は、リフレッシュトークンを受け取るための設定です。
-- REST の呼び出し先の例: `/api/gmail/gmail/v1/users/me/messages`、`/api/drive/drive/v3/files`(アップロードは `/api/drive/upload/drive/v3/files`)、`/api/calendar/calendar/v3/calendars/primary/events`
+- REST の呼び出し先の例: `/api/gmail/gmail/v1/users/me/messages`、`/api/drive/drive/v3/files`(アップロードは `/api/drive/upload/drive/v3/files`)、`/api/calendar/calendar/v3/calendars/primary/events`、`/api/docs/v1/documents/{id}`
 
 #### gBizINFO(`gbizinfo`)
 

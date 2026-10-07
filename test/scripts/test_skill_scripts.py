@@ -28,11 +28,59 @@ GMAIL_ALL = os.path.join(SKILLS, "gmail", "scripts", "gmail_all.py")
 GMAIL_MIME = os.path.join(SKILLS, "gmail", "scripts", "gmail_mime.py")
 DRIVE_ALL = os.path.join(SKILLS, "google-drive", "scripts", "drive_all.py")
 CALENDAR_ALL = os.path.join(SKILLS, "google-calendar", "scripts", "calendar_all.py")
+DOCS_TEXT = os.path.join(SKILLS, "google-docs", "scripts", "docs_text.py")
 
 TOTAL_ITEMS = 250
 
 
 GRAPH_PAGE = 100
+
+
+def run(text, start, style=None):
+    return {"startIndex": start, "endIndex": start + len(text), "textRun": {"content": text, "textStyle": style or {}}}
+
+
+def para(start, *texts, style="NORMAL_TEXT", bullet=None):
+    elements, i = [], start
+    for t in texts:
+        elements.append(run(t, i))
+        i += len(t)
+    p = {"elements": elements, "paragraphStyle": {"namedStyleType": style}}
+    if bullet is not None:
+        p["bullet"] = {"listId": "l1", "nestingLevel": bullet}
+    return {"startIndex": start, "endIndex": i, "paragraph": p}
+
+
+# A documents.get response with two tabs, one nested, covering headings,
+# bullets, a table, and a person chip.
+DOCUMENT = {
+    "documentId": "doc-1",
+    "title": "議事録",
+    "revisionId": "rev-9",
+    "tabs": [
+        {
+            "tabProperties": {"tabId": "t.0", "title": "本文"},
+            "documentTab": {"body": {"content": [
+                {"endIndex": 1, "sectionBreak": {}},
+                para(1, "定例会\n", style="TITLE"),
+                para(5, "決定事項\n", style="HEADING_2"),
+                para(10, "見積を出す\n", bullet=0),
+                para(16, "期限は来週\n", bullet=1),
+                {"startIndex": 22, "endIndex": 40, "table": {"rows": 2, "columns": 2, "tableRows": [
+                    {"tableCells": [{"content": [para(24, "担当\n")]}, {"content": [para(28, "内容\n")]}]},
+                    {"tableCells": [{"content": [para(32, "A|B\n")]}, {"content": [{"startIndex": 37, "endIndex": 39, "paragraph": {"elements": [
+                        {"startIndex": 37, "endIndex": 38, "person": {"personProperties": {"name": "山田", "email": "y@example.com"}}},
+                        run("\n", 38)], "paragraphStyle": {"namedStyleType": "NORMAL_TEXT"}}}]}]},
+                ]}},
+                para(40, "以上\n"),
+            ]}},
+            "childTabs": [{
+                "tabProperties": {"tabId": "t.1", "title": "メモ", "parentTabId": "t.0"},
+                "documentTab": {"body": {"content": [{"endIndex": 1, "sectionBreak": {}}, para(1, "子タブ😀\n")]}},
+            }],
+        }
+    ],
+}
 
 
 class FakeGateway(http.server.BaseHTTPRequestHandler):
@@ -105,6 +153,8 @@ class FakeGateway(http.server.BaseHTTPRequestHandler):
             if "fields" in query and query["fields"] != "*" and "nextPageToken" not in query["fields"]:
                 body.pop("nextPageToken", None)
             self.send(200, json.dumps(body).encode())
+        elif url.path == "/api/docs/v1/documents/doc-1":
+            self.send(200, json.dumps(DOCUMENT).encode())
         elif url.path == "/api/freee/api/1/deals":
             offset, limit = int(query.get("offset", 0)), int(query.get("limit", 20))
             deals = [{"id": i, "amount": i * 10} for i in range(offset, min(offset + limit, TOTAL_ITEMS))]
@@ -320,6 +370,30 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(FakeGateway.requests, [])
 
+    def test_docs_text_renders_every_tab_as_markdown(self):
+        out = self.run_script(DOCS_TEXT, "https://docs.google.com/document/d/doc-1/edit?tab=t.0").stdout.decode()
+        self.assertEqual(
+            out,
+            "<!-- 議事録 documentId=doc-1 revisionId=rev-9 -->\n\n"
+            "<!-- tab: 本文 tabId=t.0 -->\n\n"
+            "# 定例会\n## 決定事項\n- 見積を出す\n  - 期限は来週\n"
+            "| 担当 | 内容 |\n| --- | --- |\n| A\\|B | 山田 |\n以上\n\n"
+            "<!-- tab: メモ tabId=t.1 -->\n\n子タブ😀\n",
+        )
+        self.assertIn("/api/docs/v1/documents/doc-1?includeTabsContent=true", FakeGateway.requests[0]["path"])
+
+    def test_docs_text_lists_paragraphs_with_tab_and_table_positions(self):
+        self.run_script(DOCS_TEXT, "doc-1", "--paragraphs", "-o", "p.json")
+        with open(os.path.join(self.tmp.name, "p.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertEqual(doc["revisionId"], "rev-9")
+        paragraphs = doc["paragraphs"]
+        self.assertEqual([p["text"] for p in paragraphs], ["定例会\n", "決定事項\n", "見積を出す\n", "期限は来週\n", "担当\n", "内容\n", "A|B\n", "山田\n", "以上\n", "子タブ😀\n"])
+        self.assertEqual(paragraphs[1], {"tabId": "t.0", "startIndex": 5, "endIndex": 10, "namedStyleType": "HEADING_2", "text": "決定事項\n"})
+        self.assertEqual(paragraphs[3]["bullet"], {"listId": "l1", "nestingLevel": 1})
+        self.assertEqual(paragraphs[7]["table"], {"startIndex": 22, "row": 1, "column": 1})
+        self.assertEqual(paragraphs[9]["tabId"], "t.1")
+
     def test_gmail_mime_builds_unicode_reply_draft_with_attachment_locally(self):
         body_path = os.path.join(self.tmp.name, "body.txt")
         attachment = os.path.join(self.tmp.name, "請求書.pdf")
@@ -365,6 +439,7 @@ class SkillScriptsTest(unittest.TestCase):
             ("gmail", "gmail_all.py", ["/gmail/v1/users/me/messages", "--max-pages", "1"]),
             ("google-drive", "drive_all.py", ["/drive/v3/files", "--max-pages", "1"]),
             ("google-calendar", "calendar_all.py", ["/calendar/v3/users/me/calendarList", "--max-pages", "1"]),
+            ("google-docs", "docs_text.py", ["doc-1"]),
         ]
         for skill, script, args in scripts:
             with self.subTest(script=script):

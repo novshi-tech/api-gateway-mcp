@@ -217,6 +217,28 @@ describe("refreshing upstream tokens", () => {
     expect(await upstreamAuthorization(res)).toBe("Bearer access-after-rt-graph");
   });
 
+  it("asks Google for an offline Docs token and sends batchUpdate to the Docs API", async () => {
+    const started = await startConnect(alice, { service: "docs", label: "" });
+    const authorize = new URL(started.headers.get("location")!);
+    expect(authorize.origin + authorize.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(authorize.searchParams.get("client_id")).toBe("docs-client");
+    expect(authorize.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/documents");
+    expect(authorize.searchParams.get("access_type")).toBe("offline");
+    expect(authorize.searchParams.get("prompt")).toBe("consent");
+
+    const cred = await connected(alice, { access_token: "stale", refresh_token: "rt-docs", expires_in: 0 }, "docs");
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "api", alice, { creds: { docs: cred.id } }, 60);
+    const res = await SELF.fetch(`${BASE}/api/docs/v1/documents/doc-1:batchUpdate`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ requests: [{ insertText: { endOfSegmentLocation: {}, text: "x" } }] }),
+    });
+    expect(res.status).toBe(200);
+    const echoed = (await res.json()) as { url: string; headers: Record<string, string> };
+    expect(echoed.url).toBe("https://docs.googleapis.com/v1/documents/doc-1:batchUpdate");
+    expect(echoed.headers.authorization).toBe("Bearer access-after-rt-docs");
+  });
+
   it("keeps using a token without an expiry", async () => {
     const cred = await connected(alice, { access_token: "forever" });
     expect(await upstreamAuthorization(await callFreee(alice, cred.id))).toBe("Bearer forever");

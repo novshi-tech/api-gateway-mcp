@@ -67,10 +67,12 @@ const GRAPH = {
   client: { id: "graph-client", secret: "graph-secret" },
   requireScope: true,
 };
+const GOOGLE_OAUTH = "https://oauth2.googleapis.com";
+const DOCS = { tokenPath: "/token", client: { id: "docs-client", secret: "docs-secret" } };
 const usedRefreshTokens = new Set<string>();
 const refreshCalls = new Map<string, number>();
 
-// A fake OAuth server for freee and Entra. The authorization code is base64url
+// A fake OAuth server for freee, Entra, and Google. The authorization code is base64url
 // JSON of { challenge, tokens }: the token response to return once the PKCE
 // check passes. Refresh tokens rotate; "revoked-*" is refused, "down-*" fails,
 // and "short-*" yields an access token that is already expired. With
@@ -113,6 +115,7 @@ async function upstream(request: Request): Promise<Response> {
   if (url.origin === IDP) return idp(request);
   if (url.origin === FREEE_ACCOUNTS) return oauthServer(request, FREEE);
   if (url.origin === ENTRA) return oauthServer(request, GRAPH);
+  if (url.origin === GOOGLE_OAUTH) return oauthServer(request, DOCS);
   if (url.pathname === "/redirect") {
     return new Response(null, { status: 302, headers: { location: "https://download.example.com/file" } });
   }
@@ -149,6 +152,8 @@ export default defineConfig({
           OAUTH_FREEE_CLIENT_SECRET: FREEE.client.secret,
           OAUTH_GRAPH_CLIENT_ID: GRAPH.client.id,
           OAUTH_GRAPH_CLIENT_SECRET: GRAPH.client.secret,
+          OAUTH_DOCS_CLIENT_ID: DOCS.client.id,
+          OAUTH_DOCS_CLIENT_SECRET: DOCS.client.secret,
         },
         outboundService: upstream,
       },
