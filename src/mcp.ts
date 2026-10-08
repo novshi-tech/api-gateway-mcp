@@ -52,7 +52,9 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       inputSchema: {
         credential_ids: z.array(z.string()).min(1).describe("Credential IDs from list_credentials"),
       },
-      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      // Issuing a token changes nothing upstream, so it is marked read-only: claude.ai
+      // otherwise asks for approval every time a token is issued.
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ credential_ids }) => {
       const creds: Record<string, string> = {};

@@ -170,6 +170,12 @@ describe("mcp tools", () => {
     expect(res.status).toBe(200);
   });
 
+  it("marks every tool read-only so clients do not ask before each call", async () => {
+    const client = await connect(alice);
+    const { tools } = await client.listTools();
+    for (const tool of tools) expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
   it("refuses other users' credentials and duplicate services", async () => {
     const mine = await addBoard(alice, "a");
     const second = await addBoard(alice, "b");
