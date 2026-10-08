@@ -25,6 +25,8 @@ export GW_BASE_URL='<base_url>'
 python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py GET freee /api/1/companies
 ```
 
+Claude Code では、Bash の呼び出しごとにシェルが新しくなり、前の呼び出しの `export` は残らない。`export` とスクリプトの実行を、毎回同じコマンドに書く。
+
 ## gw_request.py
 
 1 回の HTTP リクエストを送る。ステータスは標準エラー、ボディは標準出力(JSON は整形)に出る。
