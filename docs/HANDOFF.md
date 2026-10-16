@@ -36,11 +36,12 @@
    - GitHub Secrets に `CLOUDFLARE_API_TOKEN` を入れる。入れるまで murmur の CI の deploy-dev は失敗する
    - Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
 3. **実データでの Ingest の試用**（`docs/adr/0007`）。デプロイが通ったら、読み取り専用の実コネクタで Ingest だけを回す
-   - つなぐ前に: ignore を選ばない問題の手当て（下の「H6 の記録で分かったこと」）と、取得位置（cursor）の保存（0007「量の見通し」の 1）
+   - つなぐ前に: ignore を選ばない問題の手当て（下の「H6 の記録で分かったこと」）
    - 実コネクタは `pull` だけ、`send` はエラー。資格情報は読み取りの権限だけ。データソースは 1 つ、過去分は取らない
    - 計画のスコープ外（本物のコネクタ）だが、捨てないプロトタイプとして段階的に進める次の段階。方針は直樹と合意済み（2026-10-16）
    - 新規シグナルの置き先の判断材料（受信箱ごとの置き先の分かれ方、置き先・ignore の訂正件数）もここで取る（0008）
-   - 量が増えたときの詰まりどころ（投影の丸ごと入れ替え、Cron の 1 回で全件、候補 20 件、Claude の費用）は 0007 に順番つきで書いた
+   - 量が増えたときの詰まりどころ（cursor の未保存、投影の丸ごと入れ替え、Cron の 1 回で全件、候補 20 件、Claude の費用、取り込みの形）は 0007 に書いた。
+     プロトタイプではパフォーマンスに手を付けず、実業務を観察させる段階で考える（2026-10-16 決定）
 4. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
    実環境で、ユーザーは指示と承認だけを出して完走させ、記録を `signals.jsonl` と `expected.json` に固めて `status: stand-recorded` にする（`docs/stand/connect.md` の最後の節）
    - マスタの `User.id` はゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。今の seed の ID は仮
@@ -74,7 +75,7 @@
 ## 既知の制約
 
 - 外部派生の送信に失敗すると、派生は approved のまま止まり、再送する手段がない
-- コネクタの取得位置（cursor）を保存していない。`pollConnectors` は毎回 `pull(principal, null)` を呼ぶ（実コネクタの前に直す。0007）
+- コネクタの取得位置（cursor）を保存していない。`pollConnectors` は毎回 `pull(principal, null)` を呼ぶ（性能の話なので、実業務を観察させる段階で考える。0007）
 - Ingest の候補タスクは更新の新しい open タスク 20 件だけ。タスクが増えると正しい attach 先が落ちて new に倒れる（0007）
 - 派生を起こすのはスタンドだけで、Ingest は提案しない（`docs/adr/0005`）
 - 投影は書き込みのたびにテナント分を丸ごと入れ替える（`docs/adr/0004`）。件数が増えると遅い
