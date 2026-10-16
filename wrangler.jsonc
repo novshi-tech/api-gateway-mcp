@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "murmur",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // 本体の API はゲートウェイからの Service Binding 経由で呼ばれる。
+  // 公開するのは Webhook と timeline.html だけ（どちらもアプリ層で鍵を検証する）。
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "CLAUDE_MODEL": "claude-sonnet-5-5",
+    "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
+    "IDENTITY_AUDIENCE": "murmur"
+    // GATEWAY_IDENTITY_PUBLIC_KEY は Ed25519 の公開鍵（JWK の JSON 文字列）。秘密ではないが env ごとに違うので env 側で設定する
+  },
+  // secrets: ANTHROPIC_API_KEY, DATABASE_URL, WEBHOOK_SECRET, TIMELINE_TOKEN
+  "env": {
+    "dev": {
+      "name": "murmur-dev",
+      "vars": {
+        "CLAUDE_MODEL": "claude-sonnet-5-5",
+        "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
+        "IDENTITY_AUDIENCE": "murmur",
+        "GATEWAY_IDENTITY_PUBLIC_KEY": ""
+      },
+      "triggers": { "crons": ["*/5 * * * *"] }
+    },
+    "prod": {
+      "name": "murmur",
+      "vars": {
+        "CLAUDE_MODEL": "claude-sonnet-5-5",
+        "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
+        "IDENTITY_AUDIENCE": "murmur",
+        "GATEWAY_IDENTITY_PUBLIC_KEY": ""
+      },
+      "triggers": { "crons": ["*/5 * * * *"] }
+    }
+  }
+}
