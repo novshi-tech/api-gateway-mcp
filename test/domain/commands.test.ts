@@ -153,11 +153,35 @@ describe('proposeDerivation', () => {
     // 承認すると元の派生が replied になる
     log.push(reply.events, T0);
     const approved = approveDerivation(log.state(), alice, ctx, { derivationId: reply.derivationId }).events;
-    expect(approved.map((e) => e.type)).toEqual(['DerivationApproved', 'DerivationReplied']);
+    expect(approved.map((e) => e.type)).toEqual(['DerivationReplied', 'DerivationApproved']);
     log.push(approved, T0);
     const p = log.state();
     expect(p.derivations[first.derivationId]!.status).toBe('replied');
     expect(p.tasks[taskId]!.ballAt).toEqual({ kind: 'list', listId: 'l_cust' });
+  });
+
+  it('外部への返事の派生: 元の派生は replied、適用先のボールは宛先 Party に残る', () => {
+    const { log, ctx, taskId } = withCustomerTask();
+    const first = proposeDerivation(log.state(), alice, ctx, { taskId, targetListId: 'l_int', body: '見積して' });
+    log.push(first.events, T0);
+    log.push(approveDerivation(log.state(), alice, ctx, { derivationId: first.derivationId }).events, T0);
+    const internalTask = log.state().derivations[first.derivationId]!.targetTaskId;
+    const reply = proposeDerivation(log.state(), alice, ctx, {
+      taskId: internalTask,
+      targetListId: 'l_cust',
+      body: '見積は 38 万円です',
+      toPartyIds: ['p_carol'],
+      replyExpected: { by: '2026-10-20T00:00:00.000Z' },
+    });
+    log.push(reply.events, T0);
+    log.push(approveDerivation(log.state(), alice, ctx, { derivationId: reply.derivationId }).events, T0);
+    const sent = recordSent(log.state(), reply.derivationId, '<q1>');
+    expect(sent.map((e) => e.type)).toEqual(['DerivationReplied', 'DerivationSent']);
+    log.push(sent, T0);
+    const p = log.state();
+    expect(p.derivations[first.derivationId]!.status).toBe('replied');
+    expect(p.tasks[taskId]!.ballAt).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(p.tasks[internalTask]!.ballAt).toEqual({ kind: 'list', listId: 'l_cust' });
   });
 
   it('replyToDerivationId の明示が合わなければ invalid', () => {

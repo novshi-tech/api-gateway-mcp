@@ -197,10 +197,9 @@ export function approveDerivation(
   const d = proposalOrThrow(p, viewer, input.derivationId);
 
   if (d.mode === 'internal') {
-    const events = [draft('DerivationApproved', { derivationId: d.id, actorUserId: viewer.userId, toAddresses: [] })];
-    if (d.replyToDerivationId) {
-      events.push(draft('DerivationReplied', { derivationId: d.replyToDerivationId, replyDerivationId: d.id }));
-    }
+    // 返事の派生なら、元の派生の replied を先に置く（適用先のボールは適用で決まるように）
+    const events = repliedFirst(d);
+    events.push(draft('DerivationApproved', { derivationId: d.id, actorUserId: viewer.userId, toAddresses: [] }));
     return { events, send: null };
   }
 
@@ -272,11 +271,15 @@ export function recordSent(p: Projections, derivationId: string, sentRef: string
   if (d.status !== 'approved' || d.mode !== 'external') {
     throw new DomainError('conflict', `derivation ${derivationId} cannot be sent from ${d.status}`);
   }
-  const events = [draft('DerivationSent', { derivationId, sentRef })];
-  if (d.replyToDerivationId) {
-    events.push(draft('DerivationReplied', { derivationId: d.replyToDerivationId, replyDerivationId: d.id }));
-  }
+  const events = repliedFirst(d);
+  events.push(draft('DerivationSent', { derivationId, sentRef }));
   return events;
+}
+
+function repliedFirst(d: Derivation): DraftEvent[] {
+  return d.replyToDerivationId
+    ? [draft('DerivationReplied', { derivationId: d.replyToDerivationId, replyDerivationId: d.id })]
+    : [];
 }
 
 export function rejectDerivation(
