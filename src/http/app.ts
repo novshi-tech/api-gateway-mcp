@@ -14,7 +14,7 @@ import {
   RejectBody,
   SetAttributeBody,
 } from '../api/schemas';
-import { IDENTITY_HEADER } from '../auth/claims';
+import { bearerToken } from '../auth/claims';
 import { renderTimeline } from './timeline';
 
 export interface HttpOptions {
@@ -50,11 +50,11 @@ export function createApp(opts: HttpOptions) {
     await next();
   });
 
-  // ---- スタンド向け API（ゲートウェイ経由。署名付き sub を必須にする） ----
+  // ---- スタンド向け API（ゲートウェイ経由。ゲートウェイが署名したユーザー識別を必須にする） ----
 
   const api = new Hono<Env>();
   api.use('*', async (c, next) => {
-    const token = c.req.header(IDENTITY_HEADER);
+    const token = bearerToken(c.req.header('authorization'));
     const userId = token ? await opts.authenticate(token) : null;
     if (!userId) return c.json({ error: 'unauthenticated' }, 401);
     c.set('userId', userId);

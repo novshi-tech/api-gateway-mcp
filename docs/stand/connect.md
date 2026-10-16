@@ -3,12 +3,34 @@
 認可の接続の形は (B)（2026-10-16 決定）: スタンドから見える MCP は API ゲートウェイの 1 つだけ。
 Murmur の本体はゲートウェイの上流サービス `murmur` として登録され、ゲートウェイが User ID を署名して Service Binding 越しに伝える。
 
-## 前提（ゲートウェイ側。0003 を参照）
+## ゲートウェイ側（api-gateway-mcp、0003 を参照）
 
-1. ゲートウェイの Worker に Service Binding で本体（`murmur-dev` / `murmur`）をつなぐ
-2. 上流サービス `murmur` を登録し、認証方式を「ユーザー識別の伝搬」にする（`x-murmur-identity` に EdDSA の compact JWS、aud=`murmur`）
-3. 署名鍵の公開鍵（JWK）を本体の `GATEWAY_IDENTITY_PUBLIC_KEY` に設定する
-4. スタンド用スキル `docs/stand/skill.md` をゲートウェイのスキルとして配る（freee や board と同じ形）
+ゲートウェイには、認証方式 `identity` と Service Binding での中継が入っている（api-gateway-mcp の README「連携先を設定する」）。
+
+1. 署名鍵を作って登録する
+
+   ```sh
+   node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npx wrangler secret put IDENTITY_SIGNING_KEY
+   ```
+
+2. ゲートウェイの `wrangler.jsonc` に Service Binding とサービスの定義を足して、デプロイする
+
+   ```jsonc
+   "services": [{ "binding": "MURMUR", "service": "murmur-dev" }],
+   "vars": {
+     "SERVICES": {
+       "murmur": {
+         "display_name": "Murmur",
+         "base_url": "https://murmur.internal/api",
+         "binding": "MURMUR",
+         "auth": { "type": "identity", "audience": "murmur" }
+       }
+     }
+   }
+   ```
+
+3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
+4. スタンド用スキル `docs/stand/skill.md` を配る。自社用なので、ゲートウェイのリポジトリではなく自社のスキルのプラグイン（nvt-api-gateway-skills）に置く
 
 ## 本体の準備
 
@@ -24,6 +46,7 @@ wrangler secret put TIMELINE_TOKEN --env dev   # timeline.html を見る人だ�
 pnpm deploy:dev
 ```
 
+マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
 マスタ（seed）とシナリオの投入は、プロトタイプでは `fixtures/<scenario>/seed.json` を `master` テーブルに入れる
 （`PgMasterStore.replaceSeed`）。受信は `POST /webhooks/dummy/{tenant}`（本文は InboundSignal の配列、`x-murmur-signature` は
 WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。

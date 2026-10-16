@@ -13,7 +13,8 @@
     "CLAUDE_MODEL": "claude-sonnet-5-5",
     "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
     "IDENTITY_AUDIENCE": "murmur"
-    // GATEWAY_IDENTITY_PUBLIC_KEY は Ed25519 の公開鍵（JWK の JSON 文字列）。秘密ではないが env ごとに違うので env 側で設定する
+    // GATEWAY_JWKS はゲートウェイの <PUBLIC_URL>/.well-known/jwks.json の中身、IDENTITY_ISSUER はゲートウェイの PUBLIC_URL。
+    // 秘密ではないが env ごとに違うので env 側で設定する
   },
   // secrets: ANTHROPIC_API_KEY, DATABASE_URL, WEBHOOK_SECRET, TIMELINE_TOKEN
   "env": {
@@ -23,7 +24,8 @@
         "CLAUDE_MODEL": "claude-sonnet-5-5",
         "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
         "IDENTITY_AUDIENCE": "murmur",
-        "GATEWAY_IDENTITY_PUBLIC_KEY": ""
+        "IDENTITY_ISSUER": "",
+        "GATEWAY_JWKS": ""
       },
       "triggers": { "crons": ["*/5 * * * *"] }
     },
@@ -33,7 +35,8 @@
         "CLAUDE_MODEL": "claude-sonnet-5-5",
         "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
         "IDENTITY_AUDIENCE": "murmur",
-        "GATEWAY_IDENTITY_PUBLIC_KEY": ""
+        "IDENTITY_ISSUER": "",
+        "GATEWAY_JWKS": ""
       },
       "triggers": { "crons": ["*/5 * * * *"] }
     }

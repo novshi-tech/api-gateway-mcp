@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { base64UrlEncode, IDENTITY_HEADER } from '../../src/auth/claims';
+import { base64UrlEncode } from '../../src/auth/claims';
 import { signWebhook, verifyIdentity, verifyWebhookSignature } from '../../src/auth/identity';
 import { createApp } from '../../src/http/app';
 import type { AiDecision } from '../../src/domain';
@@ -8,34 +8,43 @@ import { email, seed } from '../helpers/world';
 
 // ゲートウェイ役: Ed25519 で sub に署名する
 let keys: CryptoKeyPair;
-let publicJwk: JsonWebKey;
+let jwks: { keys: JsonWebKey[] };
+const ISS = 'https://gw.example';
+const expect_ = { audience: 'murmur', issuer: ISS };
 const NOW = 1_800_000_000;
 
-async function sign(claims: Record<string, unknown>, key = keys.privateKey, alg = 'EdDSA'): Promise<string> {
+async function sign(claims: Record<string, unknown>, key = keys.privateKey, alg = 'EdDSA', kid = 'gw-1'): Promise<string> {
   const enc = (o: unknown) => base64UrlEncode(new TextEncoder().encode(JSON.stringify(o)));
-  const input = `${enc({ alg, typ: 'JWT' })}.${enc(claims)}`;
+  const input = `${enc({ alg, typ: 'JWT', kid })}.${enc(claims)}`;
   const sig = new Uint8Array(await crypto.subtle.sign('Ed25519', key, new TextEncoder().encode(input)));
   return `${input}.${base64UrlEncode(sig)}`;
 }
-const claims = (sub: string) => ({ sub, aud: 'murmur', iat: NOW, exp: NOW + 300 });
+// api-gateway-mcp の identity と同じ形（iss = ゲートウェイの URL、寿命 5 分）
+const claims = (sub: string) => ({ sub, iss: ISS, aud: 'murmur', iat: NOW, exp: NOW + 300 });
 
 beforeAll(async () => {
   keys = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
-  publicJwk = await crypto.subtle.exportKey('jwk', keys.publicKey);
+  const pub = await crypto.subtle.exportKey('jwk', keys.publicKey);
+  jwks = { keys: [{ kty: pub.kty, crv: pub.crv, x: pub.x, kid: 'gw-1', alg: 'EdDSA', use: 'sig' } as JsonWebKey] };
 });
 
 describe('verifyIdentity', () => {
   it('ゲートウェイの署名だけを受け入れる', async () => {
-    expect(await verifyIdentity(await sign(claims('u_alice')), publicJwk, 'murmur', NOW)).toEqual({ ok: true, sub: 'u_alice' });
+    expect(await verifyIdentity(await sign(claims('u_alice')), jwks, expect_, NOW)).toEqual({ ok: true, sub: 'u_alice' });
     const other = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
-    expect(await verifyIdentity(await sign(claims('u_alice'), other.privateKey), publicJwk, 'murmur', NOW)).toEqual({ ok: false, reason: 'bad signature' });
-    expect(await verifyIdentity(await sign(claims('u_alice'), keys.privateKey, 'none'), publicJwk, 'murmur', NOW)).toEqual({ ok: false, reason: 'unsupported alg' });
-    expect(await verifyIdentity('garbage', publicJwk, 'murmur', NOW)).toEqual({ ok: false, reason: 'malformed token' });
+    expect(await verifyIdentity(await sign(claims('u_alice'), other.privateKey), jwks, expect_, NOW)).toEqual({ ok: false, reason: 'bad signature' });
+    expect(await verifyIdentity(await sign(claims('u_alice'), keys.privateKey, 'none'), jwks, expect_, NOW)).toEqual({ ok: false, reason: 'unsupported alg' });
+    expect(await verifyIdentity('garbage', jwks, expect_, NOW)).toEqual({ ok: false, reason: 'malformed token' });
+    expect(await verifyIdentity(await sign(claims('u_alice'), keys.privateKey, 'EdDSA', 'rotated'), jwks, expect_, NOW)).toEqual({
+      ok: false,
+      reason: 'unknown key',
+    });
+    expect((await verifyIdentity(await sign({ ...claims('u_alice'), iss: 'https://evil.example' }), jwks, expect_, NOW)).ok).toBe(false);
     // 署名部分の改ざん
     const t = await sign(claims('u_alice'));
     const [h, , s] = t.split('.');
     const forged = `${h}.${base64UrlEncode(new TextEncoder().encode(JSON.stringify(claims('u_bob'))))}.${s}`;
-    expect((await verifyIdentity(forged, publicJwk, 'murmur', NOW)).ok).toBe(false);
+    expect((await verifyIdentity(forged, jwks, expect_, NOW)).ok).toBe(false);
   });
 
   it('Webhook の HMAC 署名', async () => {
@@ -54,7 +63,7 @@ describe('HTTP API', () => {
     const http = createApp({
       service: () => ctx.service,
       authenticate: async (token) => {
-        const r = await verifyIdentity(token, publicJwk, 'murmur', NOW);
+        const r = await verifyIdentity(token, jwks, expect_, NOW);
         return r.ok ? r.sub : null;
       },
       webhookVerify: (body, sig) => verifyWebhookSignature(body, sig, 'whsec'),
@@ -62,7 +71,7 @@ describe('HTTP API', () => {
     });
     const call = async (method: string, path: string, user?: string, body?: unknown) => {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (user) headers[IDENTITY_HEADER] = await sign(claims(user));
+      if (user) headers.authorization = `Bearer ${await sign(claims(user))}`;
       const res = await http.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const out: any = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
@@ -74,8 +83,11 @@ describe('HTTP API', () => {
   it('伝搬されたユーザー識別がなければ 401', async () => {
     const { call, http } = await app();
     expect((await call('GET', '/api/me')).status).toBe(401);
-    const res = await http.request('/api/me', { headers: { [IDENTITY_HEADER]: 'x.y.z' } });
+    const res = await http.request('/api/me', { headers: { authorization: 'Bearer x.y.z' } });
     expect(res.status).toBe(401);
+    // 仮決めだった旧ヘッダは受け付けない
+    const legacy = await http.request('/api/me', { headers: { 'x-murmur-identity': await sign(claims('u_alice')) } });
+    expect(legacy.status).toBe(401);
   });
 
   it('/me・タスク・属性・派生・承認・訂正・無視・リストの一通り', async () => {

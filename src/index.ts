@@ -20,8 +20,10 @@ export interface Env {
   CLAUDE_MODEL: string;
   IGNORE_CONFIDENCE_THRESHOLD: string;
   IDENTITY_AUDIENCE: string;
-  /** ゲートウェイの Ed25519 公開鍵（JWK の JSON 文字列） */
-  GATEWAY_IDENTITY_PUBLIC_KEY: string;
+  /** ゲートウェイの PUBLIC_URL。設定すれば iss を確かめる */
+  IDENTITY_ISSUER?: string;
+  /** ゲートウェイの公開鍵（<gateway>/.well-known/jwks.json の中身の JSON 文字列） */
+  GATEWAY_JWKS: string;
   /** "true" なら、ダミーコネクタが送ったメッセージを observed-sent として折り返す */
   DUMMY_ECHO_OBSERVED?: string;
 }
@@ -56,8 +58,13 @@ export default {
     const app = createApp({
       service: () => service,
       authenticate: async (token) => {
-        if (!env.GATEWAY_IDENTITY_PUBLIC_KEY) return null;
-        const r = await verifyIdentity(token, JSON.parse(env.GATEWAY_IDENTITY_PUBLIC_KEY), env.IDENTITY_AUDIENCE, Math.floor(Date.now() / 1000));
+        if (!env.GATEWAY_JWKS) return null;
+        const r = await verifyIdentity(
+          token,
+          JSON.parse(env.GATEWAY_JWKS),
+          { audience: env.IDENTITY_AUDIENCE, issuer: env.IDENTITY_ISSUER || undefined },
+          Math.floor(Date.now() / 1000),
+        );
         return r.ok ? r.sub : null;
       },
       webhookVerify: (body, sig) => (env.WEBHOOK_SECRET ? verifyWebhookSignature(body, sig, env.WEBHOOK_SECRET) : Promise.resolve(false)),

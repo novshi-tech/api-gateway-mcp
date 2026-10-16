@@ -364,7 +364,7 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
   const [method, path, body] = route[tool]();
   const res = await http.request(path, {
     method,
-    headers: { 'content-type': 'application/json', 'x-murmur-identity': as },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${as}` },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: (await res.json()) as unknown };

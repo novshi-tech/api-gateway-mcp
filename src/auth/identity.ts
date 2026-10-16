@@ -1,23 +1,22 @@
-import { checkClaims, splitCompactJws, type ClaimsCheck } from './claims';
+import { checkClaims, selectKey, splitCompactJws, type ClaimsCheck, type Expectation } from './claims';
 
 /**
- * ゲートウェイが Ed25519 で署名した compact JWS（alg=EdDSA）を検証する。
+ * ゲートウェイが Ed25519 で署名した JWT（alg=EdDSA）を検証する。
+ * keys はゲートウェイの /.well-known/jwks.json の中身（単体の JWK でもよい）。
  * 本体が持つのは公開鍵だけで、API キーや共有秘密は持たない。
  */
-export async function verifyIdentity(
-  token: string,
-  publicKeyJwk: JsonWebKey,
-  audience: string,
-  nowSec: number,
-): Promise<ClaimsCheck> {
+export async function verifyIdentity(token: string, keys: unknown, expect: Expectation, nowSec: number): Promise<ClaimsCheck> {
   const jws = splitCompactJws(token);
   if (!jws) return { ok: false, reason: 'malformed token' };
-  const header = jws.header as { alg?: string };
+  const header = jws.header as { alg?: string; kid?: string };
   if (header.alg !== 'EdDSA') return { ok: false, reason: 'unsupported alg' };
-  const key = await crypto.subtle.importKey('jwk', publicKeyJwk, { name: 'Ed25519' }, false, ['verify']);
+  const jwk = selectKey(keys, header.kid);
+  if (!jwk) return { ok: false, reason: 'unknown key' };
+  const { kty, crv, x } = jwk;
+  const key = await crypto.subtle.importKey('jwk', { kty, crv, x }, { name: 'Ed25519' }, false, ['verify']);
   const valid = await crypto.subtle.verify('Ed25519', key, jws.signature, new TextEncoder().encode(jws.signingInput));
   if (!valid) return { ok: false, reason: 'bad signature' };
-  return checkClaims(jws.claims, audience, nowSec);
+  return checkClaims(jws.claims, expect, nowSec);
 }
 
 /** Webhook の署名（HMAC-SHA256、hex）。鍵は本体の Workers secret に置く */
