@@ -1,6 +1,6 @@
 # 申し送り
 
-最終更新: 2026-10-16（H6 の記録を作ったあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-16（実データでの試用の方針を `docs/adr/0007` に書いたあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
 
 ## いまの状態
 
@@ -35,16 +35,22 @@
    - ゲートウェイ: `IDENTITY_SIGNING_KEY` を登録し、本番の `wrangler.jsonc`（git 管理外）に `services` の Service Binding と `SERVICES.murmur` を足してデプロイ
    - GitHub Secrets に `CLOUDFLARE_API_TOKEN` を入れる。入れるまで murmur の CI の deploy-dev は失敗する
    - Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
-3. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
+3. **実データでの Ingest の試用**（`docs/adr/0007`）。デプロイが通ったら、読み取り専用の実コネクタで Ingest だけを回す
+   - つなぐ前に: ignore を選ばない問題の手当て（下の「H6 の記録で分かったこと」）と、取得位置（cursor）の保存（0007「量の見通し」の 1）
+   - 実コネクタは `pull` だけ、`send` はエラー。資格情報は読み取りの権限だけ。データソースは 1 つ、過去分は取らない
+   - 計画のスコープ外（本物のコネクタ）からの逸脱。方針は直樹と合意済み（2026-10-16）
+   - 量が増えたときの詰まりどころ（投影の丸ごと入れ替え、Cron の 1 回で全件、候補 20 件、Claude の費用）は 0007 に順番つきで書いた
+4. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
    実環境で、ユーザーは指示と承認だけを出して完走させ、記録を `signals.jsonl` と `expected.json` に固めて `status: stand-recorded` にする（`docs/stand/connect.md` の最後の節）
    - マスタの `User.id` はゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。今の seed の ID は仮
    - seed の投入は今は `PgMasterStore.replaceSeed` を直接呼ぶしかない。投入用のスクリプトを足すとよい
-4. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
+5. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
 
 ## 直樹に判断してもらうこと
 
 - `docs/adr/0002`（提案）: テストを `@cloudflare/vitest-pool-workers` ではなく Node の vitest と pglite で回している。計画からの逸脱
 - `docs/adr/0005`: 計画になかった細部を実装で決めた（ボールの所在、`DerivationRejected` の追加、閾値未満の ignore は new に倒す、返事の派生の自動判定など）。Google Doc と食い違っていないか
+- `docs/adr/0007`「量の見通し」の 6: 実メールの本文が残る記録（`recordings`）をどこに置くか。決めてから記録モードにする
 - `docs/adr/0003` の未決: 本体が JWKS を設定値で持つか、ゲートウェイから取りに行くか（今は設定値）
 
 ## H6 の記録で分かったこと（2026-10-16、claude-sonnet-5-5）
@@ -64,6 +70,9 @@
 ## 既知の制約
 
 - 外部派生の送信に失敗すると、派生は approved のまま止まり、再送する手段がない
+- コネクタの取得位置（cursor）を保存していない。`pollConnectors` は毎回 `pull(principal, null)` を呼ぶ（実コネクタの前に直す。0007）
+- Ingest の候補タスクは更新の新しい open タスク 20 件だけ。タスクが増えると正しい attach 先が落ちて new に倒れる（0007）
+- 派生を起こすのはスタンドだけで、Ingest は提案しない（`docs/adr/0005`）
 - 投影は書き込みのたびにテナント分を丸ごと入れ替える（`docs/adr/0004`）。件数が増えると遅い
 - `timeline.html` は `TIMELINE_TOKEN` を知っている人には全リストが見える（確認用）
 - シナリオの文字列で `$` から始まるものは束縛として置き換えられる（本文に `$100` などを書くと失敗する）

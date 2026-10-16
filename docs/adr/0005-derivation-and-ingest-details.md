@@ -18,6 +18,15 @@
 - 返事の派生（派生先のタスクから元のリストへ出す派生）は、元の派生の `DerivationReplied` を先に置いてから適用・送信する。
   外部への返事なら、適用先のボールが宛先 Party に残る
 
+## 派生を起こすのはスタンド（2026-10-16 確認）
+
+- 派生の提案（`DerivationProposed`）は、スタンドか人が `POST /api/derivations` を呼んだときだけ出る。Ingest は提案しない
+- Ingest の仕事は、届いたシグナルをどのタスクに置くか（attach / new / ignore）まで。「別のリストや外部に渡すべきか」は
+  スタンド（Cowork / Claude Code）の Claude が判断する。Murmur の中の Claude が派生に関わるのは、本文を省略した提案の本文を書くところ（`AiSummarizer`）だけ
+- 計画のイベント表は `DerivationProposed` の発生元を「Ingest・スタンド」としていて、スキーマにも `proposedBy: 'ingest'` が残っている。
+  将来 Ingest から提案させる余地として残すが、今は使わない（省略時は `'stand'`）
+- スタンド側の判断は `RecordReplayLlm` を通らないので、記録・再生されず H6 の一致率にも入らない
+
 ## 派生の状態（7 状態）
 
 proposed → rejected / approved。内部派生は approved で適用され、返事期待がなければ completed。
