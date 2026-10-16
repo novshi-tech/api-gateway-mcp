@@ -88,7 +88,8 @@ export interface ProposeInput {
   proposedBy?: 'ingest' | 'stand' | 'human';
 }
 
-const OUTSTANDING: Derivation['status'][] = ['approved', 'sent', 'overdue'];
+// 返事期待を省略した派生（completed）にも返事は来うる
+const OUTSTANDING: Derivation['status'][] = ['approved', 'sent', 'overdue', 'completed'];
 
 export function proposeDerivation(
   p: Projections,
