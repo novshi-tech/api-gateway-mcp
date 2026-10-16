@@ -5,6 +5,7 @@
 - 計画: `docs/PLAN.md`（プロトタイプ計画の Markdown 書き出し）
 - 設計の正本: Google Doc（https://docs.google.com/document/d/1gNSrK_p5xrEGiJB4RRr2FfFf9r-naPamh_5P9tNqM6w/edit）。API ゲートウェイの google-docs スキル経由で読める。`docs/PLAN.md` と食い違ったら Google Doc が優先
 - 決定の記録: `docs/adr/`
+- 申し送り（残作業・判断待ち・既知の制約）: `docs/HANDOFF.md`。セッションの始めに読み、終わりに更新する
 
 ## 約束事
 
