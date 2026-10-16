@@ -64,4 +64,4 @@ pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
 
 - 本体は上流サービスのトークンを持たない。外部との出入りはゲートウェイ経由（プロトタイプはダミーコネクタのみ）
 - 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と `/timeline.html` だけ
-- スタンド（Cowork / Claude Code）向けのツール定義は `docs/stand/skill.md`、接続手順は `docs/stand/connect.md`
+- スタンド（Cowork / Claude Code）用のスキルは novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`、接続手順は `docs/stand/connect.md`。HTTP API を変えたらスキルの API の表も直す

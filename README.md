@@ -6,7 +6,7 @@ AI ネイティブ タスク管理ツールのプロトタイプ。イベント�
 - 計画: [docs/PLAN.md](docs/PLAN.md)（実装の順序と仮説 H1〜H7）
 - 開発の約束事と構成: [CLAUDE.md](CLAUDE.md)
 - 決定の記録: [docs/adr/](docs/adr/)
-- スタンド用スキルと接続手順: [docs/stand/](docs/stand/)
+- 接続手順: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは nvt-api-gateway-skills に移設）
 - シナリオ: [fixtures/](fixtures/)
 
 ```sh

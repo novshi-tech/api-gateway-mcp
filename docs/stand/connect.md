@@ -30,7 +30,7 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
    ```
 
 3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
-4. スタンド用スキル `docs/stand/skill.md` を配る。自社用なので、ゲートウェイのリポジトリではなく自社のスキルのプラグイン（nvt-api-gateway-skills）に置く
+4. スタンド用スキルは nvt-api-gateway-skills のプラグイン `nvt-api-gateway`（0.2.0 以降）に入っている。api-gateway プラグインと一緒にインストールする
 
 ## 本体の準備
 
@@ -54,13 +54,13 @@ WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 ## Cowork
 
 1. Cowork の設定で API ゲートウェイの MCP コネクタを有効にする（既存のもの。追加の MCP は不要）
-2. スキル `murmur` を有効にする
+2. プラグイン `api-gateway` と `nvt-api-gateway` をインストールし、スキル `murmur` を有効にする
 3. 「自分のタスクを見せて」で `list_my_tasks` が呼ばれることを確認する
 
 ## Claude Code
 
 1. `claude mcp add` でゲートウェイの MCP を追加する（既に使っていればそのまま）
-2. `docs/stand/skill.md` をスキルとして置く（ゲートウェイのスキル配布を使うか、`.claude/skills/murmur/SKILL.md` に置く）
+2. マーケットプレイス `novshi-tech/api-gateway-mcp` と `novshi-tech/nvt-api-gateway-skills` を追加し、`api-gateway` と `nvt-api-gateway` のプラグインをインストールする
 3. 同じく `list_my_tasks` で確認する
 
 ## H7（スタンド主導の完走）の回し方
