@@ -100,6 +100,7 @@ npx wrangler deploy
 
 - `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 - `SIGNING_KEY` を変えると、発行済みのトークンと MCP の接続が無効になり、ユーザーは接続し直しになります。
+- `IDENTITY_SIGNING_KEY` を変えると、`identity` の上流が古い公開鍵をキャッシュしている間は検証に失敗します。上流が JWKS を取り直すまで待つか、上流の公開鍵を差し替えます。
 - 設定を変えたら、`npx wrangler deploy` で出し直します。
 
 ### 3. 連携先を設定する
@@ -114,6 +115,25 @@ npx wrangler secret put OAUTH_<SERVICE>_CLIENT_SECRET
 ```
 
 アクセストークンは、期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、Web 画面に「再接続」が出ます。
+
+ゲートウェイのサインインを信頼する自社の API(`auth.type` が `identity`)は、ユーザーが何も登録しません。ゲートウェイがサインイン中のユーザーの ID(`sub`)を Ed25519 で署名し、`Authorization: Bearer <JWT>` として送ります。JWT は `iss` がゲートウェイの URL、`aud` が設定の `audience`、寿命は 5 分です。上流は `https://<ゲートウェイ>/.well-known/jwks.json` の公開鍵で検証します。Claude からは、`list_credentials` に `identity:<サービス名>` という認証情報として見えます。
+
+```jsonc
+"murmur": {
+  "display_name": "Murmur",
+  "base_url": "https://murmur.internal/api",
+  // 公開ルートを持たない Worker には、Service Binding で中継する
+  "binding": "MURMUR",
+  "auth": { "type": "identity", "audience": "murmur" }
+}
+```
+
+```sh
+# 署名鍵(Ed25519 の秘密鍵の JWK)を作って登録する
+node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npx wrangler secret put IDENTITY_SIGNING_KEY
+```
+
+`binding` を書いたサービスは、公開のインターネットではなく、`wrangler.jsonc` の `services` に書いた Service Binding(`{ "binding": "MURMUR", "service": "murmur" }`)で上流を呼びます。`base_url` のホスト名は使われず、パスだけが意味を持ちます。
 
 #### freee(`freee`)
 

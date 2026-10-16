@@ -147,6 +147,11 @@ function serviceRows(services: Services): string {
     const label = `<input type="hidden" name="service" value="${escape(name)}">
 <label>名前(複数のアカウントを見分けるため)<input type="text" name="label" placeholder="${escape(displayName)}"></label>`;
     const auth = config.auth;
+    if (auth.type === "identity") {
+      return `<li><div class="service-row" style="--tag: ${colors.get(name)}">
+<p class="fixed"><span class="swatch"></span><span class="name">${escape(displayName)}</span><span class="how">登録不要(サインイン中のあなたとして接続)</span></p>
+</div></li>`;
+    }
     const body = auth.type === "oauth2"
       ? `<form method="post" action="/connect">
 <p class="hint">${escape(displayName)} のサインイン画面に移ります。許可すると、ここに戻ってきます。</p>

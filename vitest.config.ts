@@ -20,6 +20,12 @@ const SERVICES = {
     },
   },
   ...(experimental_readRawConfig({ config: CONFIG }).rawConfig.vars?.SERVICES as object),
+  // An upstream that trusts the gateway's sign-in (auth type "identity").
+  murmur: {
+    display_name: "Murmur",
+    base_url: "https://murmur.example/api",
+    auth: { type: "identity", audience: "murmur" },
+  },
 };
 
 const IDP = "https://idp.test";
@@ -27,6 +33,9 @@ const OIDC_ISSUER = `${IDP}/tenant/v2.0`;
 const OIDC_CLIENT_ID = "test-client";
 const { publicKey, privateKey } = await generateKeyPair("RS256");
 const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256", use: "sig" };
+// The gateway's own key for signing user identities to "identity" upstreams.
+const identityKey = (await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true })).privateKey;
+const IDENTITY_SIGNING_KEY = JSON.stringify(await exportJWK(identityKey));
 
 // A fake OpenID provider. The authorization code is base64url JSON of the
 // claims the test wants in the ID token, so tests choose who signs in.
@@ -143,6 +152,7 @@ export default defineConfig({
         bindings: {
           SERVICES,
           SIGNING_KEY: "test-signing-key-test-signing-key-0123456789",
+          IDENTITY_SIGNING_KEY,
           ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           OIDC_CLIENT_SECRET: "test",
           OIDC_ISSUER,

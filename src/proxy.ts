@@ -1,4 +1,5 @@
-import { parseServices, publicUrl } from "./config";
+import { parseServices, publicUrl, type ServiceConfig } from "./config";
+import { IDENTITY_CREDENTIAL, signIdentity } from "./identity";
 import { bearer, verifyToken, type GatewayClaims } from "./tokens";
 import { vaultFor } from "./vault";
 
@@ -55,8 +56,13 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   const credentialId = claims.creds?.[service];
   if (!credentialId) return denied(403, `token does not cover service: ${service}`);
 
-  const result = await vaultFor(env, claims.sub).headers(credentialId);
+  const result =
+    config.auth.type === "identity"
+      ? await identityHeaders(env, claims.sub, credentialId, config.auth.audience)
+      : await vaultFor(env, claims.sub).headers(credentialId);
   if ("error" in result) {
+    if (result.error === "forbidden") return denied(403, `token does not cover service: ${service}`);
+    if (result.error === "unconfigured") return denied(502, "the gateway has no identity signing key");
     if (result.error === "missing") return denied(403, "credential no longer exists");
     if (result.error === "reconnect") {
       return denied(403, `credential must be reconnected by the user at ${publicUrl(env)}/`);
@@ -66,7 +72,7 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
 
   const upstreamUrl = `${config.base_url}${upstreamPath}${url.search}`;
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const upstream = await fetch(upstreamUrl, {
+  const upstream = await upstreamFetcher(env, config)(upstreamUrl, {
     method: request.method,
     headers: forwardHeaders(request.headers, result.headers),
     body: hasBody ? request.body : undefined,
@@ -91,4 +97,23 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
     if (!DROP_RESPONSE_HEADERS.has(name)) headers.set(name, value);
   }
   return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
+async function identityHeaders(
+  env: Env,
+  userId: string,
+  credentialId: string,
+  audience: string,
+): Promise<{ headers: Record<string, string> } | { error: "forbidden" | "unconfigured" }> {
+  if (credentialId !== IDENTITY_CREDENTIAL) return { error: "forbidden" };
+  const token = await signIdentity(env, publicUrl(env), userId, audience);
+  return token ? { headers: { authorization: `Bearer ${token}` } } : { error: "unconfigured" };
+}
+
+// A Service Binding reaches a Worker that has no public route.
+function upstreamFetcher(env: Env, config: ServiceConfig): typeof fetch {
+  if (!config.binding) return fetch;
+  const binding = (env as unknown as Record<string, Fetcher | undefined>)[config.binding];
+  if (!binding) throw new Error(`missing service binding: ${config.binding}`);
+  return ((input: RequestInfo | URL, init?: RequestInit) => binding.fetch(input, init)) as typeof fetch;
 }

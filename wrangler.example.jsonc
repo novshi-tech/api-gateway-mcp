@@ -110,5 +110,8 @@
     }
   }
   // Secrets (wrangler secret put): OIDC_CLIENT_SECRET, SIGNING_KEY, ENCRYPTION_KEY,
-  // and OAUTH_<SERVICE>_CLIENT_ID / OAUTH_<SERVICE>_CLIENT_SECRET for each OAuth service
+  // and OAUTH_<SERVICE>_CLIENT_ID / OAUTH_<SERVICE>_CLIENT_SECRET for each OAuth service.
+  // IDENTITY_SIGNING_KEY (an Ed25519 private JWK) is needed only for services whose auth type is "identity".
+  // Such a service may be reached through a Service Binding: add "binding": "<NAME>" to it and
+  // "services": [{ "binding": "<NAME>", "service": "<worker name>" }] here.
 }

@@ -58,6 +58,7 @@ export class UserVault extends DurableObject<Env> {
   async add(service: string, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
     const config = parseServices(this.env.SERVICES)[service];
     if (!config) return { error: `unknown service: ${service}` };
+    if (config.auth.type === "identity") return { error: `${service} needs no credential` };
     if (config.auth.type !== "headers") return { error: `${service} is connected with OAuth` };
     const values: HeaderSecrets = {};
     for (const field of config.auth.headers) {
@@ -105,6 +106,7 @@ export class UserVault extends DurableObject<Env> {
     const config = parseServices(this.env.SERVICES)[stored.service];
     if (!config) return { error: "missing" };
     if (config.auth.type === "oauth2") return this.oauthHeaders(id, stored);
+    if (config.auth.type !== "headers") return { error: "missing" };
     const values = await decryptJson<HeaderSecrets>(await this.key(), stored.sealed, this.aad(id));
     const headers: Record<string, string> = {};
     for (const field of config.auth.headers) {

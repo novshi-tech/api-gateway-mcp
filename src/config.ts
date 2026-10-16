@@ -18,16 +18,27 @@ export interface OAuth2Auth {
   authorize_params?: Record<string, string>;
 }
 
+// For an upstream that trusts the gateway's sign-in: no stored credential, the
+// gateway signs the user's ID (EdDSA, IDENTITY_SIGNING_KEY) for this audience and
+// sends it as `Authorization: Bearer`. Upstreams verify it with /.well-known/jwks.json.
+export interface IdentityAuth {
+  type: "identity";
+  audience: string;
+}
+
 export interface ServiceConfig {
   // Shown in the web UI; defaults to the service name.
   display_name?: string;
   base_url: string;
-  auth: HeadersAuth | OAuth2Auth;
+  // Name of a Service Binding to reach the upstream through instead of the public internet.
+  binding?: string;
+  auth: HeadersAuth | OAuth2Auth | IdentityAuth;
 }
 
 export type Services = Record<string, ServiceConfig>;
 
 const SERVICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
+const BINDING_NAME = /^[A-Z][A-Z0-9_]*$/;
 
 export function parseServices(raw: unknown): Services {
   const value = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -40,10 +51,18 @@ export function parseServices(raw: unknown): Services {
     if (auth?.type === "oauth2") {
       requireHttps(name, "authorization_url", auth.authorization_url);
       requireHttps(name, "token_url", auth.token_url);
+    } else if (auth?.type === "identity") {
+      if (typeof auth.audience !== "string" || !auth.audience) throw new Error(`service ${name}: identity needs an audience`);
     } else if (auth?.type !== "headers" || !Array.isArray(auth.headers) || auth.headers.length === 0) {
       throw new Error(`service ${name}: unsupported auth`);
     }
-    services[name] = { display_name: config.display_name || name, base_url: config.base_url.replace(/\/+$/, ""), auth: config.auth };
+    if (config.binding !== undefined && !BINDING_NAME.test(config.binding)) throw new Error(`service ${name}: invalid binding name`);
+    services[name] = {
+      display_name: config.display_name || name,
+      base_url: config.base_url.replace(/\/+$/, ""),
+      ...(config.binding ? { binding: config.binding } : {}),
+      auth: config.auth,
+    };
   }
   return services;
 }

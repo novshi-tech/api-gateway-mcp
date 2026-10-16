@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { parseServices, publicUrl } from "./config";
+import { IDENTITY_CREDENTIAL, identityCredentialId, serviceOfIdentityCredential } from "./identity";
 import { GATEWAY_TOKEN_TTL_SECONDS, signToken } from "./tokens";
 import { vaultFor } from "./vault";
 
@@ -29,13 +30,17 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       title: "List credentials",
       description:
         "Lists the upstream services this gateway can reach and the credentials the current user has registered for them. " +
-        `Credentials are registered by the user at ${base}/.`,
+        `Credentials are registered by the user at ${base}/. ` +
+        `Services that trust the gateway's sign-in need no registration: they appear with the credential ID "${IDENTITY_CREDENTIAL}:<service>".`,
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
-      const services = Object.keys(parseServices(env.SERVICES));
-      return json({ services, credentials: await vault.list(), register_url: `${base}/` });
+      const config = parseServices(env.SERVICES);
+      const identity = Object.entries(config)
+        .filter(([, c]) => c.auth.type === "identity")
+        .map(([service, c]) => ({ id: identityCredentialId(service), service, label: `${c.display_name}(サインイン中のユーザー)` }));
+      return json({ services: Object.keys(config), credentials: [...(await vault.list()), ...identity], register_url: `${base}/` });
     },
   );
 
@@ -58,7 +63,15 @@ export function buildServer(env: Env, props: McpProps): McpServer {
     },
     async ({ credential_ids }) => {
       const creds: Record<string, string> = {};
+      const services = parseServices(env.SERVICES);
       for (const id of new Set(credential_ids)) {
+        const identityService = serviceOfIdentityCredential(id);
+        if (identityService !== null) {
+          if (services[identityService]?.auth.type !== "identity") return error(`unknown credential: ${id}`);
+          if (creds[identityService]) return error(`more than one credential for service: ${identityService}`);
+          creds[identityService] = IDENTITY_CREDENTIAL;
+          continue;
+        }
         const info = await vault.get(id);
         if (!info) return error(`unknown credential: ${id}`);
         if (info.needsReconnect) return error(`credential ${id} must be reconnected by the user at ${base}/`);

@@ -116,7 +116,8 @@ form { margin: 0; }
 .services { border-top: 1px solid var(--line); }
 .services > li { list-style: none; border-bottom: 1px solid var(--line); }
 .services { margin: 0; padding: 0; }
-.service-row summary { display: flex; align-items: center; gap: .75rem; padding: .9rem .25rem; cursor: pointer; list-style: none; }
+.service-row summary, .service-row .fixed { display: flex; align-items: center; gap: .75rem; padding: .9rem .25rem; cursor: pointer; list-style: none; }
+.service-row .fixed { cursor: default; margin: 0; }
 .service-row summary::-webkit-details-marker { display: none; }
 .swatch { flex: none; width: .85rem; height: .85rem; border-radius: 50%; background: var(--tag); }
 .service-row .name { font-weight: 700; }

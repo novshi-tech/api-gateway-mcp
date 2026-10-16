@@ -1,6 +1,7 @@
 import { OAuthProvider, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { authorizeCallback, authorizeGet, authorizePost, MCP_CALLBACK_PATH, MCP_SCOPE } from "./authorize";
 import { publicUrl } from "./config";
+import { jwks, JWKS_PATH } from "./identity";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
 import {
@@ -27,6 +28,7 @@ const defaultHandler: ExportedHandler<Env> = {
     const method = request.method;
 
     if (pathname.startsWith(API_PREFIX)) return handleProxy(request, env);
+    if (pathname === JWKS_PATH && method === "GET") return jwks(env);
     if (pathname === "/authorize" && method === "GET") return authorizeGet(request, e);
     if (pathname === "/authorize" && method === "POST") return authorizePost(request, e);
     if (pathname === MCP_CALLBACK_PATH && method === "GET") return authorizeCallback(request, e);

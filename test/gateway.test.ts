@@ -1,7 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { env, SELF } from "cloudflare:test";
+import { createLocalJWKSet, jwtVerify } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
+import { handleProxy } from "../src/proxy";
 import { publicUrl } from "../src/config";
 import { buildServer } from "../src/mcp";
 import { signToken, verifyToken } from "../src/tokens";
@@ -136,6 +138,74 @@ describe("proxy", () => {
   });
 });
 
+describe("identity upstreams", () => {
+  async function verifyIdentity(token: string) {
+    const keys = (await (await SELF.fetch(`${BASE}/.well-known/jwks.json`)).json()) as { keys: never[] };
+    return jwtVerify(token, createLocalJWKSet(keys), { issuer: BASE, audience: "murmur", algorithms: ["EdDSA"] });
+  }
+
+  it("publishes only the public half of the identity key", async () => {
+    const res = await SELF.fetch(`${BASE}/.well-known/jwks.json`);
+    expect(res.status).toBe(200);
+    const { keys } = (await res.json()) as { keys: Record<string, string>[] };
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toMatchObject({ kty: "OKP", crv: "Ed25519", alg: "EdDSA", use: "sig" });
+    expect(keys[0].kid).toBeTruthy();
+    expect(keys[0].d).toBeUndefined();
+  });
+
+  it("replaces the caller's authorization with the user's signed identity", async () => {
+    const res = await SELF.fetch(`${BASE}/api/murmur/tasks?filter=open`, {
+      headers: { authorization: `Bearer ${await apiToken(alice, { murmur: "identity" })}`, "x-murmur-identity": "forged" },
+    });
+    expect(res.status).toBe(200);
+    const echoed = (await res.json()) as { url: string; headers: Record<string, string> };
+    expect(echoed.url).toBe("https://murmur.example/api/tasks?filter=open");
+    const token = echoed.headers.authorization.replace(/^Bearer /, "");
+    const { payload, protectedHeader } = await verifyIdentity(token);
+    expect(payload.sub).toBe(alice);
+    expect(payload.exp! - payload.iat!).toBe(300);
+    expect(protectedHeader).toMatchObject({ alg: "EdDSA", typ: "JWT" });
+  });
+
+  it("refuses a token whose credential for the service is not the identity", async () => {
+    const cred = await addBoard(alice);
+    const res = await SELF.fetch(`${BASE}/api/murmur/tasks`, {
+      headers: { authorization: `Bearer ${await apiToken(alice, { murmur: cred.id })}` },
+    });
+    expect(res.status).toBe(403);
+    const none = await SELF.fetch(`${BASE}/api/murmur/tasks`, { headers: { authorization: `Bearer ${await apiToken(alice, {})}` } });
+    expect(none.status).toBe(403);
+  });
+
+  it("reaches the upstream through its Service Binding when one is configured", async () => {
+    const seen: Request[] = [];
+    const bound = {
+      ...env,
+      SERVICES: { murmur: { base_url: "https://murmur.internal/api", binding: "MURMUR", auth: { type: "identity", audience: "murmur" } } },
+      MURMUR: {
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          seen.push(new Request(input, init));
+          return Response.json({ ok: true });
+        },
+      },
+    } as unknown as Env;
+    const res = await handleProxy(
+      new Request(`${BASE}/api/murmur/me`, { headers: { authorization: `Bearer ${await apiToken(bob, { murmur: "identity" })}` } }),
+      bound,
+    );
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].url).toBe("https://murmur.internal/api/me");
+    const { payload } = await verifyIdentity(seen[0].headers.get("authorization")!.replace(/^Bearer /, ""));
+    expect(payload.sub).toBe(bob);
+  });
+
+  it("does not store credentials for identity services", async () => {
+    expect(await vaultFor(env, alice).add("murmur", "", {})).toEqual({ error: "murmur needs no credential" });
+  });
+});
+
 describe("mcp tools", () => {
   async function connect(userId: string) {
     const server = buildServer(env, { userId, name: userId });
@@ -154,8 +224,11 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "docs", "graph"]);
-    expect(listed.credentials).toEqual([expect.objectContaining({ id: cred.id, service: "board" })]);
+    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "docs", "graph", "murmur"]);
+    expect(listed.credentials).toEqual([
+      expect.objectContaining({ id: cred.id, service: "board" }),
+      { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },
+    ]);
   });
 
   it("issues a token that the proxy accepts", async () => {
@@ -174,6 +247,23 @@ describe("mcp tools", () => {
     const client = await connect(alice);
     const { tools } = await client.listTools();
     for (const tool of tools) expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
+  it("issues a token for an identity service without a stored credential", async () => {
+    const cred = await addBoard(alice);
+    const client = await connect(alice);
+    const issued = JSON.parse(
+      text(await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:murmur", cred.id] } })),
+    );
+    const claims = await verifyToken<{ creds: Record<string, string> }>(env.SIGNING_KEY, BASE, "api", issued.token);
+    expect(claims?.creds).toEqual({ murmur: "identity", board: cred.id });
+    const res = await SELF.fetch(`${issued.services.murmur}/me`, { headers: { authorization: `Bearer ${issued.token}` } });
+    expect(res.status).toBe(200);
+
+    const notIdentity = await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:board"] } });
+    expect(notIdentity.isError).toBe(true);
+    const unknown = await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:nope"] } });
+    expect(unknown.isError).toBe(true);
   });
 
   it("refuses other users' credentials and duplicate services", async () => {

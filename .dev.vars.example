@@ -3,3 +3,5 @@ OIDC_CLIENT_SECRET=
 SIGNING_KEY=
 # openssl rand -base64 32
 ENCRYPTION_KEY=
+# identity の上流を使うときだけ。Ed25519 の秘密鍵の JWK(README を参照)
+IDENTITY_SIGNING_KEY=

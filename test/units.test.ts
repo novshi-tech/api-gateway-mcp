@@ -70,6 +70,24 @@ describe("parseServices", () => {
   it("rejects invalid names", () => {
     expect(() => parseServices({ "../x": { base_url: "https://api.example.com", auth } })).toThrow();
   });
+
+  it("accepts identity upstreams with an audience and a Service Binding", () => {
+    const parsed = parseServices({
+      murmur: { base_url: "https://murmur.internal/api", binding: "MURMUR", auth: { type: "identity", audience: "murmur" } },
+    });
+    expect(parsed.murmur).toEqual({
+      display_name: "murmur",
+      base_url: "https://murmur.internal/api",
+      binding: "MURMUR",
+      auth: { type: "identity", audience: "murmur" },
+    });
+    expect(parseServices({ board: { base_url: "https://a.example", auth } }).board).not.toHaveProperty("binding");
+  });
+
+  it("rejects identity upstreams without an audience and invalid binding names", () => {
+    expect(() => parseServices({ m: { base_url: "https://a.example", auth: { type: "identity" } } })).toThrow(/audience/);
+    expect(() => parseServices({ m: { base_url: "https://a.example", binding: "lower", auth } })).toThrow(/binding/);
+  });
 });
 
 describe("admit", () => {

@@ -123,7 +123,10 @@ describe("MCP authorization flow", () => {
     const userId = `entra_tenant-1_${oid}`;
     const added = await vaultFor(env, userId).add("board", "main", { "x-api-key": "k", authorization: "t" });
     const listed = await callTool(token.body.access_token, "list_credentials");
-    expect(listed.credentials).toEqual([expect.objectContaining({ id: (added as { id: string }).id })]);
+    expect(listed.credentials).toEqual([
+      expect.objectContaining({ id: (added as { id: string }).id }),
+      expect.objectContaining({ id: "identity:murmur" }),
+    ]);
   });
 
   it("denies users from other tenants", async () => {

@@ -26,6 +26,9 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 | --- | --- |
 | 固定の API キーやトークンをヘッダーで送る | `headers`。ヘッダーごとに `name` と、Web 画面に出す `label`。`Authorization: Bearer <トークン>` なら `"prefix": "Bearer "` |
 | OAuth 2.0 の認可コード | `oauth2`。`authorization_url`、`token_url`、必要なら `scope` と `authorize_params` |
+| 自社の API で、ゲートウェイのサインインを信頼する(ユーザーごとの認証情報がない) | `identity`。`audience` を書く。ゲートウェイがユーザー ID を Ed25519 で署名して `Authorization: Bearer` で送り、上流は `/.well-known/jwks.json` で検証する。署名鍵 `IDENTITY_SIGNING_KEY` が要る(README の「連携先を設定する」) |
+
+公開ルートを持たない Worker が上流なら、サービスに `"binding": "<BINDING 名>"` を書き、`wrangler.jsonc` の `services` に Service Binding を足す。
 
 次の API は、そのままでは足せない。ユーザーに伝えて、どうするか決めてもらう。
 
