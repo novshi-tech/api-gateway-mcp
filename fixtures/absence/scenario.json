@@ -1,0 +1,8 @@
+{
+  "title": "欠勤連絡",
+  "tenant": "ubs",
+  "hypotheses": ["H2", "H6", "H7"],
+  "status": "draft",
+  "echoObserved": false,
+  "notes": "清掃スタッフ（LINE 公式アカウント 1:1、ゴースト Party）からの短命で多数の連絡。LINE には返信先のアンカーがないので、つなぎ込みは AI 判断に頼る。スタンド主導で回す前の下書きで、回した記録で置き換える（H7）。"
+}

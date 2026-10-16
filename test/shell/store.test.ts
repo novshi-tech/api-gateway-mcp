@@ -3,7 +3,7 @@ import { canonicalJson, draft } from '../../src/domain';
 import { pgRepo } from '../../src/store/drizzle';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
-import { pgliteDb } from '../helpers/pglite';
+import { pgliteDb } from '../../scripts/lib/pglite';
 import { email, EventLog, ingestPure, makeCtx, seed } from '../helpers/world';
 
 // メモリ実装と Postgres 実装（pglite）に同じ契約テストを当てる

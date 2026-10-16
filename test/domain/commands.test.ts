@@ -297,8 +297,8 @@ describe('scanOverdue（期限の見回り）', () => {
 
 describe('correctIngest', () => {
   it('人の訂正は decidedBy=human で追記され、元の判断は消えない', () => {
-    const { log, ctx, taskId } = withCustomerTask();
-    const signalId = log.state().tasks[taskId] && Object.keys(log.state().signals)[0]!;
+    const { log, ctx } = withCustomerTask();
+    const signalId = Object.keys(log.state().signals)[0]!;
     const events = correctIngest(log.state(), alice, ctx, { signalId, decision: { kind: 'ignore' }, reason: '迷惑メール' });
     expect(events[0]).toMatchObject({
       type: 'IngestDecided',

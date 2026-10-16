@@ -1,0 +1,78 @@
+{
+  "ingest": {
+    "s01": { "kind": "new", "list": "l_customer", "title": "グランメゾン302 雨漏り" },
+    "s02": { "kind": "attach", "task": "$partnerTask" },
+    "s03": { "kind": "attach", "task": "$custTask" },
+    "s04": { "kind": "ignore", "reason": "広告メール" },
+    "s05": { "kind": "new", "list": "l_customer", "title": "駐車場の照明交換" },
+    "s06": { "kind": "duplicate" }
+  },
+  "checkpoints": [
+    {
+      "after": "s01",
+      "tasks": { "$custTask": { "ballAt": { "kind": "list", "listId": "l_customer" }, "unansweredSince": "2026-10-16T09:00:00.000Z" } }
+    },
+    {
+      "after": "a03",
+      "tasks": {
+        "$custTask": { "ballAt": { "kind": "list", "listId": "l_internal" }, "replyExpectedBy": "2026-10-20T09:00:00.000Z" },
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_internal" }, "listId": "l_internal" }
+      },
+      "derivations": { "$drvInternal": "approved" }
+    },
+    {
+      "after": "a08",
+      "tasks": {
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_partner" } },
+        "$partnerTask": { "ballAt": { "kind": "party", "partyIds": ["p_yamada"] }, "listId": "l_partner" }
+      },
+      "derivations": { "$drvPartner": "sent" }
+    },
+    {
+      "after": "s02",
+      "tasks": {
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_internal" }, "replyExpectedBy": null },
+        "$partnerTask": { "ballAt": { "kind": "list", "listId": "l_partner" } }
+      },
+      "derivations": { "$drvPartner": "replied" }
+    },
+    {
+      "after": "a13",
+      "tasks": {
+        "$custTask": { "ballAt": { "kind": "party", "partyIds": ["p_takahashi"] }, "replyExpectedBy": "2026-10-24T09:00:00.000Z" },
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_customer" } }
+      },
+      "derivations": { "$drvInternal": "replied", "$drvCustomer": "sent" }
+    },
+    {
+      "after": "s03",
+      "tasks": {
+        "$custTask": { "ballAt": { "kind": "list", "listId": "l_customer" } },
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_internal" } }
+      },
+      "derivations": { "$drvCustomer": "replied" }
+    }
+  ],
+  "final": {
+    "taskCount": 4,
+    "ignoredCount": 1,
+    "tasks": {
+      "$custTask": { "status": "open", "attributes": { "stage": "受注" } },
+      "$intTask": { "status": "open", "attributes": { "status": "見積提示済み", "assignee": "p_suzuki", "site": "グランメゾン302", "quote_amount": 385000 } },
+      "$partnerTask": { "status": "closed", "attributes": { "status": "見積受領" } },
+      "$lightTask": { "status": "open", "listId": "l_customer", "attributes": {} }
+    },
+    "derivations": { "$drvInternal": "replied", "$drvPartner": "replied", "$drvCustomer": "replied" },
+    "eventCounts": { "SignalObservedSent": 0, "DerivationSent": 2, "DerivationApproved": 3, "ReplyOverdue": 0 }
+  },
+  "visibility": [
+    { "ghostParty": "p_takahashi" },
+    { "ghostParty": "p_yamada" },
+    { "as": "u_outsider", "signals": 0 },
+    { "as": "u_outsider", "task": "$custTask", "access": null },
+    { "as": "u_suzuki", "task": "$custTask", "access": "summary", "mustContain": ["グランメゾン302号室で天井から雨漏り"], "mustNotContain": ["住人から連絡がありました"] },
+    { "as": "u_sato", "task": "$partnerTask", "access": "summary", "mustContain": ["現地調査と修繕見積をお願いします"], "mustNotContain": ["屋上防水の劣化が原因です。見積書を添付します"] },
+    { "as": "u_sato", "task": "$custTask", "access": "full", "mustContain": ["住人から連絡がありました"] },
+    { "as": "u_sato", "signals": 3 }
+  ]
+}

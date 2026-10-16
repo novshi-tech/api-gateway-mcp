@@ -1,0 +1,67 @@
+{
+  "ingest": {
+    "s01": { "kind": "new", "list": "l_customer", "title": "エントランス床の濡れ残りのクレーム" },
+    "s02": { "kind": "attach", "task": "$partnerTask" },
+    "s03": { "kind": "attach", "task": "$compTask" },
+    "s04": { "kind": "new", "list": "l_customer", "title": "請求書の送付先変更" }
+  },
+  "checkpoints": [
+    {
+      "after": "a06",
+      "tasks": {
+        "$compTask": { "ballAt": { "kind": "list", "listId": "l_internal" }, "replyExpectedBy": "2026-10-16T11:00:00.000Z" },
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_partner" }, "replyExpectedBy": "2026-10-16T13:00:00.000Z" },
+        "$partnerTask": { "ballAt": { "kind": "party", "partyIds": ["p_cleanco"] } }
+      }
+    },
+    {
+      "after": "c01",
+      "tasks": { "$compTask": { "overdue": true }, "$intTask": { "overdue": false } },
+      "derivations": { "$drvInternal": "overdue", "$drvPartner": "sent" }
+    },
+    {
+      "after": "c02",
+      "tasks": { "$intTask": { "overdue": true } },
+      "derivations": { "$drvPartner": "overdue" }
+    },
+    {
+      "after": "s02",
+      "tasks": { "$intTask": { "overdue": false, "ballAt": { "kind": "list", "listId": "l_internal" } } },
+      "derivations": { "$drvPartner": "replied", "$drvInternal": "overdue" }
+    },
+    {
+      "after": "a11",
+      "tasks": {
+        "$compTask": { "overdue": false, "ballAt": { "kind": "party", "partyIds": ["p_tanaka"] } },
+        "$intTask": { "ballAt": { "kind": "list", "listId": "l_customer" } }
+      },
+      "derivations": { "$drvInternal": "replied", "$drvCustomer": "sent" }
+    },
+    {
+      "after": "s03",
+      "tasks": { "$compTask": { "ballAt": { "kind": "list", "listId": "l_customer" } } },
+      "derivations": { "$drvCustomer": "replied" }
+    }
+  ],
+  "final": {
+    "taskCount": 4,
+    "ignoredCount": 0,
+    "tasks": {
+      "$compTask": { "status": "closed", "attributes": { "severity": "緊急" } },
+      "$intTask": { "status": "closed", "attributes": { "status": "完了", "cause": "協力会社の作業員が乾拭きを省略" } },
+      "$partnerTask": { "status": "closed", "attributes": { "report_received": true } },
+      "$billingTask": { "status": "open", "listId": "l_customer" }
+    },
+    "derivations": { "$drvInternal": "replied", "$drvPartner": "replied", "$drvCustomer": "replied" },
+    "eventCounts": { "ReplyOverdue": 2, "DerivationApproved": 3, "DerivationSent": 2 }
+  },
+  "visibility": [
+    { "ghostParty": "p_tanaka" },
+    { "ghostParty": "p_cleanco" },
+    { "as": "u_nvt", "signals": 0 },
+    { "as": "u_nvt", "task": "$compTask", "access": null },
+    { "as": "u_suzuki", "task": "$compTask", "access": "summary", "mustContain": ["原因調査と是正"], "mustNotContain": ["大事故になるところです"] },
+    { "as": "u_sato", "task": "$partnerTask", "access": "summary", "mustNotContain": ["時間が押していたため"] },
+    { "as": "u_suzuki", "task": "$partnerTask", "access": "full", "mustContain": ["時間が押していたため"] }
+  ]
+}

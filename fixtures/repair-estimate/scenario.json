@@ -1,0 +1,8 @@
+{
+  "title": "修繕見積",
+  "tenant": "ubs",
+  "hypotheses": ["H1", "H2", "H3", "H4", "H5"],
+  "status": "desk-checked",
+  "echoObserved": true,
+  "notes": "顧客（ゴースト Party）→ 顧客窓口 → 工事部 → 協力会社 の 3 者。見積書 PDF は添付のファイル参照だけを持つ。送信はダミーで observed-sent として折り返す（H5）。"
+}

@@ -64,7 +64,9 @@ describe('HTTP API', () => {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (user) headers[IDENTITY_HEADER] = await sign(claims(user));
       const res = await http.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-      return { status: res.status, body: res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text() };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
+      return { status: res.status, body: out };
     };
     return { ...ctx, call, http };
   }

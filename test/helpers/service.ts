@@ -1,25 +1,12 @@
-import { MurmurService, type Clock } from '../../src/app/service';
+import { MurmurService } from '../../src/app/service';
+import { counterIds, ManualClock } from '../../scripts/lib/clock';
+export { counterIds, ManualClock };
 import { DummyConnector, MemoryDummyBackend } from '../../src/connectors/dummy/connector';
 import type { Connectors } from '../../src/connectors/types';
 import type { AiDecision, DecisionRequest, Seed } from '../../src/domain';
 import type { Decider, ReplyEstimator } from '../../src/ingest/deciders';
 import { memoryRepo } from '../../src/store/memory';
 import type { Repo } from '../../src/store/types';
-
-export class ManualClock implements Clock {
-  constructor(public current = '2026-10-16T09:00:00.000Z') {}
-  now() {
-    return this.current;
-  }
-  set(v: string) {
-    this.current = v;
-  }
-}
-
-export function counterIds() {
-  let n = 0;
-  return (prefix: string) => `${prefix}_${++n}`;
-}
 
 /** 依頼を記録し、関数で答える Decider */
 export class StubDecider implements Decider {

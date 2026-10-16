@@ -1,0 +1,63 @@
+{
+  "ingest": {
+    "s01": { "kind": "new", "list": "l_client", "title": "ログイン画面の 500 エラー（森さん）" },
+    "s02": { "kind": "attach", "task": "$clientTask" },
+    "s03": { "kind": "attach", "task": "$devTask" },
+    "s04": { "kind": "attach", "task": "$devTask" },
+    "s05": { "kind": "attach", "task": "$devTask" },
+    "s06": { "kind": "attach", "task": "$devTask" },
+    "s07": { "kind": "ignore", "reason": "CI の成功通知で対応不要" },
+    "s08": { "kind": "new", "list": "l_dev", "title": "README の整備（NVT-50）" },
+    "s09": { "kind": "attach", "task": "$clientTask" }
+  },
+  "checkpoints": [
+    {
+      "after": "a03",
+      "tasks": {
+        "$clientTask": { "ballAt": { "kind": "list", "listId": "l_dev" } },
+        "$devTask": { "ballAt": { "kind": "list", "listId": "l_dev" } }
+      }
+    },
+    {
+      "after": "a11",
+      "tasks": {
+        "$clientTask": { "ballAt": { "kind": "party", "partyIds": ["p_mori"] }, "replyExpectedBy": "2026-10-17T15:30:00.000Z" },
+        "$devTask": { "ballAt": { "kind": "list", "listId": "l_client" }, "replyExpectedBy": "2026-10-17T15:30:00.000Z", "overdue": false }
+      },
+      "derivations": { "$drvDev": "replied", "$drvRelease": "sent" }
+    },
+    { "after": "c01", "derivations": { "$drvRelease": "sent" } },
+    {
+      "after": "c02",
+      "tasks": { "$devTask": { "overdue": true } },
+      "derivations": { "$drvRelease": "overdue" }
+    },
+    {
+      "after": "s09",
+      "tasks": {
+        "$clientTask": { "ballAt": { "kind": "list", "listId": "l_client" } },
+        "$devTask": { "ballAt": { "kind": "list", "listId": "l_dev" }, "overdue": false }
+      },
+      "derivations": { "$drvRelease": "replied" }
+    }
+  ],
+  "final": {
+    "taskCount": 3,
+    "ignoredCount": 1,
+    "tasks": {
+      "$clientTask": { "status": "closed", "attributes": { "status": "回答済み" } },
+      "$devTask": { "status": "closed", "attributes": { "severity": "high", "assignee": "p_kato", "jira_key": "NVT-42", "status": "done" } },
+      "$docTask": { "status": "open", "listId": "l_dev", "attributes": {} }
+    },
+    "derivations": { "$drvDev": "replied", "$drvRelease": "replied" },
+    "eventCounts": { "ReplyOverdue": 1, "DerivationSent": 1, "DerivationApproved": 2, "SignalObservedSent": 0 }
+  },
+  "visibility": [
+    { "ghostParty": "p_mori" },
+    { "as": "u_ubs_only", "signals": 0 },
+    { "as": "u_ubs_only", "task": "$devTask", "access": null },
+    { "as": "u_kato", "task": "$clientTask", "access": "summary", "mustContain": ["クライアント（森さん）からの報告"], "mustNotContain": ["昨日のリリース後からです", "スクリーンショットです"] },
+    { "as": "u_kato", "task": "$devTask", "access": "full", "mustContain": ["セッション検証を修正"] },
+    { "as": "u_nose", "task": "$clientTask", "access": "full", "mustContain": ["昨日のリリース後からです"] }
+  ]
+}

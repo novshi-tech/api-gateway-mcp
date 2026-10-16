@@ -1,0 +1,47 @@
+{
+  "tenants": [
+    { "id": "ubs", "name": "アーバンビルシステム" },
+    { "id": "nvt", "name": "ノブシテック" }
+  ],
+  "users": [
+    { "id": "u_sato", "name": "佐藤（窓口）" },
+    { "id": "u_suzuki", "name": "鈴木（清掃管理）" },
+    { "id": "u_nvt", "name": "ノブシテックの人" }
+  ],
+  "parties": [
+    { "id": "p_ubs", "tenantId": "ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
+    { "id": "p_sato", "tenantId": "ubs", "name": "佐藤", "kind": "person", "userId": "u_sato", "internal": true },
+    { "id": "p_suzuki", "tenantId": "ubs", "name": "鈴木", "kind": "person", "userId": "u_suzuki", "internal": true },
+    { "id": "p_tanaka", "tenantId": "ubs", "name": "田中ビル オーナー 田中様", "kind": "person" },
+    { "id": "p_cleanco", "tenantId": "ubs", "name": "クリーンサービス東都", "kind": "organization" },
+    { "id": "p_nvt", "tenantId": "nvt", "name": "ノブシテックの人", "kind": "person", "userId": "u_nvt", "internal": true }
+  ],
+  "addresses": [
+    { "id": "a_support", "tenantId": "ubs", "channel": "email", "value": "support@ubs.example", "partyId": "p_ubs" },
+    { "id": "a_tanaka", "tenantId": "ubs", "channel": "email", "value": "owner@tanaka-bldg.example", "partyId": "p_tanaka" },
+    { "id": "a_cleanco", "tenantId": "ubs", "channel": "email", "value": "ops@clean-toto.example", "partyId": "p_cleanco" }
+  ],
+  "lists": [
+    { "id": "l_customer", "tenantId": "ubs", "name": "顧客窓口（田中ビル）", "description": "オーナーとのやりとり" },
+    { "id": "l_internal", "tenantId": "ubs", "name": "清掃管理", "description": "社内の原因調査と是正" },
+    { "id": "l_partner", "tenantId": "ubs", "name": "協力会社（クリーンサービス東都）", "description": "清掃の再委託先とのやりとり" },
+    { "id": "l_nvt", "tenantId": "nvt", "name": "別テナント", "description": "" }
+  ],
+  "listMembers": [
+    { "listId": "l_customer", "partyId": "p_sato" },
+    { "listId": "l_customer", "partyId": "p_tanaka" },
+    { "listId": "l_internal", "partyId": "p_sato" },
+    { "listId": "l_internal", "partyId": "p_suzuki" },
+    { "listId": "l_partner", "partyId": "p_suzuki" },
+    { "listId": "l_partner", "partyId": "p_cleanco" },
+    { "listId": "l_nvt", "partyId": "p_nvt" }
+  ],
+  "attributeDefs": [
+    { "listId": "l_customer", "name": "severity", "type": "enum", "options": ["通常", "緊急"], "description": "顧客対応の緊急度" },
+    { "listId": "l_internal", "name": "status", "type": "enum", "options": ["受付", "調査中", "是正中", "完了"], "description": "社内の対応状況" },
+    { "listId": "l_internal", "name": "cause", "type": "string", "description": "判明した原因" },
+    { "listId": "l_partner", "name": "report_received", "type": "boolean", "description": "協力会社から作業報告を受け取ったか" }
+  ],
+  "credentialRefs": [{ "id": "c_support", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_support" }],
+  "channelPolicies": [{ "tenantId": "ubs", "channel": "email", "allowedListIds": ["l_customer", "l_partner"] }]
+}

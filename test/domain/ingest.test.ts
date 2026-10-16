@@ -11,7 +11,9 @@ import {
   proposeDerivation,
   recordSent,
   resolveAnchors,
+  type Anchors,
   type DecisionRequest,
+  type SignalPayload,
 } from '../../src/domain';
 import { alice, email, EventLog, ingestPure, makeCtx } from '../helpers/world';
 
@@ -85,8 +87,7 @@ describe('resolveAnchors', () => {
     );
     return { log, ctx, taskId: Object.keys(log.state().tasks)[0]! };
   }
-  const sig = (anchors: Record<string, unknown>) =>
-    ({
+  const sig = (anchors: Anchors): SignalPayload => ({
       signalId: 'sig_x',
       channel: 'email',
       from: { channel: 'email', value: 'carol@example.com' },
@@ -97,8 +98,8 @@ describe('resolveAnchors', () => {
       anchors,
       attachments: [],
       sourceRef: 'x',
-      acquiredAs: { kind: 'organization', tenantId: 'ubs' },
-    }) as const;
+    acquiredAs: { kind: 'organization', tenantId: 'ubs' },
+  });
 
   it('In-Reply-To・Jira キー・PR 番号で既存タスクに決まる', () => {
     const { log, taskId } = base();

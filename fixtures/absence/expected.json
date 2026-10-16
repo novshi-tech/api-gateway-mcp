@@ -1,0 +1,40 @@
+{
+  "ingest": {
+    "s01": { "kind": "new", "list": "l_site", "title": "山本さん 10/17 欠勤" },
+    "s02": { "kind": "attach", "task": "$subTask" },
+    "s03": { "kind": "new", "list": "l_site", "title": "佐々木さん 10/17 遅刻" },
+    "s04": { "kind": "ignore", "reason": "スタンプのみで対応不要" },
+    "s05": { "kind": "attach", "task": "$absA" }
+  },
+  "checkpoints": [
+    {
+      "after": "a05",
+      "tasks": {
+        "$absA": { "ballAt": { "kind": "list", "listId": "l_dispatch" } },
+        "$subTask": { "ballAt": { "kind": "party", "partyIds": ["p_ito"] } }
+      },
+      "derivations": { "$drvSub": "sent" }
+    },
+    {
+      "after": "s02",
+      "tasks": { "$absA": { "ballAt": { "kind": "list", "listId": "l_site" } } },
+      "derivations": { "$drvSub": "replied" }
+    }
+  ],
+  "final": {
+    "taskCount": 3,
+    "ignoredCount": 1,
+    "tasks": {
+      "$absA": { "status": "closed", "attributes": { "kind": "欠勤", "shift_date": "2026-10-17", "status": "手配済み", "substitute": "p_ito" } },
+      "$subTask": { "status": "closed", "attributes": { "status": "承諾" } },
+      "$lateB": { "status": "closed", "attributes": { "kind": "遅刻", "status": "対応不要" } }
+    },
+    "derivations": { "$drvSub": "replied" },
+    "eventCounts": { "ReplyOverdue": 0, "DerivationApproved": 1 }
+  },
+  "visibility": [
+    { "ghostParty": "p_yamamoto" },
+    { "ghostParty": "p_ito" },
+    { "as": "u_kimura", "task": "$absA", "access": "full" }
+  ]
+}

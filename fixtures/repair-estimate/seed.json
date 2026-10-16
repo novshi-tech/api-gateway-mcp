@@ -1,0 +1,54 @@
+{
+  "tenants": [
+    { "id": "ubs", "name": "アーバンビルシステム" },
+    { "id": "other", "name": "別テナント" }
+  ],
+  "users": [
+    { "id": "u_sato", "name": "佐藤（窓口）" },
+    { "id": "u_suzuki", "name": "鈴木（工事部）" },
+    { "id": "u_outsider", "name": "別テナントの人" }
+  ],
+  "parties": [
+    { "id": "p_ubs", "tenantId": "ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
+    { "id": "p_sato", "tenantId": "ubs", "name": "佐藤", "kind": "person", "userId": "u_sato", "internal": true },
+    { "id": "p_suzuki", "tenantId": "ubs", "name": "鈴木", "kind": "person", "userId": "u_suzuki", "internal": true },
+    { "id": "p_takahashi", "tenantId": "ubs", "name": "グランメゾン管理組合 高橋理事長", "kind": "person", "externalRefs": { "bm-next": "customer-1203" } },
+    { "id": "p_yamada", "tenantId": "ubs", "name": "山田工務店", "kind": "organization", "externalRefs": { "board": "vendor-88" } },
+    { "id": "p_outsider", "tenantId": "other", "name": "別テナントの人", "kind": "person", "userId": "u_outsider", "internal": true }
+  ],
+  "addresses": [
+    { "id": "a_support", "tenantId": "ubs", "channel": "email", "value": "support@ubs.example", "partyId": "p_ubs" },
+    { "id": "a_sato", "tenantId": "ubs", "channel": "email", "value": "sato@ubs.example", "partyId": "p_sato" },
+    { "id": "a_suzuki", "tenantId": "ubs", "channel": "email", "value": "suzuki@ubs.example", "partyId": "p_suzuki" },
+    { "id": "a_takahashi", "tenantId": "ubs", "channel": "email", "value": "takahashi@grandmaison.example", "partyId": "p_takahashi" },
+    { "id": "a_yamada", "tenantId": "ubs", "channel": "email", "value": "mitsumori@yamada-koumuten.example", "partyId": "p_yamada" }
+  ],
+  "lists": [
+    { "id": "l_customer", "tenantId": "ubs", "name": "顧客窓口（グランメゾン）", "description": "管理組合とのやりとり。顧客に見せる情報だけを置く" },
+    { "id": "l_internal", "tenantId": "ubs", "name": "工事部", "description": "社内の手配と原価。顧客にも協力会社にも見せない" },
+    { "id": "l_partner", "tenantId": "ubs", "name": "協力会社（山田工務店）", "description": "協力会社への依頼と見積の受け取り" },
+    { "id": "l_other", "tenantId": "other", "name": "別テナントのリスト", "description": "" }
+  ],
+  "listMembers": [
+    { "listId": "l_customer", "partyId": "p_sato" },
+    { "listId": "l_customer", "partyId": "p_takahashi" },
+    { "listId": "l_internal", "partyId": "p_sato" },
+    { "listId": "l_internal", "partyId": "p_suzuki" },
+    { "listId": "l_partner", "partyId": "p_suzuki" },
+    { "listId": "l_partner", "partyId": "p_yamada" },
+    { "listId": "l_other", "partyId": "p_outsider" }
+  ],
+  "attributeDefs": [
+    { "listId": "l_customer", "name": "stage", "type": "enum", "options": ["問い合わせ", "見積提示", "受注", "失注"], "description": "顧客との商談の段階" },
+    { "listId": "l_internal", "name": "status", "type": "enum", "options": ["受付", "手配中", "見積待ち", "見積提示済み", "完了"], "description": "工事部の作業状態" },
+    { "listId": "l_internal", "name": "assignee", "type": "party", "description": "工事部の担当者" },
+    { "listId": "l_internal", "name": "site", "type": "string", "description": "現場（物件名と部屋番号）" },
+    { "listId": "l_internal", "name": "quote_amount", "type": "number", "description": "顧客に出す見積金額（税込、円）" },
+    { "listId": "l_partner", "name": "status", "type": "enum", "options": ["依頼済み", "見積受領", "発注済み"], "description": "協力会社とのやりとりの段階" }
+  ],
+  "credentialRefs": [
+    { "id": "c_support", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_support" },
+    { "id": "c_suzuki", "tenantId": "ubs", "principal": { "kind": "user", "userId": "u_suzuki" }, "addressId": "a_suzuki" }
+  ],
+  "channelPolicies": [{ "tenantId": "ubs", "channel": "email", "allowedListIds": ["l_customer"] }]
+}

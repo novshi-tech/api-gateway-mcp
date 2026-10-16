@@ -1,0 +1,57 @@
+{
+  "tenants": [
+    { "id": "nvt", "name": "ノブシテック" },
+    { "id": "ubs", "name": "アーバンビルシステム" }
+  ],
+  "users": [
+    { "id": "u_nose", "name": "能勢" },
+    { "id": "u_kato", "name": "加藤" },
+    { "id": "u_ubs_only", "name": "UBS だけの人" }
+  ],
+  "parties": [
+    { "id": "p_nvt", "tenantId": "nvt", "name": "ノブシテック", "kind": "organization", "internal": true },
+    { "id": "p_nose", "tenantId": "nvt", "name": "能勢", "kind": "person", "userId": "u_nose", "internal": true },
+    { "id": "p_kato", "tenantId": "nvt", "name": "加藤", "kind": "person", "userId": "u_kato", "internal": true },
+    { "id": "p_mori", "tenantId": "nvt", "name": "森（クライアント PM）", "kind": "person" },
+    { "id": "p_jira", "tenantId": "nvt", "name": "Jira", "kind": "organization" },
+    { "id": "p_bitbucket", "tenantId": "nvt", "name": "Bitbucket", "kind": "organization" },
+    { "id": "p_ubs_only", "tenantId": "ubs", "name": "UBS だけの人", "kind": "person", "userId": "u_ubs_only", "internal": true }
+  ],
+  "addresses": [
+    { "id": "a_nose_slack", "tenantId": "nvt", "channel": "slack", "value": "T_NVT/U_NOSE", "partyId": "p_nose" },
+    { "id": "a_kato_slack", "tenantId": "nvt", "channel": "slack", "value": "T_NVT/U_KATO", "partyId": "p_kato" },
+    { "id": "a_mori_slack", "tenantId": "nvt", "channel": "slack", "value": "T_CLIENT/U_MORI", "partyId": "p_mori" },
+    { "id": "a_jira_site", "tenantId": "nvt", "channel": "jira", "value": "nvt.atlassian.net", "partyId": "p_nvt" },
+    { "id": "a_jira_bot", "tenantId": "nvt", "channel": "jira", "value": "jira-automation@nvt.atlassian.net", "partyId": "p_jira" },
+    { "id": "a_bb_ws", "tenantId": "nvt", "channel": "bitbucket", "value": "bitbucket.org/nvt", "partyId": "p_nvt" },
+    { "id": "a_bb_bot", "tenantId": "nvt", "channel": "bitbucket", "value": "bitbucket-notifications@bitbucket.org", "partyId": "p_bitbucket" }
+  ],
+  "lists": [
+    { "id": "l_dev", "tenantId": "nvt", "name": "開発", "description": "社内の開発チーム。Jira・Bitbucket の通知もここに置く" },
+    { "id": "l_client", "tenantId": "nvt", "name": "クライアント窓口（森さん）", "description": "クライアント PM との共有チャンネルのやりとり" },
+    { "id": "l_ubs", "tenantId": "ubs", "name": "UBS のリスト", "description": "" }
+  ],
+  "listMembers": [
+    { "listId": "l_dev", "partyId": "p_nose" },
+    { "listId": "l_dev", "partyId": "p_kato" },
+    { "listId": "l_client", "partyId": "p_nose" },
+    { "listId": "l_client", "partyId": "p_mori" },
+    { "listId": "l_ubs", "partyId": "p_ubs_only" }
+  ],
+  "attributeDefs": [
+    { "listId": "l_dev", "name": "status", "type": "enum", "options": ["todo", "in_progress", "in_review", "done"], "description": "開発の作業状態（Jira のステータスに近いがタスク側の正）" },
+    { "listId": "l_dev", "name": "assignee", "type": "party", "description": "担当開発者" },
+    { "listId": "l_dev", "name": "jira_key", "type": "string", "description": "対応する Jira 課題のキー" },
+    { "listId": "l_dev", "name": "severity", "type": "enum", "options": ["low", "mid", "high"], "description": "障害の深刻度" },
+    { "listId": "l_client", "name": "status", "type": "enum", "options": ["受付", "対応中", "回答済み"], "description": "クライアントへの対応状況" }
+  ],
+  "credentialRefs": [
+    { "id": "c_nose_slack", "tenantId": "nvt", "principal": { "kind": "user", "userId": "u_nose" }, "addressId": "a_nose_slack" },
+    { "id": "c_jira", "tenantId": "nvt", "principal": { "kind": "organization", "tenantId": "nvt" }, "addressId": "a_jira_site" },
+    { "id": "c_bb", "tenantId": "nvt", "principal": { "kind": "organization", "tenantId": "nvt" }, "addressId": "a_bb_ws" }
+  ],
+  "channelPolicies": [
+    { "tenantId": "nvt", "channel": "jira", "allowedListIds": ["l_dev"] },
+    { "tenantId": "nvt", "channel": "bitbucket", "allowedListIds": ["l_dev"] }
+  ]
+}

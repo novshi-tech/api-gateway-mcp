@@ -1,0 +1,37 @@
+{
+  "tenants": [{ "id": "ubs", "name": "アーバンビルシステム" }],
+  "users": [{ "id": "u_kimura", "name": "木村（現場マネージャー）" }],
+  "parties": [
+    { "id": "p_ubs", "tenantId": "ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
+    { "id": "p_kimura", "tenantId": "ubs", "name": "木村", "kind": "person", "userId": "u_kimura", "internal": true },
+    { "id": "p_yamamoto", "tenantId": "ubs", "name": "山本（清掃スタッフ）", "kind": "person", "externalRefs": { "bm-next": "member-301" } },
+    { "id": "p_sasaki", "tenantId": "ubs", "name": "佐々木（清掃スタッフ）", "kind": "person", "externalRefs": { "bm-next": "member-302" } },
+    { "id": "p_ito", "tenantId": "ubs", "name": "伊藤（清掃スタッフ・代務可）", "kind": "person", "externalRefs": { "bm-next": "member-305" } }
+  ],
+  "addresses": [
+    { "id": "a_oa", "tenantId": "ubs", "channel": "line", "value": "@ubs-clean", "partyId": "p_ubs" },
+    { "id": "a_yamamoto", "tenantId": "ubs", "channel": "line", "value": "U_yamamoto", "partyId": "p_yamamoto" },
+    { "id": "a_sasaki", "tenantId": "ubs", "channel": "line", "value": "U_sasaki", "partyId": "p_sasaki" },
+    { "id": "a_ito", "tenantId": "ubs", "channel": "line", "value": "U_ito", "partyId": "p_ito" }
+  ],
+  "lists": [
+    { "id": "l_site", "tenantId": "ubs", "name": "現場（グランメゾン清掃）", "description": "清掃スタッフからの欠勤・遅刻などの勤怠連絡" },
+    { "id": "l_dispatch", "tenantId": "ubs", "name": "代務調整", "description": "代わりに入れるスタッフへの打診" }
+  ],
+  "listMembers": [
+    { "listId": "l_site", "partyId": "p_kimura" },
+    { "listId": "l_site", "partyId": "p_yamamoto" },
+    { "listId": "l_site", "partyId": "p_sasaki" },
+    { "listId": "l_dispatch", "partyId": "p_kimura" },
+    { "listId": "l_dispatch", "partyId": "p_ito" }
+  ],
+  "attributeDefs": [
+    { "listId": "l_site", "name": "kind", "type": "enum", "options": ["欠勤", "遅刻", "早退", "その他"], "description": "勤怠連絡の種類" },
+    { "listId": "l_site", "name": "shift_date", "type": "date", "description": "影響するシフトの日付" },
+    { "listId": "l_site", "name": "substitute", "type": "party", "description": "代わりに入るスタッフ" },
+    { "listId": "l_site", "name": "status", "type": "enum", "options": ["未対応", "代務手配中", "手配済み", "対応不要"], "description": "現場マネージャーの対応状況" },
+    { "listId": "l_dispatch", "name": "status", "type": "enum", "options": ["打診中", "承諾", "辞退"], "description": "代務の打診結果" }
+  ],
+  "credentialRefs": [{ "id": "c_oa", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_oa" }],
+  "channelPolicies": [{ "tenantId": "ubs", "channel": "line", "allowedListIds": ["l_site", "l_dispatch"] }]
+}

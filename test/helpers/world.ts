@@ -118,7 +118,7 @@ export class EventLog {
 
 export const orgEmail = { kind: 'organization' as const, tenantId: 'ubs' };
 
-export function email(over: Partial<InboundSignal> & { from: string; sourceRef: string }): InboundSignal {
+export function email(over: Omit<Partial<InboundSignal>, 'from'> & { from: string; sourceRef: string }): InboundSignal {
   return {
     channel: 'email',
     to: [{ channel: 'email', value: 'support@ubs.example' }],

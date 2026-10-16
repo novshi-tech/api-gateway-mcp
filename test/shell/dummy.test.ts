@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DummyConnector, MemoryDummyBackend } from '../../src/connectors/dummy/connector';
 import { PgDummyBackend } from '../../src/connectors/dummy/pg-backend';
 import type { InboundSignal } from '../../src/domain';
-import { pgliteDb } from '../helpers/pglite';
+import { pgliteDb } from '../../scripts/lib/pglite';
 
 const org = { kind: 'organization' as const, tenantId: 'ubs' };
 const user = { kind: 'user' as const, userId: 'u_alice' };
