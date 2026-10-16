@@ -1,0 +1,57 @@
+{
+  "key": "88d345e34a79e723b89846c71a5328b2",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたはタスク管理ツールの Ingest 判断係です。\n届いたメッセージ（シグナル）を、既存のタスクに付ける (attach)、新しいタスクを作る (new)、無視する (ignore) のどれかに振り分けます。\n\n- attach: 候補タスクのどれかと同じ用件の続きなら、その task_id を選ぶ。\n- new: 対応が必要な新しい用件なら、置くリストを list_id で選び、短いタスク名を title に書く。\n- ignore: 広告・自動通知・挨拶だけ・対応不要な連絡など、誰も行動しなくてよいものだけ。\n\n迷ったら ignore より new を選ぶ。confidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。\nattach 以外では task_id を null、new 以外では list_id と title を null にする。",
+    "user": "{\n  \"signal\": {\n    \"direction\": \"received\",\n    \"channel\": \"slack\",\n    \"from\": \"T_CLIENT/U_MORI\",\n    \"to\": [\n      \"T_NVT/U_NOSE\"\n    ],\n    \"subject\": null,\n    \"body\": \"ログイン画面で 500 エラーが出ます。昨日のリリース後からです。至急見てもらえますか。\",\n    \"attachments\": []\n  },\n  \"lists\": [\n    {\n      \"id\": \"l_dev\",\n      \"name\": \"開発\",\n      \"description\": \"社内の開発チーム。Jira・Bitbucket の通知もここに置く\"\n    },\n    {\n      \"id\": \"l_client\",\n      \"name\": \"クライアント窓口（森さん）\",\n      \"description\": \"クライアント PM との共有チャンネルのやりとり\"\n    }\n  ],\n  \"candidates\": []\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "attach",
+            "new",
+            "ignore"
+          ]
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "list_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "decision",
+        "task_id",
+        "list_id",
+        "title",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"decision\":\"new\",\"task_id\":null,\"list_id\":\"l_client\",\"title\":\"ログイン画面の500エラー調査（森さん・至急）\",\"reason\":\"クライアントPMの森さんからSlackで、昨日のリリース後にログイン画面で500エラーが発生しているとの至急の調査依頼が届いた。対応が必要な新しい用件で、既存の候補タスクはない。クライアントとの共有チャンネルでのやりとりなので「クライアント窓口（森さん）」に置く。技術調査は開発リストでの切り出しも考えられるが、まず窓口側で受けて対応する。\",\"confidence\":0.8}"
+}

@@ -1,16 +1,16 @@
 # 申し送り
 
-最終更新: 2026-10-16（初回セッションの終わり）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-16（H6 の記録を作ったあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
 
 ## いまの状態
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 9f34ac5 | 本体。計画のステップ 1〜6 を、外部接続なしで進められるところまで |
+| novshi-tech/murmur | 最新 | 本体。計画のステップ 1〜6 を、外部接続なしで進められるところまで |
 | novshi-tech/api-gateway-mcp | f6fa0ed | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0） |
 
-- murmur のテスト: `pnpm test` で 166 件が緑、1 件 skip（下の H6）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
+- murmur のテスト: `pnpm test` で 167 件が緑（skip なし）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）
 - 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。詳しくは `CLAUDE.md` と `docs/adr/0001`
 
@@ -23,13 +23,12 @@
 | H3 境界 | 緑 | — |
 | H4 派生のライフサイクル | 緑（見回りの冪等性も） | — |
 | H5 観測と送信の重複排除 | 緑 | — |
-| H6 Ingest の一致率 | アンカー判定と無視の監査だけ緑。Claude 判断の一致率テストは skip | 記録を作る（下の 1） |
+| H6 Ingest の一致率 | 緑（claude-sonnet-5-5 の記録を再生。全体 91.7%（22/24）、AI のみ 85.7%（12/14）） | ignore を一度も選ばない（下の「H6 の記録で分かったこと」） |
 | H7 スタンドで完走 | 未着手 | 実環境をつないでから（下の 2・3） |
 
 ## 残作業（優先順）
 
-1. **H6 の記録を作る**: `ANTHROPIC_API_KEY=... pnpm scenario verify all --ai record` を流し、`fixtures/*/recordings/` をコミットする。
-   これで `test/scenarios.test.ts` の H6 テスト（アンカー込み 90%、AI のみ 80%）が skip でなくなる。confidence の分布から、無視の閾値（`IGNORE_CONFIDENCE_THRESHOLD`、仮に 0.8）の初期値を決める
+1. ~~H6 の記録を作る~~（済み。`fixtures/*/recordings/` をコミットした）
 2. **実環境の設定**（手順は `docs/stand/connect.md`）
    - Neon（aws-ap-southeast-1）の dev ブランチを作り、`DATABASE_URL=... pnpm db:migrate`
    - murmur の secrets（`DATABASE_URL`・`ANTHROPIC_API_KEY`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN`）と vars（`GATEWAY_JWKS`・`IDENTITY_ISSUER`）を設定して `pnpm deploy:dev`
@@ -47,6 +46,20 @@
 - `docs/adr/0002`（提案）: テストを `@cloudflare/vitest-pool-workers` ではなく Node の vitest と pglite で回している。計画からの逸脱
 - `docs/adr/0005`: 計画になかった細部を実装で決めた（ボールの所在、`DerivationRejected` の追加、閾値未満の ignore は new に倒す、返事の派生の自動判定など）。Google Doc と食い違っていないか
 - `docs/adr/0003` の未決: 本体が JWKS を設定値で持つか、ゲートウェイから取りに行くか（今は設定値）
+
+## H6 の記録で分かったこと（2026-10-16、claude-sonnet-5-5）
+
+| シナリオ | 全体 | アンカー | AI のみ | confidence |
+| --- | --- | --- | --- | --- |
+| repair-estimate | 6/6 | 2/2 | 3/3 | 0.96 0.96 0.95 |
+| development | 8/9 | 5/5 | 3/4 | 0.80 0.90 0.60 0.85 |
+| absence | 4/5 | - | 4/5 | 0.90 0.72 0.85 0.80 0.93 |
+| complaint | 4/4 | 2/2 | 2/2 | 0.93 0.93 |
+
+- 外れた 2 件はどちらも正解が ignore のシグナル（development s07 の CI 成功通知、absence s04 のスタンプだけの返信）。Claude はどちらも ignore を選ばず、既存タスクに attach した（confidence 0.60 と 0.80）。理由は「経過として履歴に残す価値がある」「直前の連絡の続き」
+- 16 件の AI 判断で ignore が 0 件なので、confidence の分布から `IGNORE_CONFIDENCE_THRESHOLD` を決める材料がない。初期値は 0.8 のまま据え置く
+- 対策の候補（判断待ち）: プロンプトの「迷ったら ignore より new」が attach にも効いて、拾いすぎに倒れている。ignore の例（CI の成功通知、スタンプだけ）をプロンプトに足すか、「付けても誰の行動も変わらないなら ignore」と書くか。プロンプトを変えたら `--ai rerecord` で取り直す
+- `pnpm scenario verify all --ai record`（と `--ai replay`）は、上の 2 件が expected.json と食い違うので終了コード 1 になる。テストの合否は 4 シナリオ合算の一致率で見ている
 
 ## 既知の制約
 
