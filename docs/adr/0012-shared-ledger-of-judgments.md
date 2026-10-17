@@ -1,6 +1,6 @@
 # 0012 Murmur は「人とエージェントが共有する判断の台帳」。外には何も書かない
 
-- 状態: 提案（2026-10-17、直樹との議論を踏まえた案。採用なら計画 v2（`docs/PLAN.md`）と `CLAUDE.md` の冒頭を直す）
+- 状態: 採用（2026-10-17、直樹と合意。計画 v2（`docs/PLAN.md`）と `CLAUDE.md` に反映した）
 - 関連: 0008（業務の知識を持たない）、0009（2 層のリスト）、0010（黒子、正は外）、0005（派生を起こすのはスタンド）、0006（ゲートウェイの拡張）、0007（実データの試用）、
   boid の計画（novshi-tech/boid の `docs/plans/`。特に `cross-project-issue-triage.md`、`ingestion-identity.md`、`card-next-step-and-timeline.md`、`card-model-cleanup.md`）
 
@@ -152,7 +152,7 @@ boid の「次の一手を考え、実行し、結果を受けてまた考える
 - **観測された送信の返事期待の推定**: 上の表
 - **承認の件数の計測**（計画 v2「承認の件数と種類をシナリオごとに計測」）: 承認が本体を通らないので測れない。スタンド側のログで見るか、諦める
 
-## 計画 v2 への影響（採用なら）
+## 計画 v2 への影響（2026-10-17 に反映した）
 
 - 冒頭: 「AI ネイティブ タスク管理ツールのプロトタイプ」を「人とエージェントが共有する判断の台帳のプロトタイプ」に。`CLAUDE.md` の冒頭も
 - データモデル: `OutboundProposed / Approved / Rejected` と宛先 Address の凍結、`Connector.send`、`FilingRule` を消す。`OutboundSent` → `OutboundRecorded`（スタンドが出す）。`MatterNoted` を足す

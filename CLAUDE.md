@@ -1,8 +1,9 @@
-# Murmur — AI ネイティブ タスク管理ツールのプロトタイプ
+# Murmur — 人とエージェントが共有する判断の台帳のプロトタイプ
 
-設計メモ「AIネイティブ タスク管理ツール」のデータモデルとアーキテクチャが成立するかを、外部接続なしで確かめるためのプロトタイプ。製品の MVP ではない。
+連絡から対応の要る用件を抽出し、その経過を追跡する、人とエージェントが共有する判断の台帳（`docs/adr/0012`）。
+そのデータモデルとアーキテクチャが成立するかを、外部接続なしで確かめるためのプロトタイプ。製品の MVP ではない。タスク管理ツールではない（抽出をやる。追跡だけではない）。
 
-- 設計の正本: このリポジトリの `docs/PLAN.md`（計画 v2）と `docs/adr/`（`docs/adr/0011`）
+- 設計の正本: このリポジトリの `docs/PLAN.md`（計画 v2）と `docs/adr/`（`docs/adr/0011`）。立ち位置は `docs/adr/0012`
 - Google Doc（https://docs.google.com/document/d/1gNSrK_p5xrEGiJB4RRr2FfFf9r-naPamh_5P9tNqM6w/edit）は 2026-10-17 までの経緯の資料。更新しない。食い違ったらリポジトリが優先
 - v1 の計画と実装はタグ `proto-v1`
 - 決定の記録: `docs/adr/`
@@ -14,6 +15,7 @@
 - イベント型を追加・変更するときは、zod スキーマ（`src/domain/events.ts`）、fold の純関数テスト（`test/domain/fold.test.ts`）、リプレイテスト（H1、`test/scenarios.test.ts`）を同じ PR で更新する
 - Claude API の呼び出しは必ず記録・再生の層（`src/ingest/llm.ts` の `RecordReplayLlm`）を通す。テストは再生モードのみ
 - `src/domain/` に Workers API への依存を持ち込まない（下の FC-IS を参照）
+- 本体は外に何も書かない（`docs/adr/0012`）。送信・起票・コメントはスタンドがゲートウェイ経由で行い、本体には `record_sent` で事実だけを記録する。本体に送信の経路（`Connector.send`、承認付きの送信）を足さない
 - テスト名とコミットメッセージに仮説番号（H1〜H9）を付ける
 - 計画や ADR と食い違う判断が必要になったら、実装せず `docs/adr/` に案を書いて止まる
 
@@ -66,6 +68,6 @@ pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
 
 ## 注意
 
-- 本体は上流サービスのトークンを持たない。外部との出入りはゲートウェイ経由（プロトタイプはダミーコネクタのみ）
+- 本体は上流サービスのトークンを持たず、外へは何も書かない。取り込みはゲートウェイ経由（プロトタイプはダミーコネクタのみ）
 - 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と `/timeline.html` だけ
 - スタンド（Cowork / Claude Code）用のスキルは novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`、接続手順は `docs/stand/connect.md`。HTTP API を変えたらスキルの API の表も直す
