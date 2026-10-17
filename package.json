@@ -10,6 +10,7 @@
     "test": "vitest run",
     "scenario": "tsx scripts/scenario.ts",
     "seed": "tsx scripts/seed.ts",
+    "send": "tsx scripts/send.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "deploy:dev": "wrangler deploy --env dev",
