@@ -2,8 +2,9 @@
 
 設計メモ「AIネイティブ タスク管理ツール」のデータモデルとアーキテクチャが成立するかを、外部接続なしで確かめるためのプロトタイプ。製品の MVP ではない。
 
-- 計画: `docs/PLAN.md`（プロトタイプ計画の Markdown 書き出し）
-- 設計の正本: Google Doc（https://docs.google.com/document/d/1gNSrK_p5xrEGiJB4RRr2FfFf9r-naPamh_5P9tNqM6w/edit）。API ゲートウェイの google-docs スキル経由で読める。`docs/PLAN.md` と食い違ったら Google Doc が優先
+- 設計の正本: このリポジトリの `docs/PLAN.md`（計画 v2）と `docs/adr/`（`docs/adr/0011`）
+- Google Doc（https://docs.google.com/document/d/1gNSrK_p5xrEGiJB4RRr2FfFf9r-naPamh_5P9tNqM6w/edit）は 2026-10-17 までの経緯の資料。更新しない。食い違ったらリポジトリが優先
+- v1 の計画と実装はタグ `proto-v1`
 - 決定の記録: `docs/adr/`
 - 申し送り（残作業・判断待ち・既知の制約）: `docs/HANDOFF.md`。セッションの始めに読み、終わりに更新する
 
@@ -13,12 +14,14 @@
 - イベント型を追加・変更するときは、zod スキーマ（`src/domain/events.ts`）、fold の純関数テスト（`test/domain/fold.test.ts`）、リプレイテスト（H1、`test/scenarios.test.ts`）を同じ PR で更新する
 - Claude API の呼び出しは必ず記録・再生の層（`src/ingest/llm.ts` の `RecordReplayLlm`）を通す。テストは再生モードのみ
 - `src/domain/` に Workers API への依存を持ち込まない（下の FC-IS を参照）
-- テスト名とコミットメッセージに仮説番号（H1〜H7）を付ける
-- 設計メモや本計画と食い違う判断が必要になったら、実装せず `docs/adr/` に案を書いて止まる
+- テスト名とコミットメッセージに仮説番号（H1〜H9）を付ける
+- 計画や ADR と食い違う判断が必要になったら、実装せず `docs/adr/` に案を書いて止まる
 
 ## 構成: Functional Core / Imperative Shell
 
 判断はすべて純関数のコアに置き、副作用（DB・Claude・コネクタ・HTTP・時計・ID 生成・暗号）はシェルに集める。`test/architecture.test.ts` がこの境界を検査する。
+
+下の `src/domain/` の中身は v1（`proto-v1`）のもの。計画 v2 のステップ 2〜4 で、2 層のリスト（`docs/adr/0009`）に合わせて組み替え、組み替えたらここを直す。
 
 ```
 src/

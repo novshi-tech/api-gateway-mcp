@@ -1,60 +1,64 @@
 # 申し送り
 
-最終更新: 2026-10-17（H7 の absence を途中で止め、リストの分け方（0008）を議論している）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-17（リストの構成を見直し、計画 v2 を書いたあと）。次のセッションは、まずこれと `docs/PLAN.md`（v2）を読む。
 
 ## いまの状態
 
+設計の正本はこのリポジトリ（`docs/PLAN.md` と `docs/adr/`、0011）。Google Doc は経緯の資料に格下げした。
+
+H7 で absence を実環境で回したところ、リストの構成に根本の問題が見つかった（s02 の取り違え。`docs/adr/0009` の背景）。
+直樹と議論して、リストを 2 層（会話の層 = データソース、用件の層 = 人とチーム）に組み替えることにし（0009）、
+製品の方向（Murmur は黒子。用件ごとに正を 1 つ、0010）も決めた。計画を v2 に書き直し、v1 の計画と実装はタグ `proto-v1` に残した。
+
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新 | 本体。計画のステップ 1〜6 と、実環境（murmur-dev + Neon + ゲートウェイ）の接続まで |
+| novshi-tech/murmur | 最新 | v1 の実装（ステップ 1〜6）+ 実環境の接続 + 計画 v2。v2 のステップ 1（計画の書き直し）が直樹のレビュー待ち |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
-| novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0） |
+| novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表。v2 のステップ 5 で作り直す |
 
-- murmur のテスト: `pnpm test` で 169 件が緑（skip なし）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
+- murmur のテスト: `pnpm test` で 171 件が緑（v1 のコア）。v2 のステップ 2 からコアを置き換えるので、テストもステップごとに作り直す
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）
-- 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。詳しくは `CLAUDE.md` と `docs/adr/0001`
+- 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。v2 でも変えない
 
-## 仮説ごとの状態
+## 仮説ごとの状態（v2）
 
-| 仮説 | 状態 | 残り |
+v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直したので、全部これから（`docs/PLAN.md`）。
+
+| 仮説 | 状態 | どのステップで |
 | --- | --- | --- |
-| H1 リプレイの決定性 | 緑（メモリと Postgres（pglite）の両方） | Neon 実機では未確認（H7 の記録で確かめられる） |
-| H2 二層の状態 | 緑 | — |
-| H3 境界 | 緑 | — |
-| H4 派生のライフサイクル | 緑（見回りの冪等性も） | — |
-| H5 観測と送信の重複排除 | 緑 | — |
-| H6 Ingest の一致率 | 緑（claude-sonnet-5-5 の記録を再生。全体 91.7%（22/24）、AI のみ 85.7%（12/14）） | ignore を一度も選ばない（下の「H6 の記録で分かったこと」） |
-| H7 スタンドで完走 | absence を s02 まで回して止めた | リストの構成を見直す（0009）。固まったらシナリオを作り直して回す |
+| H1 リプレイの決定性 | v1 は緑。v2 は未着手 | 2〜4 |
+| H2 二層の状態 | 未着手 | 3 |
+| H3 境界 | 未着手 | 2（会話の層）・3 |
+| H4 送信と派生 | 未着手 | 4 |
+| H5 観測と送信の重複排除 | v1 は緑。v2 は未着手 | 4 |
+| H6 Ingest（区切り + 返事や対応を求めているか） | 未着手 | 2 |
+| H7 スタンドで完走 | v1 で absence を s02 まで回して止めた | 6 |
+| H8 購読だけで振り分けが回る（新） | 未着手 | 3 |
+| H9 正が外にある用件（新） | 未着手 | 7 |
 
-## 残作業（優先順）
+## 残作業（計画 v2 の実装ステップ）
 
-1. ~~H6 の記録を作る~~（済み。`fixtures/*/recordings/` をコミットした）
-2. **実環境の設定**（2026-10-17 にほぼ済み。手順は `docs/stand/connect.md`）
-   - 済み: Neon プロジェクト `murmur`（quiet-dust-32237629、aws-ap-southeast-1、組織 株式会社ノブシテック）の `dev` ブランチにマイグレーション
-   - 済み: murmur-dev（https://murmur-dev.nose-0d2.workers.dev、dev だけ workers.dev を開けた）に `DATABASE_URL`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN` と `GATEWAY_JWKS`・`IDENTITY_ISSUER`
-   - 済み: ゲートウェイに `IDENTITY_SIGNING_KEY`、本番の `wrangler.jsonc` に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur` を足してデプロイ。`list_credentials` に `identity:murmur` が出て、ゲートウェイ経由の `/murmur/me` が seed のユーザーを返す
-   - 済み: `ANTHROPIC_API_KEY`。absence の s01 を Webhook で流し、Claude が new と判断してタスクを作り、ゲートウェイ経由の `/murmur/tasks` で見えるところまで確認した（H7 を回す前に `pnpm seed absence --user ...` で入れ直す）
-   - 済み: GitHub Secrets の `CLOUDFLARE_API_TOKEN`。main への push で CI の deploy-dev が murmur-dev にデプロイする（`v*` タグの deploy-prod は、prod の設定が空なので当面打たない）
-   - 済み: Cowork に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れた（2026-10-17）
-   - 控え: Webhook の鍵・timeline のトークン・接続文字列は、直樹のマシンの `~/.config/murmur/dev.env`（600、シェルで source できる形）。Neon の API キーは `~/.config/neonctl/api_key`
-3. **実データでの Ingest の試用**（`docs/adr/0007`）。デプロイが通ったら、読み取り専用の実コネクタで Ingest だけを回す
-   - つなぐ前に: ignore を選ばない問題の手当て（下の「H6 の記録で分かったこと」）
-   - 実コネクタは `pull` だけ、`send` はエラー。資格情報は読み取りの権限だけ。データソースは 1 つ、過去分は取らない
-   - 計画のスコープ外（本物のコネクタ）だが、捨てないプロトタイプとして段階的に進める次の段階。方針は直樹と合意済み（2026-10-16）
-   - 新規シグナルの置き先の判断材料（受信箱ごとの置き先の分かれ方、置き先・ignore の訂正件数）もここで取る（0008）
-   - 量が増えたときの詰まりどころ（cursor の未保存、投影の丸ごと入れ替え、Cron の 1 回で全件、候補 20 件、Claude の費用、取り込みの形）は 0007 に書いた。
-     プロトタイプではパフォーマンスに手を付けず、実業務を観察させる段階で考える（2026-10-16 決定）
-4. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
-   実環境で、ユーザーは指示と承認だけを出して完走させ、記録を `signals.jsonl` と `expected.json` に固めて `status: stand-recorded` にする（`docs/stand/connect.md` の最後の節）
-   - seed の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。DB を空にしてから入れるので、シナリオは 1 つずつ回す
-   - 直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`。いま dev には absence の seed（u_kimura をこの ID に付け替え）が入っている
-5. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
+1. **計画の書き直し**（済み、直樹のレビュー待ち）: `docs/PLAN.md` v2、`CLAUDE.md`、ADR 0008〜0011
+2. **会話の層**: DataSource、スレッド、Ingest v2、片付け、シグナルの移し替え、記録の取り直し（H1・H3・H6）
+3. **用件の層と昇格**（H2・H8） 4. **送信と派生**（H4・H5） 5. **API・スキル・管理 UI** 6. **H7** 7. **正が外にある用件**（H9） 8. **振り返り**
+- 並行トラック: ステップ 2 のあと、0007 の実データでの試用（読み取り専用の Gmail を会話の層だけで）。前提は 0007 の 6（記録の置き場所）を決めること
+
+実環境の控え（v1 で設定済み、v2 でも使う）:
+- Neon プロジェクト `murmur`（quiet-dust-32237629、aws-ap-southeast-1、組織 株式会社ノブシテック）の `dev` ブランチ。v2 ではスキーマが変わるので、マイグレーションを作り直して当て直す
+- murmur-dev（https://murmur-dev.nose-0d2.workers.dev）。secrets は `DATABASE_URL`・`ANTHROPIC_API_KEY`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN`、vars は `GATEWAY_JWKS`・`IDENTITY_ISSUER`
+- ゲートウェイの本番に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur`。Cowork に `api-gateway` と `nvt-api-gateway`（0.2.0）を入れてある
+- main への push で CI が murmur-dev にデプロイする。`v*` のタグは prod にデプロイするので打たない（v1 のタグは `proto-v1`）
+- 鍵・トークン・接続文字列は直樹のマシンの `~/.config/murmur/dev.env`（600、`set -a; . ~/.config/murmur/dev.env; set +a`）。Neon の API キーは `~/.config/neonctl/api_key`
+- seed の投入は `pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`、受信の送信は `pnpm send <scenario> <signal の id>...`。
+  直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`
+- dev の DB には v1 の absence を s02 まで流した状態が残っている（ステップ 6 の前に入れ直す）
 
 ## 次のセッションでやること
 
-1. `docs/adr/0009` の未決 6（移行の順序）を直樹と詰める。0009・0010 の形を、どの順で、どこまでプロトタイプで確かめるか。データモデルの組み替えになるので、固まるまで実装しない（CLAUDE.md の約束）
-2. 固まったら、PLAN.md の実装ステップの組み直し案（どこまでをプロトタイプで確かめるか）を書いて直樹に見せる
-3. H7 は 0009 の形で seed とシナリオを作り直してから回す。送信には `pnpm send <scenario> <signal の id>...`（`WEBHOOK_SECRET` が要る。`~/.config/murmur/dev.env` を source する）
+1. 直樹に計画 v2（`docs/PLAN.md`）のレビュー結果を聞く。直すところがあれば直す
+2. レビューが通ったら、ステップ 2（会話の層）に入る。最初に、イベント（SignalThreaded・ThreadDismissed）と DataSource の zod スキーマ、
+   スレッドの投影と fold、4 シナリオの seed（DataSource）と正解ラベル（シグナルごとのスレッドと「返事や対応を求めているか」）を作る
+3. Ingest v2 のプロンプトを書いたら `--ai record` で記録を取り直す（`ANTHROPIC_API_KEY` は `dev.env` にはない。直樹に環境変数で渡してもらう）
 
 ## H7 の absence を途中まで回して分かったこと（2026-10-17、Cowork）
 
@@ -68,23 +72,13 @@
 
 ## 直樹に判断してもらうこと
 
+- `docs/PLAN.md` v2 のレビュー（v2 のステップ 1 の完了条件）
 - `docs/adr/0002`（提案）: テストを `@cloudflare/vitest-pool-workers` ではなく Node の vitest と pglite で回している。計画からの逸脱
-- `docs/adr/0005`: 計画になかった細部を実装で決めた（ボールの所在、`DerivationRejected` の追加、閾値未満の ignore は new に倒す、返事の派生の自動判定など）。Google Doc と食い違っていないか
-- `docs/adr/0008`（提案・議論中）: Murmur は業務の知識を持たない。派生の本文もスタンドが書き、`AiSummarizer` を外して境界の検査に替える。
-  新規シグナルの置き先の未決は、有力案「1 つのデータソースは 1 つのリストに属する」を 0009 の 2 層の形で詰めている。実装は止めている
-- `docs/adr/0009`（提案・議論中、2026-10-17）: リストを 2 層に分ける。会話の層（リスト = データソース、タスク = スレッド、Ingest は業務の知識なし）と、
-  用件の層（個人とチームのリスト、タスク = 用件）。用件のリストがデータソースを（構造の条件か自然文の条件で）購読し、昇格はそれとボールの宛先・アンカーで行う。
-  可視性はリストのメンバーだけで決め、購読の登録は両側のメンバーに限る（2026-10-17 決定）。
-  スレッドは区切りのないチャネルでも作り、発信者の直近のスレッドの続きかを判断する（2026-10-17 決定）。
-  スレッドと用件は 1 対 1 以下で、直す操作はシグナルの移し替え・スレッドの付け替え・用件の統合・片付け（2026-10-17 決定）。
-  **未決**: 移行の順序（どこまでをプロトタイプで確かめるか）。H7 はこれが固まるまで止める
-- `docs/adr/0010`（採用、2026-10-17）: Murmur は黒子になる。用件ごとに正を 1 つ（Jira・bm-next に受け皿があればそちら、なければ Murmur）。
-  状態は正から片方向、会話（コメント）は両方向。Murmur から書くのは起票とコメントだけ。起票ルールは最初は承認なし（ルールの登録が事前の承認）。
-  管理用の参照専用 UI（リスト一覧・タスク一覧・タスク詳細）を作る。Google Doc への書き戻しはステップ 7
-- `docs/adr/0007`「量の見通し」の 6: 実メールの本文が残る記録（`recordings`）をどこに置くか。決めてから記録モードにする
 - `docs/adr/0003` の未決: 本体が JWKS を設定値で持つか、ゲートウェイから取りに行くか（今は設定値）
+- `docs/adr/0007`「量の見通し」の 6: 実メールの本文が残る記録（`recordings`）をどこに置くか。並行トラック（実データでの試用）の前提
+- 2026-10-17 に決めたこと（参考）: 0008（業務の知識を持たない）・0009（2 層のリスト）・0010（黒子）・0011（正本はリポジトリ）は採用
 
-## H6 の記録で分かったこと（2026-10-16、claude-sonnet-5-5）
+## v1 の H6 の記録で分かったこと（2026-10-16、claude-sonnet-5-5。v2 の Ingest の設計に反映した）
 
 | シナリオ | 全体 | アンカー | AI のみ | confidence |
 | --- | --- | --- | --- | --- |
@@ -98,7 +92,7 @@
 - 対策の候補（判断待ち）: プロンプトの「迷ったら ignore より new」が attach にも効いて、拾いすぎに倒れている。ignore の例（CI の成功通知、スタンプだけ）をプロンプトに足すか、「付けても誰の行動も変わらないなら ignore」と書くか。プロンプトを変えたら `--ai rerecord` で取り直す
 - `pnpm scenario verify all --ai record`（と `--ai replay`）は、上の 2 件が expected.json と食い違うので終了コード 1 になる。テストの合否は 4 シナリオ合算の一致率で見ている
 
-## 既知の制約
+## v1 の既知の制約（v2 で作り直す部分も含む）
 
 - 外部派生の送信に失敗すると、派生は approved のまま止まり、再送する手段がない
 - コネクタの取得位置（cursor）を保存していない。`pollConnectors` は毎回 `pull(principal, null)` を呼ぶ（性能の話なので、実業務を観察させる段階で考える。0007）
