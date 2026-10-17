@@ -17,7 +17,7 @@ H7 で absence を実環境で回したところ、リストの構成に根本�
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新 | v1 の実装（ステップ 1〜6）+ 実環境の接続 + 計画 v2。v2 のステップ 1（計画の書き直し）が直樹のレビュー待ち |
+| novshi-tech/murmur | 最新 | v1 の実装（ステップ 1〜6）+ 実環境の接続 + 計画 v2。v2 のステップ 1（計画の書き直し）は 2026-10-17 にレビュー済み。次はステップ 2 |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表。v2 のステップ 5 で作り直す |
 
