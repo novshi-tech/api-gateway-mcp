@@ -1,6 +1,6 @@
 # 申し送り
 
-最終更新: 2026-10-17（実環境をつなぎ、CI のデプロイが通ったあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-17（H7 の absence を途中で止め、リストの分け方（0008）を議論している）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
 
 ## いまの状態
 
@@ -35,13 +35,20 @@
    - 済み: ゲートウェイに `IDENTITY_SIGNING_KEY`、本番の `wrangler.jsonc` に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur` を足してデプロイ。`list_credentials` に `identity:murmur` が出て、ゲートウェイ経由の `/murmur/me` が seed のユーザーを返す
    - 済み: `ANTHROPIC_API_KEY`。absence の s01 を Webhook で流し、Claude が new と判断してタスクを作り、ゲートウェイ経由の `/murmur/tasks` で見えるところまで確認した（H7 を回す前に `pnpm seed absence --user ...` で入れ直す）
    - 済み: GitHub Secrets の `CLOUDFLARE_API_TOKEN`。main への push で CI の deploy-dev が murmur-dev にデプロイする（`v*` タグの deploy-prod は、prod の設定が空なので当面打たない）
-   - 残り: Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
+   - 済み: Cowork に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れた（2026-10-17）
    - 控え: Webhook の鍵・timeline のトークン・接続文字列は、直樹のマシンの `~/.config/murmur/dev.env`（600、シェルで source できる形）。Neon の API キーは `~/.config/neonctl/api_key`
-3. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
+3. **実データでの Ingest の試用**（`docs/adr/0007`）。デプロイが通ったら、読み取り専用の実コネクタで Ingest だけを回す
+   - つなぐ前に: ignore を選ばない問題の手当て（下の「H6 の記録で分かったこと」）
+   - 実コネクタは `pull` だけ、`send` はエラー。資格情報は読み取りの権限だけ。データソースは 1 つ、過去分は取らない
+   - 計画のスコープ外（本物のコネクタ）だが、捨てないプロトタイプとして段階的に進める次の段階。方針は直樹と合意済み（2026-10-16）
+   - 新規シグナルの置き先の判断材料（受信箱ごとの置き先の分かれ方、置き先・ignore の訂正件数）もここで取る（0008）
+   - 量が増えたときの詰まりどころ（cursor の未保存、投影の丸ごと入れ替え、Cron の 1 回で全件、候補 20 件、Claude の費用、取り込みの形）は 0007 に書いた。
+     プロトタイプではパフォーマンスに手を付けず、実業務を観察させる段階で考える（2026-10-16 決定）
+4. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
    実環境で、ユーザーは指示と承認だけを出して完走させ、記録を `signals.jsonl` と `expected.json` に固めて `status: stand-recorded` にする（`docs/stand/connect.md` の最後の節）
    - seed の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。DB を空にしてから入れるので、シナリオは 1 つずつ回す
    - 直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`。いま dev には absence の seed（u_kimura をこの ID に付け替え）が入っている
-4. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
+5. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
 
 ## 次のセッションでやること
 
@@ -55,6 +62,10 @@
 
 - `docs/adr/0002`（提案）: テストを `@cloudflare/vitest-pool-workers` ではなく Node の vitest と pglite で回している。計画からの逸脱
 - `docs/adr/0005`: 計画になかった細部を実装で決めた（ボールの所在、`DerivationRejected` の追加、閾値未満の ignore は new に倒す、返事の派生の自動判定など）。Google Doc と食い違っていないか
+- `docs/adr/0008`（提案・議論中）: Murmur は業務の知識を持たない。派生の本文もスタンドが書き、`AiSummarizer` を外して境界の検査に替える。
+  **未決**: 新規シグナルの置き先（リスト）を誰が決めるか（選択肢 A〜D）。有力案は「1 つのデータソースは 1 つのリストに属する」。
+  後から直すと大きいので、プロトタイプの段階で入れるかもしれない。実装は止めている
+- `docs/adr/0007`「量の見通し」の 6: 実メールの本文が残る記録（`recordings`）をどこに置くか。決めてから記録モードにする
 - `docs/adr/0003` の未決: 本体が JWKS を設定値で持つか、ゲートウェイから取りに行くか（今は設定値）
 
 ## H6 の記録で分かったこと（2026-10-16、claude-sonnet-5-5）
@@ -74,6 +85,9 @@
 ## 既知の制約
 
 - 外部派生の送信に失敗すると、派生は approved のまま止まり、再送する手段がない
+- コネクタの取得位置（cursor）を保存していない。`pollConnectors` は毎回 `pull(principal, null)` を呼ぶ（性能の話なので、実業務を観察させる段階で考える。0007）
+- Ingest の候補タスクは更新の新しい open タスク 20 件だけ。タスクが増えると正しい attach 先が落ちて new に倒れる（0007）
+- 派生を起こすのはスタンドだけで、Ingest は提案しない（`docs/adr/0005`）
 - 投影は書き込みのたびにテナント分を丸ごと入れ替える（`docs/adr/0004`）。件数が増えると遅い
 - `timeline.html` は `TIMELINE_TOKEN` を知っている人には全リストが見える（確認用）
 - シナリオの文字列で `$` から始まるものは束縛として置き換えられる（本文に `$100` などを書くと失敗する）
