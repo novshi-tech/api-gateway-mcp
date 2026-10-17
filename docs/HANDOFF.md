@@ -1,10 +1,15 @@
 # 申し送り
 
-最終更新: 2026-10-17（リストの構成を見直し、計画 v2 を書いたあと）。次のセッションは、まずこれと `docs/PLAN.md`（v2）を読む。
+最終更新: 2026-10-17（計画 v2 のあと、Murmur の立ち位置を ADR 0012 に書いたところ）。次のセッションは、まずこれと `docs/PLAN.md`（v2）、`docs/adr/0012` を読む。
 
 ## いまの状態
 
 設計の正本はこのリポジトリ（`docs/PLAN.md` と `docs/adr/`、0011）。Google Doc は経緯の資料に格下げした。
+
+計画 v2 を書いたあと、直樹と立ち位置の議論をして `docs/adr/0012`（提案）を書いた。要点: Murmur は「人とエージェントが共有する判断の台帳」で、
+連絡から対応の要る用件を抽出して追跡する。外には何も書かない（送信はスタンドが実行し、本体は事実を `OutboundRecorded` として綴じる）。
+用件に宛てたメモ（`MatterNoted`）を綴じる 3 種類目として足す。前例は boid（card = 判断の台帳、signal inbox）で、Murmur はそれを一人のマシンからテナントの皆が届く場所へ持ち出したもの。
+**採用なら計画 v2 のステップ 4・7、H4・H5・H9、API 表、`CLAUDE.md` の冒頭を直してからステップ 2 に入る**（0012「計画 v2 への影響」）。
 
 H7 で absence を実環境で回したところ、リストの構成に根本の問題が見つかった（s02 の取り違え。`docs/adr/0009` の背景）。
 直樹と議論して、リストを 2 層（会話の層 = データソース、用件の層 = 人とチーム）に組み替えることにし（0009）、
@@ -55,7 +60,8 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 次のセッションでやること
 
-1. 直樹に計画 v2（`docs/PLAN.md`）のレビュー結果を聞く。直すところがあれば直す
+1. 直樹に `docs/adr/0012` と計画 v2（`docs/PLAN.md`）のレビュー結果を聞く。0012 が採用なら、計画 v2 を 0012「計画 v2 への影響」のとおり直し、`CLAUDE.md` の冒頭の呼び名も直す。
+   0012 の未決 2（LINE の Messaging API が自分の push を webhook で返すか）を WebSearch で確かめる
 2. レビューが通ったら、ステップ 2（会話の層）に入る。最初に、イベント（SignalThreaded・ThreadDismissed）と DataSource の zod スキーマ、
    スレッドの投影と fold、4 シナリオの seed（DataSource）と正解ラベル（シグナルごとのスレッドと「返事や対応を求めているか」）を作る
 3. Ingest v2 のプロンプトを書いたら `--ai record` で記録を取り直す（`ANTHROPIC_API_KEY` は `dev.env` にはない。直樹に環境変数で渡してもらう）
@@ -72,7 +78,8 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 直樹に判断してもらうこと
 
-- `docs/PLAN.md` v2 のレビュー（v2 のステップ 1 の完了条件）
+- `docs/adr/0012`（提案）: Murmur の立ち位置（判断の台帳、外には書かない、メモ、boid からの系譜）。議論の中で合意した内容を書いたもので、採用の判断と未決 1〜5
+- `docs/PLAN.md` v2 のレビュー（v2 のステップ 1 の完了条件）。0012 が採用なら、直してから
 - `docs/adr/0002`（提案）: テストを `@cloudflare/vitest-pool-workers` ではなく Node の vitest と pglite で回している。計画からの逸脱
 - `docs/adr/0003` の未決: 本体が JWKS を設定値で持つか、ゲートウェイから取りに行くか（今は設定値）
 - `docs/adr/0007`「量の見通し」の 6: 実メールの本文が残る記録（`recordings`）をどこに置くか。並行トラック（実データでの試用）の前提
@@ -107,6 +114,8 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 - 2026-10-17: クラウドセッションが書いた ADR（0007・0008）が `origin/ccr-*` のブランチに残ったまま main に入っていなかった。セッションの始めに `git fetch` して、main 以外のリモートのブランチに未マージの作業がないかを見る
 - 2026-10-17: `v*` のタグは CI が prod にデプロイする。記録用のタグは `proto-v1` のように別の名前にする
 - 2026-10-17: 判断専用のモデル Jev（TypeSafe AI、2026-09 公開）は WebSearch で調べた。振り分けのモデルの候補（0010、計画 v2 の「記録・再生」）
+- 2026-10-17: boid（novshi-tech/boid）は公開リポジトリで、クラウドセッションから `git clone --depth 1 https://github.com/novshi-tech/boid` で読める（push は不可）。
+  Murmur の下敷きになった計画は `docs/plans/` の `cross-project-issue-triage.md`・`ingestion-identity.md`・`card-next-step-and-timeline.md`・`card-model-cleanup.md`
 
 - 直樹のローカル（Linux、GUI なし）で動いた。Claude のメモリはある
 - 自動モードの判定で止められたこと: 環境変数の `ANTHROPIC_API_KEY` を `wrangler secret put` でクラウドへ送る（直樹が `!` で実行した）、`issue_token` で得たトークンをファイルに書く（トークンは curl の引数に直接書けば通った）。CI の再実行は直樹の確認を待った
