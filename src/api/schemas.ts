@@ -3,6 +3,9 @@ import { AddressRef, FileRef } from '../domain';
 
 // HTTP API（ゲートウェイの上流として公開する 11 本）の入力スキーマ。キーはツール定義に合わせて snake_case。
 
+/** 時刻はオフセット付きで受けて UTC（Z）にそろえる。コアは ISO 文字列の大小で期限を比べるため */
+const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
+
 export const ListMyTasksQuery = z.object({
   filter: z.enum(['open', 'ball_at_me', 'overdue', 'all']).default('open'),
   tenant: z.string().optional(),
@@ -20,7 +23,7 @@ export const ProposeDerivationBody = z
     instruction: z.string().optional(),
     attachments: z.array(FileRef).default([]),
     to_parties: z.array(z.string()).default([]),
-    reply_expected: z.object({ by: z.string() }).nullable().optional(),
+    reply_expected: z.object({ by: Instant }).nullable().optional(),
     reply_to: z.string().optional(),
   })
   .refine((b) => b.body !== undefined || b.instruction !== undefined, { message: 'body or instruction is required' });

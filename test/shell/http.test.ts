@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { base64UrlEncode } from '../../src/auth/claims';
 import { signWebhook, verifyIdentity, verifyWebhookSignature } from '../../src/auth/identity';
+import { ProposeDerivationBody } from '../../src/api/schemas';
 import { createApp } from '../../src/http/app';
 import type { AiDecision } from '../../src/domain';
 import { makeService } from '../helpers/service';
@@ -135,6 +136,13 @@ describe('HTTP API', () => {
     const { call } = await app();
     expect((await call('POST', '/api/derivations', 'u_alice', { task_id: 't' })).status).toBe(400);
     expect((await call('GET', '/api/tasks?filter=weird', 'u_alice')).status).toBe(400);
+  });
+
+  it('H7 返事期待の期限はオフセット付きで受けて UTC にそろえる', async () => {
+    const reply = (by: string) => ProposeDerivationBody.safeParse({ task_id: 't', target_list: 'l', body: 'b', reply_expected: { by } });
+    expect(reply('2026-10-17T20:00:00+09:00').data?.reply_expected).toEqual({ by: '2026-10-17T11:00:00.000Z' });
+    expect(reply('2026-10-17T11:00:00Z').data?.reply_expected).toEqual({ by: '2026-10-17T11:00:00.000Z' });
+    expect(reply('明日の夜').success).toBe(false);
   });
 
   it('Webhook は署名が合うときだけ取り込む', async () => {
