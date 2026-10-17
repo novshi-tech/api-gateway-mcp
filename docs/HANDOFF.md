@@ -1,16 +1,16 @@
 # 申し送り
 
-最終更新: 2026-10-17（実環境をつないだあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-17（実環境をつなぎ、CI のデプロイが通ったあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
 
 ## いまの状態
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新 | 本体。計画のステップ 1〜6 を、外部接続なしで進められるところまで |
+| novshi-tech/murmur | 最新 | 本体。計画のステップ 1〜6 と、実環境（murmur-dev + Neon + ゲートウェイ）の接続まで |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0） |
 
-- murmur のテスト: `pnpm test` で 167 件が緑（skip なし）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
+- murmur のテスト: `pnpm test` で 169 件が緑（skip なし）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）
 - 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。詳しくは `CLAUDE.md` と `docs/adr/0001`
 
@@ -18,13 +18,13 @@
 
 | 仮説 | 状態 | 残り |
 | --- | --- | --- |
-| H1 リプレイの決定性 | 緑（メモリと Postgres（pglite）の両方） | Neon 実機では未確認 |
+| H1 リプレイの決定性 | 緑（メモリと Postgres（pglite）の両方） | Neon 実機では未確認（H7 の記録で確かめられる） |
 | H2 二層の状態 | 緑 | — |
 | H3 境界 | 緑 | — |
 | H4 派生のライフサイクル | 緑（見回りの冪等性も） | — |
 | H5 観測と送信の重複排除 | 緑 | — |
 | H6 Ingest の一致率 | 緑（claude-sonnet-5-5 の記録を再生。全体 91.7%（22/24）、AI のみ 85.7%（12/14）） | ignore を一度も選ばない（下の「H6 の記録で分かったこと」） |
-| H7 スタンドで完走 | 未着手 | 実環境をつないでから（下の 2・3） |
+| H7 スタンドで完走 | 未着手（実環境は準備済み） | スタンドにプラグインを入れて回す（下の 2・3） |
 
 ## 残作業（優先順）
 
@@ -42,6 +42,14 @@
    - seed の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。DB を空にしてから入れるので、シナリオは 1 つずつ回す
    - 直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`。いま dev には absence の seed（u_kimura をこの ID に付け替え）が入っている
 4. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
+
+## 次のセッションでやること
+
+1. 直樹が Cowork か Claude Code にプラグイン（`api-gateway`、`nvt-api-gateway` 0.2.0）を入れたかを聞く。「自分のタスクを見せて」で `list_my_tasks` が呼ばれ、s01 のタスク（山本さん 17日朝シフト欠勤）が見えれば準備完了
+2. `set -a; . ~/.config/murmur/dev.env; set +a; pnpm seed absence --user u_kimura=<直樹の User ID>` で DB を空にして入れ直す
+3. `fixtures/absence/signals.jsonl` の signal 行を時刻順に Webhook（`POST /webhooks/dummy/ubs`、本文は `[signal]`、`x-murmur-signature` は WEBHOOK_SECRET の HMAC-SHA256 hex）で流す。
+   action 行（スタンドの操作）は流さず、直樹がスタンドに指示・承認して起こす。流す道具は今はシェルの one-liner だけなので、`scripts/` に送信用のスクリプトを足すとよい
+4. 完走したら記録を固める（上の残作業 3）。そのあと complaint を同じ手順で
 
 ## 直樹に判断してもらうこと
 
@@ -71,6 +79,14 @@
 - シナリオの文字列で `$` から始まるものは束縛として置き換えられる（本文に `$100` などを書くと失敗する）
 
 ## このセッションの環境で分かったこと
+
+- 直樹のローカル（Linux、GUI なし）で動いた。Claude のメモリはある
+- 自動モードの判定で止められたこと: 環境変数の `ANTHROPIC_API_KEY` を `wrangler secret put` でクラウドへ送る（直樹が `!` で実行した）、`issue_token` で得たトークンをファイルに書く（トークンは curl の引数に直接書けば通った）。CI の再実行は直樹の確認を待った
+- `npx neonctl` は API キーを渡しても止まって返ってこない。Neon は `https://console.neon.tech/api/v2` を curl で呼ぶ（プロジェクト一覧には `org_id=org-broad-river-99881946` が要る）
+- Neon の組織には ubs-apps の本番プロジェクト `ubs-app`（damp-bread-05008141）もある。murmur では触らない
+- `~/.config/murmur/dev.env` の値はクォートしておく（接続文字列の `&` でシェルが割れ、エラー表示にパスワードが出た。2026-10-17 にロール neondb_owner のパスワードをリセット済み）
+- `! gh secret set ...` は端末の入力欄が出ない。秘密の入力は直樹に別のターミナルでやってもらう
+- ゲートウェイの本番 `wrangler.jsonc`（git 管理外）を書き換える前の控え: 前セッションの scratchpad にあるだけで、次のセッションからは見えない。差分は `services` の 1 行と `SERVICES.murmur` だけ
 
 - クラウドセッションの git の経路ではリモートのブランチを削除できない（push --delete が切断される）。削除は GitHub の画面で
 - 空のリポに最初に push したブランチが既定ブランチになる。新しいリポでは最初に main を push する
