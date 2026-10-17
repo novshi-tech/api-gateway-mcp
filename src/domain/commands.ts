@@ -1,6 +1,7 @@
 import type { CoreContext } from './context';
 import type { AttributeDef, Principal } from './entities';
 import { DomainError } from './errors';
+import { replyEvents } from './ingest';
 import { draft, type AddressRef, type DraftEvent, type FileRef } from './events';
 import type { Derivation, Projections, Task } from './projections';
 import { isMemberOfList, membership, type Viewer } from './viewer';
@@ -355,5 +356,7 @@ export function correctIngest(
       confidence: 1,
       actorUserId: viewer.userId,
     }),
+    // 打診の適用先に付け替えたら、AI が付けたときと同じく返事として紐づける
+    ...(decision.kind === 'attach' ? replyEvents(p, sig.direction, sig, decision.taskId) : []),
   ];
 }

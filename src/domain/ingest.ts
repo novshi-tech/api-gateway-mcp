@@ -296,7 +296,7 @@ export function finalizeDecision(
 export function replyEvents(
   p: Projections,
   direction: 'in' | 'out',
-  signal: SignalPayload,
+  signal: Pick<SignalPayload, 'signalId' | 'fromPartyId'>,
   taskId: string,
   derivationId?: string,
 ): DraftEvent[] {

@@ -323,6 +323,36 @@ describe('correctIngest', () => {
     expectDomainError(() => correctIngest(log.state(), eve, ctx, { signalId, decision: { kind: 'ignore' }, reason: 'r' }), 'not_found');
   });
 
+  it('H7 協力会社への打診の適用先に付け替えると、返事として紐づく', () => {
+    const { log, ctx, taskId } = withCustomerTask();
+    const ext = proposeDerivation(log.state(), alice, ctx, {
+      taskId,
+      targetListId: 'l_partner',
+      body: '見積をお願いします',
+      toPartyIds: ['p_dave'],
+      replyExpected: { by: '2026-10-17T00:00:00.000Z' },
+    });
+    log.push(ext.events, T0);
+    log.push(approveDerivation(log.state(), alice, ctx, { derivationId: ext.derivationId }).events, T0);
+    log.push(recordSent(log.state(), ext.derivationId, '<s1>'), T0);
+    // Dave の返事を AI が拾い損ねた
+    ingestPure(log, ctx, email({ from: 'info@dave.example', sourceRef: 'm2', body: '承知しました' }), () => ({
+      decision: 'ignore',
+      task_id: null,
+      list_id: null,
+      title: null,
+      reason: '挨拶のみ',
+      confidence: 0.9,
+    }));
+    const signalId = Object.values(log.state().signals).find((s) => s.sourceRef === 'm2')!.signalId;
+    const target = log.state().derivations[ext.derivationId]!.targetTaskId;
+    const events = correctIngest(log.state(), bob, ctx, { signalId, decision: { kind: 'attach', taskId: target }, reason: '打診への返事' });
+    expect(events.map((e) => e.type)).toEqual(['IngestDecided', 'DerivationReplied']);
+    log.push(events, T0);
+    expect(log.state().derivations[ext.derivationId]!.status).toBe('replied');
+    expect(scanOverdue(log.state(), '2026-12-31T00:00:00.000Z')).toEqual([]);
+  });
+
   it('付け替え先がリストのメンバーでなければ invalid（Bob の協力会社リストには Alice は置けない）', () => {
     const { log, ctx } = withCustomerTask();
     const signalId = Object.keys(log.state().signals)[0]!;
