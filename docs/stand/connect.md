@@ -43,12 +43,12 @@ wrangler secret put DATABASE_URL --env dev
 wrangler secret put ANTHROPIC_API_KEY --env dev
 wrangler secret put WEBHOOK_SECRET --env dev
 wrangler secret put TIMELINE_TOKEN --env dev   # timeline.html を見る人だけに渡す
-pnpm deploy:dev
+pnpm deploy:dev   # dev だけ workers.dev を開けている（Webhook と timeline.html 用）
 ```
 
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
-マスタ（seed）とシナリオの投入は、プロトタイプでは `fixtures/<scenario>/seed.json` を `master` テーブルに入れる
-（`PgMasterStore.replaceSeed`）。受信は `POST /webhooks/dummy/{tenant}`（本文は InboundSignal の配列、`x-murmur-signature` は
+マスタ（seed）の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。
+DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy/{tenant}`（本文は InboundSignal の配列、`x-murmur-signature` は
 WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 
 ## Cowork

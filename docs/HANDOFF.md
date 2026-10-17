@@ -1,13 +1,13 @@
 # 申し送り
 
-最終更新: 2026-10-16（H6 の記録を作ったあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
+最終更新: 2026-10-17（実環境をつないだあと）。次のセッションは、まずこれと `docs/PLAN.md` を読む。
 
 ## いまの状態
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
 | novshi-tech/murmur | 最新 | 本体。計画のステップ 1〜6 を、外部接続なしで進められるところまで |
-| novshi-tech/api-gateway-mcp | f6fa0ed | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
+| novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0） |
 
 - murmur のテスト: `pnpm test` で 167 件が緑（skip なし）。`pnpm scenario verify all` で 4 シナリオとも expected.json と一致
@@ -29,16 +29,18 @@
 ## 残作業（優先順）
 
 1. ~~H6 の記録を作る~~（済み。`fixtures/*/recordings/` をコミットした）
-2. **実環境の設定**（手順は `docs/stand/connect.md`）
-   - Neon（aws-ap-southeast-1）の dev ブランチを作り、`DATABASE_URL=... pnpm db:migrate`
-   - murmur の secrets（`DATABASE_URL`・`ANTHROPIC_API_KEY`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN`）と vars（`GATEWAY_JWKS`・`IDENTITY_ISSUER`）を設定して `pnpm deploy:dev`
-   - ゲートウェイ: `IDENTITY_SIGNING_KEY` を登録し、本番の `wrangler.jsonc`（git 管理外）に `services` の Service Binding と `SERVICES.murmur` を足してデプロイ
-   - GitHub Secrets に `CLOUDFLARE_API_TOKEN` を入れる。入れるまで murmur の CI の deploy-dev は失敗する
-   - Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
+2. **実環境の設定**（2026-10-17 にほぼ済み。手順は `docs/stand/connect.md`）
+   - 済み: Neon プロジェクト `murmur`（quiet-dust-32237629、aws-ap-southeast-1、組織 株式会社ノブシテック）の `dev` ブランチにマイグレーション
+   - 済み: murmur-dev（https://murmur-dev.nose-0d2.workers.dev、dev だけ workers.dev を開けた）に `DATABASE_URL`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN` と `GATEWAY_JWKS`・`IDENTITY_ISSUER`
+   - 済み: ゲートウェイに `IDENTITY_SIGNING_KEY`、本番の `wrangler.jsonc` に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur` を足してデプロイ。`list_credentials` に `identity:murmur` が出て、ゲートウェイ経由の `/murmur/me` が seed のユーザーを返す
+   - 残り: `ANTHROPIC_API_KEY` を murmur-dev に入れる（直樹が手で `wrangler secret put`）。入れたら Webhook の受信を試す
+   - 残り: GitHub Secrets に `CLOUDFLARE_API_TOKEN` を入れる。入れるまで murmur の CI の deploy-dev は失敗する
+   - 残り: Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
+   - 控え: Webhook の鍵・timeline のトークン・接続文字列は、直樹のマシンの `~/.config/murmur/dev.env`（600、シェルで source できる形）。Neon の API キーは `~/.config/neonctl/api_key`
 3. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
    実環境で、ユーザーは指示と承認だけを出して完走させ、記録を `signals.jsonl` と `expected.json` に固めて `status: stand-recorded` にする（`docs/stand/connect.md` の最後の節）
-   - マスタの `User.id` はゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。今の seed の ID は仮
-   - seed の投入は今は `PgMasterStore.replaceSeed` を直接呼ぶしかない。投入用のスクリプトを足すとよい
+   - seed の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。DB を空にしてから入れるので、シナリオは 1 つずつ回す
+   - 直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`。いま dev には absence の seed（u_kimura をこの ID に付け替え）が入っている
 4. **ステップ 7（振り返り）**: 直樹のレビュー。設計メモの未決リストへの判定、Google Doc への書き戻し案。Claude だけで閉じない
 
 ## 直樹に判断してもらうこと

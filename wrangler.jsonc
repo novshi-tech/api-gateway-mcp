@@ -20,12 +20,15 @@
   "env": {
     "dev": {
       "name": "murmur-dev",
+      // H7 で Webhook にシグナルを流し、timeline.html を見るために workers.dev を開ける。/api/* は JWT 必須のまま
+      "workers_dev": true,
+      "preview_urls": false,
       "vars": {
         "CLAUDE_MODEL": "claude-sonnet-5-5",
         "IGNORE_CONFIDENCE_THRESHOLD": "0.8",
         "IDENTITY_AUDIENCE": "murmur",
-        "IDENTITY_ISSUER": "",
-        "GATEWAY_JWKS": ""
+        "IDENTITY_ISSUER": "https://api-gateway-mcp.nose-0d2.workers.dev",
+        "GATEWAY_JWKS": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"MiS4fsNuFhRhzlIQVbAX3623EaYblKi4uXkaeAPBhrw\",\"kid\":\"KNBlv8ntIyJzelvRChDnIPMD9d1Eavr1BoXeJE7gYq0\",\"alg\":\"EdDSA\",\"use\":\"sig\"}]}"
       },
       "triggers": { "crons": ["*/5 * * * *"] }
     },
