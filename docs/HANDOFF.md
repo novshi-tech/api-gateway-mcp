@@ -34,7 +34,7 @@
    - 済み: murmur-dev（https://murmur-dev.nose-0d2.workers.dev、dev だけ workers.dev を開けた）に `DATABASE_URL`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN` と `GATEWAY_JWKS`・`IDENTITY_ISSUER`
    - 済み: ゲートウェイに `IDENTITY_SIGNING_KEY`、本番の `wrangler.jsonc` に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur` を足してデプロイ。`list_credentials` に `identity:murmur` が出て、ゲートウェイ経由の `/murmur/me` が seed のユーザーを返す
    - 済み: `ANTHROPIC_API_KEY`。absence の s01 を Webhook で流し、Claude が new と判断してタスクを作り、ゲートウェイ経由の `/murmur/tasks` で見えるところまで確認した（H7 を回す前に `pnpm seed absence --user ...` で入れ直す）
-   - 残り: GitHub Secrets に `CLOUDFLARE_API_TOKEN` を入れる。入れるまで murmur の CI の deploy-dev は失敗する
+   - 済み: GitHub Secrets の `CLOUDFLARE_API_TOKEN`。main への push で CI の deploy-dev が murmur-dev にデプロイする（`v*` タグの deploy-prod は、prod の設定が空なので当面打たない）
    - 残り: Cowork / Claude Code に `api-gateway` と `nvt-api-gateway`（0.2.0）のプラグインを入れる
    - 控え: Webhook の鍵・timeline のトークン・接続文字列は、直樹のマシンの `~/.config/murmur/dev.env`（600、シェルで source できる形）。Neon の API キーは `~/.config/neonctl/api_key`
 3. **H7**: 欠勤連絡（`fixtures/absence`）とクレーム（`fixtures/complaint`）は、スタンドで回す前の下書き（`status: draft`）。
