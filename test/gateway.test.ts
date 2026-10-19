@@ -224,7 +224,7 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "docs", "graph", "murmur"]);
+    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "graph", "murmur"]);
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },

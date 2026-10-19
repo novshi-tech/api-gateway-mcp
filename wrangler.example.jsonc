@@ -95,6 +95,30 @@
           "authorize_params": { "access_type": "offline", "prompt": "consent" }
         }
       },
+      // Google Analytics: enable Google Analytics Data API and Google Analytics Admin API, then set
+      // OAUTH_ANALYTICS_CLIENT_ID / _SECRET and OAUTH_ANALYTICS_ADMIN_CLIENT_ID / _SECRET.
+      "analytics": {
+        "display_name": "Google Analytics (Data API)",
+        "base_url": "https://analyticsdata.googleapis.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scope": "https://www.googleapis.com/auth/analytics.readonly",
+          "authorize_params": { "access_type": "offline", "prompt": "consent" }
+        }
+      },
+      "analytics-admin": {
+        "display_name": "Google Analytics (Admin API)",
+        "base_url": "https://analyticsadmin.googleapis.com",
+        "auth": {
+          "type": "oauth2",
+          "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scope": "https://www.googleapis.com/auth/analytics.readonly",
+          "authorize_params": { "access_type": "offline", "prompt": "consent" }
+        }
+      },
       // Microsoft Graph with a separate Entra app: register ${PUBLIC_URL}/connect/callback as a
       // Web redirect URI and set OAUTH_GRAPH_CLIENT_ID and OAUTH_GRAPH_CLIENT_SECRET.
       "graph": {

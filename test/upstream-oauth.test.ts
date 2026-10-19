@@ -239,6 +239,34 @@ describe("refreshing upstream tokens", () => {
     expect(echoed.headers.authorization).toBe("Bearer access-after-rt-docs");
   });
 
+  it("sends Google Analytics reports and property lookups to their own API hosts", async () => {
+    const started = await startConnect(alice, { service: "analytics", label: "" });
+    const authorize = new URL(started.headers.get("location")!);
+    expect(authorize.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/analytics.readonly");
+    expect(authorize.searchParams.get("access_type")).toBe("offline");
+
+    const data = await connected(alice, { access_token: "stale", refresh_token: "rt-ga-data", expires_in: 0 }, "analytics");
+    const admin = await connected(alice, { access_token: "stale", refresh_token: "rt-ga-admin", expires_in: 0 }, "analytics-admin");
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "api", alice, { creds: { analytics: data.id, "analytics-admin": admin.id } }, 60);
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+
+    const report = await SELF.fetch(`${BASE}/api/analytics/v1beta/properties/123:runReport`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ metrics: [{ name: "sessions" }] }),
+    });
+    expect(report.status).toBe(200);
+    const reported = (await report.json()) as { url: string; headers: Record<string, string> };
+    expect(reported.url).toBe("https://analyticsdata.googleapis.com/v1beta/properties/123:runReport");
+    expect(reported.headers.authorization).toBe("Bearer access-after-rt-ga-data");
+
+    const summaries = await SELF.fetch(`${BASE}/api/analytics-admin/v1beta/accountSummaries`, { headers });
+    expect(summaries.status).toBe(200);
+    const listed = (await summaries.json()) as { url: string; headers: Record<string, string> };
+    expect(listed.url).toBe("https://analyticsadmin.googleapis.com/v1beta/accountSummaries");
+    expect(listed.headers.authorization).toBe("Bearer access-after-rt-ga-admin");
+  });
+
   it("keeps using a token without an expiry", async () => {
     const cred = await connected(alice, { access_token: "forever" });
     expect(await upstreamAuthorization(await callFreee(alice, cred.id))).toBe("Bearer forever");
