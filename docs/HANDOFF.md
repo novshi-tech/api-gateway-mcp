@@ -4,7 +4,7 @@
 
 ## いまの状態
 
-**2026-10-20（夜）: ステップ 2 を実装した（ブランチ `ccr-fab8e92c-c9jtn1`。main にはまだ入れていない）。** 要点:
+**2026-10-20（夜）: ステップ 2 を実装し、main に入れた（707e300。murmur-dev にデプロイ済み、dev の DB はマイグレーションと absence の seed を当てた）。** 要点:
 - コア（`src/domain/`）を置き換えた。マスタは DataSource（service / notes）・List（データソース 1 つに 1 つ）・ListMember（読者）・AttributeDef（データソースに付く）。ChannelPolicy はなくした。
   `seedProblems` が「データソース 1 つにリスト 1 つ」「個人のメモの読者は本人だけ」「個人の資格情報は読者 1 人のデータソースだけ」を検査し、シナリオの読み込みで必ず通す
 - イベントは `SignalObserved`（direction）・`SignalThreaded`（by: anchor / awaiting / no_match / ai / human / self、needsResponse）・`ThreadDismissed`（片付けと閉じるの兼用）・`ThreadReopened` の 4 つ。
@@ -49,7 +49,7 @@ H7 で absence を実環境で回したところ、リストの構成に根本�
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新（ステップ 2 はブランチ `ccr-fab8e92c-c9jtn1`） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2（データソースのスレッド）を実装済み。H6 の記録の取り直しが残り |
+| novshi-tech/murmur | 最新（デプロイ済み） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2（データソースのスレッド）を実装済み。H6 の記録の取り直しが残り |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表のまま（ステップ 2 で本体の `/api/tasks` などは消えたので、表は今の本体と合っていない）。v2 のステップ 5 で作り直す |
 
@@ -89,7 +89,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 - 鍵・トークン・接続文字列は直樹のマシンの `~/.config/murmur/dev.env`（600、`set -a; . ~/.config/murmur/dev.env; set +a`）。Neon の API キーは `~/.config/neonctl/api_key`
 - seed の投入は `pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`、受信の送信は `pnpm send <scenario> <signal の id>...`。
   直樹のゲートウェイの User ID は `entra_6f043b7f-9709-4e71-bfa1-bd38a935316b_a86eed80-97f7-41a9-b7cc-2c6849408afb`
-- dev の DB には v1 の absence を s02 まで流した状態が残っている（ステップ 6 の前に入れ直す）
+- dev の DB は 2026-10-20 に v2 のスキーマにして absence の seed を入れた（イベントは空）
 
 ## 次のセッションでやること
 
@@ -97,8 +97,9 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
    目標は全体 90%・AI の区切り 80%。AI の区切りのラベルは 5 件しかない（repair-estimate s05、development s07、absence o02・s04・s06）ので、外れの中身を見る。
    「求めているか」は受信 24 件。迷いそうなラベル: development s02（スクリーンショットの追加。補足は依頼の一部として true）・s04（PR の作成とレビュアー指定。true）、repair-estimate s02（見積の送付。true）、absence s03（遅刻の連絡。true で、木村が片付ける）・s05（回復の連絡。false）。
    外れが多ければプロンプト（`INGEST_SYSTEM_PROMPT`）かラベルを見直し、`--ai rerecord` で取り直す
-2. main に入れる前に: CI が murmur-dev にデプロイするので、先に dev の DB に `DATABASE_URL=... pnpm db:migrate`（0001 で v1 の投影を落とし、0002 でスレッドのテーブルを作る）と `pnpm seed <scenario>`（イベントも空にする。v1 のイベントは v2 では読めない）を当てる。
-   wrangler の vars を `IGNORE_CONFIDENCE_THRESHOLD` から `NO_RESPONSE_CONFIDENCE_THRESHOLD` に改名した。スキルの API の表は今の本体と合わない（ステップ 5 まで、スタンドからは使えない）
+2. （済み、2026-10-20）main に入れて CI（run #29）で murmur-dev にデプロイした。直樹が dev の DB に `pnpm db:migrate`（0001・0002）と `pnpm seed absence --user u_kimura=<直樹のゲートウェイの User ID>` を流した。
+   CI はマイグレーションも seed も走らせない（secrets は `CLOUDFLARE_API_TOKEN` だけ）。スキーマを変えたら、デプロイの前後で手で `pnpm db:migrate` を当てる（CD には入れない、直樹）。
+   wrangler の vars は `IGNORE_CONFIDENCE_THRESHOLD` から `NO_RESPONSE_CONFIDENCE_THRESHOLD` に改名した。スキルの API の表は今の本体と合わない（ステップ 5 まで、スタンドからは使えない）
 3. ステップ 3（個人のメモとリンク）に入る: `add_note`、`ThreadLinked` / unlink、`ThreadClaimed`、`ThreadAttributeSet`、「自分の番」ビューと結び候補（`jiraKeys`・`prRefs`・sent_ref）、導出したボールとタイムライン。development に DEV-12 / DEV-30 の例を足す
 4. 手が空いたら、0012 の未決 2（LINE の Messaging API が自分の push を webhook で返すか）を WebSearch で確かめる。ステップ 4 までに分かっていればよい
 5. ステップ 4 で `record_sent` の返事期待を受けるとき、v1 で直した「オフセット付きの時刻を UTC にそろえる」（`Instant`、v1 の `src/api/schemas.ts`）を戻す。派生と一緒に消えている
