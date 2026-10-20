@@ -11,6 +11,8 @@ Matter 系のイベントは全部廃止（メモは `SignalObserved`、属性�
 スレッド同士を結ぶのは人とスタンド（`ThreadLinked`、無向、unlink あり）で、Murmur はアンカーの一致を結び候補として出すだけ。自動の用件作成・自動リンク・自動の開き直しはなし。fold は 1 段。
 計画 v2（方向・データモデル・イベント・投影・ルール・結び・API・シナリオ・ステップ・H1〜H9）、`CLAUDE.md`、0012・0013 の状態行を同日に直した。**直樹は全文を読んでレビュー済み。ステップ 1 は完了。**
 0014 の未決 1〜5（`ThreadDismissed` の二役、メモのスレッドの件名、結び候補の範囲、経路 anchor の名前、`record_sent` の元スレッド省略）は直樹に挙げたが、実装を止めるものではない。
+**未決 1 は同日に決めた: `ThreadDismissed` は「仕分け待ちから片付ける」と「個人のメモのスレッドを閉じる」を同じイベントで扱う。** どちらも「このスレッドにこれ以上ボールは動かない」の宣言で、
+可視性はデータソースの読者で決まるので、イベントを分ける理由は意味の違いだけ。イベントを増やすのは慎重に（直樹）。ステップ 2 ではこの前提でイベントを作り、ステップ 3 で困ったら分ける。
 
 **2026-10-20: 直樹が計画 v2 をレビューして止め、議論の結果を `docs/adr/0013` に書いた（採用）。** 要点: チームの共有は既存のツール（Jira・グループメール・Slack）に任せ、
 Murmur はテナントで共有する連絡の索引（ソースのミラー。テナントで 1 つの共有の実体、見えるのはソースの読者）と、各自のマイリスト（項目・メモ・属性）になる。
@@ -74,7 +76,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 次のセッションでやること
 
-1. ステップ 2（データソースのスレッド）に入る。最初に、イベント（`SignalObserved`（direction 付き）・`SignalThreaded`・`ThreadDismissed`。`ThreadClaimed`・`ThreadLinked`・`ThreadAttributeSet` はステップ 3、`ThreadMirrored` はステップ 7）と DataSource の zod スキーマ、
+1. ステップ 2（データソースのスレッド）に入る。最初に、イベント（`SignalObserved`（direction 付き）・`SignalThreaded`・`ThreadDismissed`（片付けと閉じるの兼用。0014 の未決 1 で決定）・`ThreadReopened`。`ThreadClaimed`・`ThreadLinked`・`ThreadAttributeSet` はステップ 3、`ThreadMirrored` はステップ 7）と DataSource の zod スキーマ、
    スレッドの投影と fold（1 段）、4 シナリオの seed（DataSource。個人のメモのデータソースも seed に入れておく）と正解ラベル（シグナルごとのスレッドと「返事や対応を求めているか」）を作る。
    v1 のコアを置き換えるので、v1 の `Connector.send`・`ReplyEstimator`・`AiSummarizer`・承認付きの送信は、該当するステップ（4）で消す
 2. Ingest v2 のプロンプトを書いたら `--ai record` で記録を取り直す（`ANTHROPIC_API_KEY` は `dev.env` にはない。直樹に環境変数で渡してもらう）
