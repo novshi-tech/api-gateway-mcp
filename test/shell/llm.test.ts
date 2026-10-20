@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import { AiDecider, AiReplyEstimator } from '../../src/ingest/deciders';
+import { AiDecider } from '../../src/ingest/deciders';
+import type { IngestRequest } from '../../src/domain';
 import {
   AnthropicLlm,
   LlmRefusalError,
@@ -92,14 +93,16 @@ describe('AnthropicLlm', () => {
   });
 });
 
-describe('AiDecider / AiReplyEstimator', () => {
-  const request = {
+describe('AiDecider', () => {
+  const request: IngestRequest = {
     tenantId: 'ubs',
-    direction: 'in' as const,
+    mode: 'new',
     signal: {
       signalId: 's',
-      channel: 'email' as const,
-      from: { channel: 'email' as const, value: 'a@x' },
+      dataSourceId: 'ds',
+      direction: 'inbound',
+      channel: 'email',
+      from: { channel: 'email', value: 'a@x' },
       to: [],
       fromPartyId: null,
       toPartyIds: [],
@@ -107,26 +110,16 @@ describe('AiDecider / AiReplyEstimator', () => {
       anchors: {},
       attachments: [],
       sourceRef: 'r',
-      acquiredAs: { kind: 'organization' as const, tenantId: 'ubs' },
     },
-    allowedLists: [{ id: 'l', name: 'L', description: '' }],
+    dataSource: { id: 'ds', name: 'support@', description: '', channel: 'email', group: false },
+    threading: { kind: 'new', by: 'no_match', reason: 'r' },
     candidates: [],
   };
 
-  it('構造化出力を検証して返す。壊れた出力は例外', async () => {
-    const good = new CountingLlm(JSON.stringify({ decision: 'new', task_id: null, list_id: 'l', title: 't', reason: 'r', confidence: 0.7 }));
-    expect(await new AiDecider(good, 'm').decide(request)).toEqual({
-      raw: { decision: 'new', task_id: null, list_id: 'l', title: 't', reason: 'r', confidence: 0.7 },
-      by: 'ai',
-    });
-    await expect(new AiDecider(new CountingLlm('{"decision":"maybe"}'), 'm').decide(request)).rejects.toThrow();
-  });
-
-  it('返事期待の推定を正規化する', async () => {
-    const llm = new CountingLlm(JSON.stringify({ expects_reply: true, reply_expected_by: '2026-10-20T00:00:00Z', reason: '' }));
-    expect(await new AiReplyEstimator(llm, 'm').estimate(request.signal, '2026-10-16T00:00:00.000Z')).toEqual({
-      replyExpectedBy: '2026-10-20T00:00:00.000Z',
-      by: 'ai',
-    });
+  it('H6 構造化出力を検証して返す。壊れた出力は例外', async () => {
+    const out = { thread: 'new', thread_id: null, title: 't', needs_response: true, reason: 'r', confidence: 0.7 };
+    const llm = new CountingLlm(JSON.stringify(out));
+    expect(await new AiDecider(llm, 'm').decide(request)).toEqual({ raw: out, by: 'ai' });
+    await expect(new AiDecider(new CountingLlm('{"thread":"maybe"}'), 'm').decide(request)).rejects.toThrow();
   });
 });

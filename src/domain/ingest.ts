@@ -1,18 +1,21 @@
 import { z } from 'zod';
 import type { CoreContext } from './context';
-import type { Principal } from './entities';
-import { draft, type AddressRef, type Anchors, type DraftEvent, type FileRef, type IngestDecision, type PayloadOf } from './events';
-import type { Projections, SignalRecord, Task } from './projections';
-import type { Channel } from './entities';
+import { sameValue } from './directory';
+import type { Channel, ServiceDataSource } from './entities';
+import { DomainError } from './errors';
+import { draft, type AddressRef, type Anchors, type DraftEvent, type FileRef, type PayloadOf, type ThreadChoice, type ThreadedBy } from './events';
+import { indexKey, type Projections, type SignalRecord, type Thread } from './projections';
 
 // Ingest の判断部分（純関数）。AI の呼び出しそのものはシェル（src/ingest/）が行う。
+// 判断はスレッドの区切りと「返事や対応を求めているか」だけ（計画 v2 の Ingest）。業務の知識は使わない。
 //
-//   prepareInbound → (観測された送信なら返事期待の推定: シェル) → planDecision
-//     → アンカーで決まれば終わり / 決まらなければ DecisionRequest をシェルの Decider へ
-//     → finalizeDecision
+//   prepareInbound → planIngest
+//     → 構造で決まり、AI の判断が要らなければ（観測された送信）イベントまで作る
+//     → そうでなければ IngestRequest をシェルの Decider へ → finalizeIngest
 
-/** コネクタが正規化した 1 件のメッセージ */
+/** コネクタが正規化した 1 件のメッセージ。どのデータソースとして取得したかを必ず持つ */
 export interface InboundSignal {
+  dataSourceId: string;
   channel: Channel;
   from: AddressRef;
   to: AddressRef[];
@@ -21,36 +24,33 @@ export interface InboundSignal {
   anchors?: Anchors;
   attachments?: FileRef[];
   sourceRef: string;
-  acquiredAs: Principal;
   /** 観測時刻（コネクタが知っていれば）。シェルの時計より優先しない。参考値 */
   occurredAt?: string;
 }
 
-export type SignalPayload = PayloadOf<'SignalReceived'>;
+export type SignalPayload = PayloadOf<'SignalObserved'>;
 
-export type Prepared =
-  | { kind: 'duplicate'; signalId: string }
-  | { kind: 'merged'; derivationId: string }
-  | { kind: 'signal'; direction: 'in' | 'out'; payload: SignalPayload };
+export type Prepared = { kind: 'duplicate'; signalId: string } | { kind: 'signal'; payload: SignalPayload; dataSource: ServiceDataSource };
 
 /**
- * 重複排除と受信／観測された送信の振り分け。
- * - source_ref が既出なら弾く
- * - 自分側のアドレスからの送信で、Message-ID が DerivationSent の sent_ref と一致すれば
- *   ツール経由の送信と同一として統合し、新しいイベントを出さない（H5）
+ * 重複排除と向きの判定。
+ * - source_ref がそのデータソースで既出なら弾く
+ * - from がデータソースの送信元（こちら）なら outbound（観測された送信）、そうでなければ inbound
  */
 export function prepareInbound(p: Projections, ctx: CoreContext, inbound: InboundSignal): Prepared {
-  const existing = p.index.sourceRefs[inbound.sourceRef];
+  const ds = ctx.dir.dataSource(inbound.dataSourceId);
+  if (!ds || ds.tenantId !== p.tenantId || ds.kind !== 'service') {
+    throw new DomainError('invalid', `data source ${inbound.dataSourceId} is not a service data source of tenant ${p.tenantId}`);
+  }
+  if (ds.channel !== inbound.channel) throw new DomainError('invalid', `data source ${ds.id} is ${ds.channel}, not ${inbound.channel}`);
+
+  const existing = p.index.sourceRefs[indexKey(ds.id, inbound.sourceRef)];
   if (existing) return { kind: 'duplicate', signalId: existing };
 
-  const anchors = inbound.anchors ?? {};
-  const direction = ctx.dir.isInternalAddress(p.tenantId, inbound.from, ctx.now) ? 'out' : 'in';
-  if (direction === 'out' && anchors.messageId) {
-    const derivationId = p.index.sentRefs[anchors.messageId];
-    if (derivationId) return { kind: 'merged', derivationId };
-  }
   const payload: SignalPayload = {
     signalId: ctx.newId('sig'),
+    dataSourceId: ds.id,
+    direction: ctx.dir.isSelfAddress(ds, inbound.from) ? 'outbound' : 'inbound',
     channel: inbound.channel,
     from: inbound.from,
     to: inbound.to,
@@ -60,350 +60,350 @@ export function prepareInbound(p: Projections, ctx: CoreContext, inbound: Inboun
       .filter((x): x is string => x !== null),
     subject: inbound.subject,
     body: inbound.body,
-    anchors,
+    anchors: inbound.anchors ?? {},
     attachments: inbound.attachments ?? [],
     sourceRef: inbound.sourceRef,
-    acquiredAs: inbound.acquiredAs,
   };
-  return { kind: 'signal', direction, payload };
+  return { kind: 'signal', payload, dataSource: ds };
 }
 
-export function signalEvent(
-  direction: 'in' | 'out',
-  payload: SignalPayload,
-  estimate?: { replyExpectedBy: string | null; by: 'ai' | 'human' | 'none' },
-): DraftEvent {
-  if (direction === 'in') return draft('SignalReceived', payload);
-  return draft('SignalObservedSent', {
-    ...payload,
-    replyExpectedBy: estimate?.replyExpectedBy ?? null,
-    replyEstimatedBy: estimate?.by ?? 'none',
+export function signalEvent(payload: SignalPayload): DraftEvent {
+  return draft('SignalObserved', payload);
+}
+
+export interface IngestPolicy {
+  /** 「求めていない」をこの confidence 以上のときだけ採用する。未満なら拾いすぎに倒して「求めている」にする */
+  noResponseThreshold: number;
+  /** 区切りの AI 判断に渡す「直近のスレッド」の本数 */
+  recentThreadLimit: number;
+}
+
+export const DEFAULT_POLICY: IngestPolicy = { noResponseThreshold: 0.8, recentThreadLimit: 5 };
+
+// ---- 区切り（上から順に） ----
+
+export type Threading =
+  | { kind: 'existing'; threadId: string; by: 'anchor' | 'awaiting'; reason: string }
+  | { kind: 'new'; by: 'anchor' | 'no_match'; reason: string }
+  | { kind: 'choose'; candidates: Candidate[] };
+
+/** 1. アンカー。同じデータソースの中だけを見る。ソースの区切り（threadKey）は一致しなくても「新しい」に決まる */
+export function resolveAnchors(p: Projections, sig: SignalPayload): Threading | null {
+  const a = sig.anchors;
+  const threaded = Object.values(p.signals).filter(
+    (s) => s.dataSourceId === sig.dataSourceId && s.threadId !== null && s.signalId !== sig.signalId,
+  );
+  const latest = (xs: SignalRecord[]) => [...xs].sort((x, y) => y.seq - x.seq)[0];
+  const byMessageId = (id: string) => {
+    const sid = p.index.messageIds[indexKey(sig.dataSourceId, id)];
+    const s = sid ? p.signals[sid] : undefined;
+    return s?.threadId ? s : undefined;
+  };
+
+  if (a.threadKey) {
+    const s = latest(threaded.filter((x) => x.anchors.threadKey === a.threadKey));
+    return s
+      ? { kind: 'existing', threadId: s.threadId!, by: 'anchor', reason: `ソースの区切り ${a.threadKey}` }
+      : { kind: 'new', by: 'anchor', reason: `ソースの区切り ${a.threadKey} の最初のシグナル` };
+  }
+  if (a.inReplyTo) {
+    const s = byMessageId(a.inReplyTo);
+    if (s) return { kind: 'existing', threadId: s.threadId!, by: 'anchor', reason: `In-Reply-To ${a.inReplyTo}` };
+  }
+  if (a.quotedMessageId) {
+    const s = byMessageId(a.quotedMessageId);
+    if (s) return { kind: 'existing', threadId: s.threadId!, by: 'anchor', reason: `引用 ${a.quotedMessageId}` };
+  }
+  if (a.threadTs) {
+    const s = latest(threaded.filter((x) => x.anchors.messageId === a.threadTs || x.anchors.threadTs === a.threadTs));
+    if (s) return { kind: 'existing', threadId: s.threadId!, by: 'anchor', reason: `同じスレッド thread_ts=${a.threadTs}` };
+  }
+  return null;
+}
+
+/** スレッドのシグナルのうち、相手として sig と同じ人とやりとりしたものがあるか（グループのチャネルはチャネル全体） */
+function withSameCounterpart(p: Projections, ds: ServiceDataSource, t: Thread, sig: SignalPayload): boolean {
+  if (ds.group) return true;
+  const theirs = sig.direction === 'inbound' ? [sig.from] : sig.to;
+  const has = (refs: AddressRef[], r: AddressRef) => refs.some((x) => x.channel === r.channel && sameValue(x.value, r.value));
+  return t.signalIds.some((id) => {
+    const s = p.signals[id]!;
+    return theirs.some((r) => (s.direction === 'inbound' ? has([s.from], r) : has(s.to, r)));
   });
 }
 
-// ---- アンカー解決 ----
-
-export interface AnchorMatch {
-  taskId: string;
-  reason: string;
-  /** In-Reply-To が派生の sent_ref に一致した場合、その派生 */
-  derivationId?: string;
+/** 2. 同じ相手で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド（受信だけ） */
+export function awaitingThread(p: Projections, ds: ServiceDataSource, sig: SignalPayload): Thread | null {
+  if (sig.direction !== 'inbound') return null;
+  const waiting = threadsOf(p, ds.id).filter((t) => {
+    if (t.ball.kind !== 'party') return false;
+    if (ds.group) return true;
+    const lastOut = [...t.signalIds].reverse().map((id) => p.signals[id]!).find((s) => s.direction === 'outbound');
+    return lastOut !== undefined && lastOut.to.some((r) => r.channel === sig.from.channel && sameValue(r.value, sig.from.value));
+  });
+  return waiting.length === 1 ? waiting[0]! : null;
 }
 
-/**
- * 構造アンカーで既存タスクに決まるか。決まれば AI は呼ばない。
- * 取得主体ルールで置けないリストのタスクには付けない。
- */
-export function resolveAnchors(p: Projections, payload: SignalPayload, allowedListIds: readonly string[]): AnchorMatch | null {
-  const a = payload.anchors;
-  const placeable = (taskId: string | null | undefined): taskId is string => {
-    const t = taskId ? p.tasks[taskId] : undefined;
-    return t !== undefined && allowedListIds.includes(t.listId);
-  };
-  const decided = Object.values(p.signals).filter((s) => s.taskId !== null && s.signalId !== payload.signalId);
-  const latest = (xs: SignalRecord[]) => xs.sort((x, y) => y.seq - x.seq)[0];
+/** 3. の候補: 相手（グループならチャネル）の直近のスレッド。片付けたものは入れない */
+export function recentThreads(p: Projections, ds: ServiceDataSource, sig: SignalPayload, limit: number): Thread[] {
+  return threadsOf(p, ds.id)
+    .filter((t) => withSameCounterpart(p, ds, t, sig))
+    .sort((a, b) => {
+      const x = lastActivity(a);
+      const y = lastActivity(b);
+      return x < y ? 1 : x > y ? -1 : a.id < b.id ? -1 : 1;
+    })
+    .slice(0, limit);
+}
 
-  if (a.inReplyTo) {
-    const derivationId = p.index.sentRefs[a.inReplyTo];
-    const d = derivationId ? p.derivations[derivationId] : undefined;
-    if (d && placeable(d.targetTaskId)) {
-      return { taskId: d.targetTaskId, derivationId: d.id, reason: `In-Reply-To ${a.inReplyTo} は派生 ${d.id} の送信` };
-    }
-    const sid = p.index.messageIds[a.inReplyTo];
-    const s = sid ? p.signals[sid] : undefined;
-    if (s && placeable(s.taskId)) return { taskId: s.taskId, reason: `In-Reply-To ${a.inReplyTo}` };
+function threadsOf(p: Projections, dataSourceId: string): Thread[] {
+  return Object.values(p.threads).filter((t) => t.dataSourceId === dataSourceId && !t.dismissed && t.signalIds.length > 0);
+}
+
+function lastActivity(t: Thread): string {
+  const a = t.lastInboundAt ?? '';
+  const b = t.lastOutboundAt ?? '';
+  return a > b ? a : b;
+}
+
+export function planThreading(p: Projections, ds: ServiceDataSource, sig: SignalPayload, policy: IngestPolicy): Threading {
+  const anchored = resolveAnchors(p, sig);
+  if (anchored) return anchored;
+  const waiting = awaitingThread(p, ds, sig);
+  if (waiting) {
+    return { kind: 'existing', threadId: waiting.id, by: 'awaiting', reason: 'こちらが返事を待っているスレッドが 1 本だけ' };
   }
-  if (a.threadTs) {
-    const s = latest(
-      decided.filter((x) => x.channel === payload.channel && (x.anchors.messageId === a.threadTs || x.anchors.threadTs === a.threadTs)),
-    );
-    if (s && placeable(s.taskId)) return { taskId: s.taskId, reason: `同じスレッド thread_ts=${a.threadTs}` };
-  }
-  for (const key of a.jiraKeys ?? []) {
-    const s = latest(decided.filter((x) => x.anchors.jiraKeys?.includes(key) && placeable(x.taskId)));
-    if (s?.taskId) return { taskId: s.taskId, reason: `Jira キー ${key}` };
-  }
-  for (const ref of a.prRefs ?? []) {
-    const s = latest(decided.filter((x) => x.anchors.prRefs?.includes(ref) && placeable(x.taskId)));
-    if (s?.taskId) return { taskId: s.taskId, reason: `PR ${ref}` };
-  }
-  return null;
+  const recent = recentThreads(p, ds, sig, policy.recentThreadLimit);
+  if (recent.length === 0) return { kind: 'new', by: 'no_match', reason: 'アンカーも返事待ちも直近のスレッドもない' };
+  return { kind: 'choose', candidates: recent.map((t) => toCandidate(p, t)) };
 }
 
 // ---- AI 判断の入出力 ----
 
 export interface Candidate {
-  taskId: string;
-  listId: string;
+  threadId: string;
   title: string;
-  status: 'open' | 'closed';
-  updatedAt: string;
-  recent: { at: string; direction: 'in' | 'out'; from: string; excerpt: string }[];
+  recent: { at: string; direction: 'inbound' | 'outbound'; from: string; excerpt: string }[];
 }
 
-export interface DecisionRequest {
+function toCandidate(p: Projections, t: Thread): Candidate {
+  const recent = t.signalIds
+    .slice(-3)
+    .map((id) => p.signals[id]!)
+    .map((s) => ({ at: s.at, direction: s.direction, from: s.from.value, excerpt: s.body.slice(0, 160) }));
+  return { threadId: t.id, title: t.title, recent };
+}
+
+/**
+ * - choose: 候補のどれかの続きか、新しいスレッドかを選ぶ（+ 返事や対応を求めているか）
+ * - new: 新しいスレッドに決まっている。件名を書き、返事や対応を求めているかを判断する
+ * - fixed: 既存のスレッドに決まっている。返事や対応を求めているかだけを判断する
+ */
+export type IngestMode = 'choose' | 'new' | 'fixed';
+
+export interface IngestRequest {
   tenantId: string;
+  mode: IngestMode;
   signal: SignalPayload;
-  direction: 'in' | 'out';
-  allowedLists: { id: string; name: string; description: string }[];
+  dataSource: { id: string; name: string; description: string; channel: Channel; group: boolean };
+  threading: Threading;
+  /** fixed のときの決まったスレッド */
+  thread?: Candidate;
   candidates: Candidate[];
 }
 
-export const CANDIDATE_LIMIT = 20;
+export type IngestPlan =
+  | { kind: 'decided'; events: DraftEvent[]; outcome: IngestOutcome }
+  | { kind: 'needs_decision'; request: IngestRequest };
 
-/** 候補タスク: 取得主体ルールで置けるリストの、open で最近のもの */
-export function candidateTasks(p: Projections, allowedListIds: readonly string[], limit = CANDIDATE_LIMIT): Candidate[] {
-  return Object.values(p.tasks)
-    .filter((t) => t.status === 'open' && allowedListIds.includes(t.listId))
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1))
-    .slice(0, limit)
-    .map((t) => toCandidate(p, t));
+export interface IngestOutcome {
+  threadId: string;
+  newThread: boolean;
+  by: ThreadedBy;
+  needsResponse: boolean | null;
 }
 
-function toCandidate(p: Projections, t: Task): Candidate {
-  const recent = Object.values(p.signals)
-    .filter((s) => s.taskId === t.id)
-    .sort((a, b) => b.seq - a.seq)
-    .slice(0, 3)
-    .map((s) => ({ at: s.at, direction: s.direction, from: s.from.value, excerpt: s.body.slice(0, 160) }));
-  return { taskId: t.id, listId: t.listId, title: t.title, status: t.status, updatedAt: t.updatedAt, recent };
-}
-
-export type Plan =
-  | { kind: 'decided'; events: DraftEvent[]; taskId: string | null }
-  | { kind: 'needs_decision'; request: DecisionRequest };
-
-/** アンカーで決まればイベントまで作る。決まらなければ AI 判断の依頼を返す */
-export function planDecision(p: Projections, ctx: CoreContext, direction: 'in' | 'out', signal: SignalPayload): Plan {
-  const allowed = ctx.dir.allowedListIds(p.tenantId, signal.acquiredAs, signal.channel);
-  if (allowed.length === 0) {
+/** 区切りを決め、AI の判断が要らなければイベントまで作る。観測された送信には「求めているか」を判断しない */
+export function planIngest(
+  p: Projections,
+  ctx: CoreContext,
+  ds: ServiceDataSource,
+  sig: SignalPayload,
+  policy: IngestPolicy,
+): IngestPlan {
+  const threading = planThreading(p, ds, sig, policy);
+  if (sig.direction === 'outbound' && threading.kind !== 'choose') {
+    const choice: ThreadChoice =
+      threading.kind === 'existing'
+        ? { kind: 'existing', threadId: threading.threadId }
+        : { kind: 'new', threadId: ctx.newId('thr'), title: defaultTitle(sig) };
     return {
       kind: 'decided',
-      taskId: null,
       events: [
-        draft('IngestDecided', {
-          signalId: signal.signalId,
-          decision: { kind: 'ignore' },
-          reason: '取得主体ルールで置けるリストがない',
-          decidedBy: 'anchor',
+        draft('SignalThreaded', {
+          signalId: sig.signalId,
+          thread: choice,
+          by: threading.by,
           confidence: 1,
+          reason: threading.reason,
+          needsResponse: null,
         }),
       ],
+      outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by: threading.by, needsResponse: null },
     };
   }
-  const match = resolveAnchors(p, signal, allowed);
-  if (match) {
-    return {
-      kind: 'decided',
-      taskId: match.taskId,
-      events: [
-        draft('IngestDecided', {
-          signalId: signal.signalId,
-          decision: { kind: 'attach', taskId: match.taskId },
-          reason: match.reason,
-          decidedBy: 'anchor',
-          confidence: 1,
-        }),
-        ...replyEvents(p, direction, signal, match.taskId, match.derivationId),
-      ],
-    };
-  }
+  const mode: IngestMode = threading.kind === 'choose' ? 'choose' : threading.kind === 'new' ? 'new' : 'fixed';
   return {
     kind: 'needs_decision',
     request: {
       tenantId: p.tenantId,
-      signal,
-      direction,
-      allowedLists: allowed.map((id) => {
-        const l = ctx.dir.list(id);
-        return { id, name: l?.name ?? id, description: l?.description ?? '' };
-      }),
-      candidates: candidateTasks(p, allowed),
+      mode,
+      signal: sig,
+      dataSource: { id: ds.id, name: ds.name, description: ds.description, channel: ds.channel, group: ds.group },
+      threading,
+      thread: threading.kind === 'existing' ? toCandidate(p, p.threads[threading.threadId]!) : undefined,
+      candidates: threading.kind === 'choose' ? threading.candidates : [],
     },
   };
 }
 
+function defaultTitle(sig: Pick<SignalPayload, 'subject' | 'body'>): string {
+  return sig.subject?.trim() || sig.body.slice(0, 40);
+}
+
 /** Claude の構造化出力のスキーマ */
-export const AiDecision = z.object({
-  decision: z.enum(['attach', 'new', 'ignore']),
-  task_id: z.string().nullable(),
-  list_id: z.string().nullable(),
+export const AiIngestDecision = z.object({
+  thread: z.enum(['existing', 'new']).nullable(),
+  thread_id: z.string().nullable(),
   title: z.string().nullable(),
+  needs_response: z.boolean().nullable(),
   reason: z.string(),
   confidence: z.number().min(0).max(1),
 });
-export type AiDecision = z.infer<typeof AiDecision>;
-
-export interface DecisionPolicy {
-  /** この confidence 以上なら AI の ignore を自動で採用する（2026-10-16 決定） */
-  ignoreThreshold: number;
-}
+export type AiIngestDecision = z.infer<typeof AiIngestDecision>;
 
 /**
- * Decider の出力を検証して IngestDecided にする。
- * - 候補にないタスクへの attach、置けないリストへの new は採用しない（new に倒す）
- * - 閾値未満の ignore は拾いすぎに倒して new にする
+ * Decider の出力を検証して SignalThreaded にする。
+ * - 候補にないスレッドを選んだら新しいスレッドに倒す
+ * - 「求めていない」は confidence が閾値以上のときだけ採用する（拾いすぎに倒す）
  */
-export function finalizeDecision(
-  p: Projections,
+export function finalizeIngest(
   ctx: CoreContext,
-  request: DecisionRequest,
-  raw: AiDecision,
+  request: IngestRequest,
+  raw: AiIngestDecision,
   decidedBy: 'ai' | 'human',
-  policy: DecisionPolicy,
-): { events: DraftEvent[]; taskId: string | null } {
-  const allowedIds = request.allowedLists.map((l) => l.id);
-  const fallbackList = raw.list_id && allowedIds.includes(raw.list_id) ? raw.list_id : allowedIds[0]!;
-  const title = raw.title?.trim() || request.signal.subject || request.signal.body.slice(0, 40);
-  const asNew = (): IngestDecision => ({ kind: 'new', taskId: ctx.newId('task'), listId: fallbackList, title });
+  policy: IngestPolicy,
+): { events: DraftEvent[]; outcome: IngestOutcome } {
+  const sig = request.signal;
+  const th = request.threading;
+  const notes: string[] = [];
+  const title = raw.title?.trim() || defaultTitle(sig);
 
-  let decision: IngestDecision;
-  let reason = raw.reason;
-  if (raw.decision === 'attach') {
-    const ok = raw.task_id && request.candidates.some((c) => c.taskId === raw.task_id) && p.tasks[raw.task_id];
-    if (ok) decision = { kind: 'attach', taskId: raw.task_id! };
-    else {
-      decision = asNew();
-      reason = `[attach 先 ${raw.task_id ?? '(なし)'} が候補外のため new] ${raw.reason}`;
-    }
-  } else if (raw.decision === 'ignore') {
-    if (raw.confidence >= policy.ignoreThreshold) decision = { kind: 'ignore' };
-    else {
-      decision = asNew();
-      reason = `[ignore の confidence ${raw.confidence} が閾値 ${policy.ignoreThreshold} 未満のため new] ${raw.reason}`;
-    }
+  let choice: ThreadChoice;
+  let by: ThreadedBy;
+  if (th.kind === 'existing') {
+    choice = { kind: 'existing', threadId: th.threadId };
+    by = th.by;
+    notes.push(th.reason);
+  } else if (th.kind === 'new') {
+    choice = { kind: 'new', threadId: ctx.newId('thr'), title };
+    by = th.by;
+    notes.push(th.reason);
   } else {
-    decision = asNew();
+    by = decidedBy;
+    const picked = raw.thread === 'existing' ? th.candidates.find((c) => c.threadId === raw.thread_id) : undefined;
+    if (picked) choice = { kind: 'existing', threadId: picked.threadId };
+    else {
+      choice = { kind: 'new', threadId: ctx.newId('thr'), title };
+      if (raw.thread === 'existing') notes.push(`[続き先 ${raw.thread_id ?? '(なし)'} が候補外のため新しいスレッド]`);
+    }
   }
 
-  const taskId = decision.kind === 'ignore' ? null : decision.taskId;
-  const events: DraftEvent[] = [
-    draft('IngestDecided', {
-      signalId: request.signal.signalId,
-      decision,
-      reason: reason.trim() || '(理由なし)',
-      decidedBy,
-      confidence: raw.confidence,
-    }),
-  ];
-  if (decision.kind === 'attach') events.push(...replyEvents(p, request.direction, request.signal, decision.taskId));
-  return { events, taskId };
+  let needsResponse: boolean | null = null;
+  if (sig.direction === 'inbound') {
+    needsResponse = raw.needs_response !== false;
+    if (raw.needs_response === false && raw.confidence < policy.noResponseThreshold) {
+      needsResponse = true;
+      notes.push(`[「求めていない」の confidence ${raw.confidence} が閾値 ${policy.noResponseThreshold} 未満のため「求めている」]`);
+    } else if (raw.needs_response === null) {
+      notes.push('[「求めているか」の判断がないため「求めている」]');
+    }
+  }
+  const reason = [...notes, raw.reason.trim()].filter((x) => x).join(' ') || '(理由なし)';
+  return {
+    events: [
+      draft('SignalThreaded', {
+        signalId: sig.signalId,
+        thread: choice,
+        by,
+        confidence: raw.confidence,
+        reason,
+        needsResponse,
+      }),
+    ],
+    outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by, needsResponse },
+  };
 }
 
-/**
- * 返事の紐づけ: 受信シグナルが、外部派生の適用先タスクに付き、送り主がその派生の宛先なら DerivationReplied。
- */
-export function replyEvents(
-  p: Projections,
-  direction: 'in' | 'out',
-  signal: Pick<SignalPayload, 'signalId' | 'fromPartyId'>,
-  taskId: string,
-  derivationId?: string,
-): DraftEvent[] {
-  if (direction !== 'in') return [];
-  const open = ['sent', 'overdue'];
-  const ds = derivationId
-    ? [p.derivations[derivationId]].filter((d) => d !== undefined && open.includes(d.status))
-    : Object.values(p.derivations).filter(
-        (d) =>
-          d.targetTaskId === taskId &&
-          d.mode === 'external' &&
-          open.includes(d.status) &&
-          signal.fromPartyId !== null &&
-          d.toPartyIds.includes(signal.fromPartyId),
-      );
-  return ds.map((d) => draft('DerivationReplied', { derivationId: d!.id, signalId: signal.signalId }));
-}
+// ---- プロンプト（固定。業務の知識を持たない、0008） ----
 
-// ---- プロンプト ----
+export const INGEST_SYSTEM_PROMPT = `あなたは連絡の索引の Ingest 判断係です。
+データソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。
+何をすべきか、誰が担当するかは判断しません。
 
-export const INGEST_SYSTEM_PROMPT = `あなたはタスク管理ツールの Ingest 判断係です。
-届いたメッセージ（シグナル）を、既存のタスクに付ける (attach)、新しいタスクを作る (new)、無視する (ignore) のどれかに振り分けます。
+1. スレッドの区切り（mode が choose のときだけ）
+   候補のスレッドのどれかと同じ話題の続きなら thread を "existing" にして、その thread_id を選ぶ。
+   別の話題なら thread を "new" にして、短い件名を title に書く。
+   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。
+2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）
+   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。
+   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。
+   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。
 
-- attach: 候補タスクのどれかと同じ用件の続きなら、その task_id を選ぶ。
-- new: 対応が必要な新しい用件なら、置くリストを list_id で選び、短いタスク名を title に書く。
-- ignore: 広告・自動通知・挨拶だけ・対応不要な連絡など、誰も行動しなくてよいものだけ。
+mode が new のとき: スレッドは新しく作られる。thread を "new"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。
+mode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。
 
-迷ったら ignore より new を選ぶ。confidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。
-attach 以外では task_id を null、new 以外では list_id と title を null にする。`;
+confidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。`;
 
-export function buildDecisionPrompt(request: DecisionRequest): string {
+export function buildIngestPrompt(request: IngestRequest): string {
   const s = request.signal;
+  const thread = (c: Candidate) => ({ thread_id: c.threadId, title: c.title, recent: c.recent });
   return JSON.stringify(
     {
+      mode: request.mode,
+      data_source: {
+        name: request.dataSource.name,
+        description: request.dataSource.description,
+        channel: request.dataSource.channel,
+        group: request.dataSource.group,
+      },
       signal: {
-        direction: request.direction === 'in' ? 'received' : 'sent_by_us',
-        channel: s.channel,
+        direction: s.direction === 'inbound' ? 'received' : 'sent_by_us',
         from: s.from.value,
         to: s.to.map((t) => t.value),
         subject: s.subject ?? null,
         body: s.body,
         attachments: s.attachments.map((a) => a.name ?? a.path),
       },
-      lists: request.allowedLists,
-      candidates: request.candidates.map((c) => ({
-        task_id: c.taskId,
-        list_id: c.listId,
-        title: c.title,
-        recent: c.recent,
-      })),
+      ...(request.thread ? { thread: thread(request.thread) } : {}),
+      ...(request.mode === 'choose' ? { candidates: request.candidates.map(thread) } : {}),
     },
     null,
     2,
   );
 }
 
-/** Claude の構造化出力に渡す JSON Schema（AiDecision と同じ形） */
-export const AI_DECISION_JSON_SCHEMA = {
+/** Claude の構造化出力に渡す JSON Schema（AiIngestDecision と同じ形） */
+export const AI_INGEST_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    decision: { type: 'string', enum: ['attach', 'new', 'ignore'] },
-    task_id: { type: ['string', 'null'] },
-    list_id: { type: ['string', 'null'] },
+    thread: { type: ['string', 'null'], enum: ['existing', 'new', null] },
+    thread_id: { type: ['string', 'null'] },
     title: { type: ['string', 'null'] },
+    needs_response: { type: ['boolean', 'null'] },
     reason: { type: 'string' },
     confidence: { type: 'number' },
   },
-  required: ['decision', 'task_id', 'list_id', 'title', 'reason', 'confidence'],
+  required: ['thread', 'thread_id', 'title', 'needs_response', 'reason', 'confidence'],
   additionalProperties: false,
 } as const;
-
-// ---- 観測された送信の返事期待の推定 ----
-
-export const ReplyEstimate = z.object({
-  expects_reply: z.boolean(),
-  reply_expected_by: z.string().nullable(),
-  reason: z.string(),
-});
-export type ReplyEstimate = z.infer<typeof ReplyEstimate>;
-
-export const REPLY_ESTIMATE_SYSTEM_PROMPT = `あなたはタスク管理ツールの補助です。
-自分たちが送ったメッセージについて、相手からの返事を期待しているか、期待しているならいつまでか（ISO 8601）を推定します。
-本文に期限が書かれていればそれを使い、なければ用件の緊急度から妥当な期限を決めてください。返事が不要な連絡なら expects_reply を false にします。`;
-
-export const REPLY_ESTIMATE_JSON_SCHEMA = {
-  type: 'object',
-  properties: {
-    expects_reply: { type: 'boolean' },
-    reply_expected_by: { type: ['string', 'null'] },
-    reason: { type: 'string' },
-  },
-  required: ['expects_reply', 'reply_expected_by', 'reason'],
-  additionalProperties: false,
-} as const;
-
-export function buildReplyEstimatePrompt(signal: SignalPayload, sentAt: string): string {
-  return JSON.stringify(
-    { sent_at: sentAt, channel: signal.channel, to: signal.to.map((t) => t.value), subject: signal.subject ?? null, body: signal.body },
-    null,
-    2,
-  );
-}
-
-export function normalizeEstimate(raw: ReplyEstimate, sentAt: string): string | null {
-  if (!raw.expects_reply || !raw.reply_expected_by) return null;
-  const t = Date.parse(raw.reply_expected_by);
-  if (Number.isNaN(t)) return null;
-  const iso = new Date(t).toISOString();
-  return iso > sentAt ? iso : null;
-}

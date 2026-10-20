@@ -2,45 +2,50 @@
 
 ```
 fixtures/<scenario>/
-  scenario.json    # タイトル・テナント・検証する仮説・状態（desk-checked / draft / stand-recorded）・echoObserved
-  seed.json        # Tenant / User / Party / Address / List / ListMember / AttributeDef / CredentialRef / ChannelPolicy
-  signals.jsonl    # 時刻順のステップ（受信シグナル・スタンドの操作・Cron）。// で始まる行はコメント
-  expected.json    # Ingest の正解ラベル、各時点のボール所在、最終の Task 投影、可視性の確認
+  scenario.json    # タイトル・テナント・検証する仮説・状態（desk-checked / draft / stand-recorded）
+  seed.json        # Tenant / User / Party / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
+  signals.jsonl    # 時刻順のステップ（観測されたシグナル・スタンドの操作・Cron）。// で始まる行はコメント
+  expected.json    # シグナルごとの区切りと「返事や対応を求めているか」の正解ラベル、各時点のスレッドの状態、可視性
   recordings/      # Claude 呼び出しの入出力（再生モード用）。pnpm scenario verify <name> --ai record で作る
 ```
 
-## signals.jsonl のステップ
+seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で整合性を確かめる。データソース 1 つにリスト 1 つ、
+個人のメモの読者は本人だけ、個人の資格情報は読者 1 人（その本人）のデータソースにだけ使う（0013・0014）。
+
+## signals.jsonl のステップ（ステップ 2 の分）
 
 ```jsonc
-// 受信（ダミーコネクタが受け取ったもの）。bind で結果の taskId に名前を付ける
-{"id":"s01","at":"2026-10-16T09:00:00.000Z","signal":{ /* InboundSignal */ },"bind":{"custTask":"taskId"}}
-// スタンドの操作（HTTP API と同じ入力）。bind で応答のフィールドに名前を付ける
-{"id":"a02","at":"...","action":{"tool":"propose_derivation","as":"u_sato","input":{"task_id":"$custTask", ...}},"bind":{"drvInternal":"id"}}
-// Cron（取り込みのポーリングと期限の見回り）
+// 観測されたシグナル（ダミーコネクタが受け取ったもの）。from がデータソースの送信元なら観測された送信（outbound）
+// bind で結果（threadId / signalId）に名前を付ける
+{"id":"s01","at":"2026-10-16T09:00:00.000Z","signal":{"dataSourceId":"ds_support", /* InboundSignal */ },"bind":{"custThread":"threadId"}}
+// スタンドの操作（HTTP API と同じ入力）。me / list_threads / get_thread / dismiss_thread / reopen_thread / move_signal / get_list
+{"id":"a01","at":"...","action":{"tool":"move_signal","as":"u_sato","input":{"signal_id":"$sig","new_thread_title":"別件","reason":"..."}},"bind":{"t":"thread.id"}}
+// Cron（取り込みのポーリング）
 {"id":"c01","at":"...","cron":true}
 ```
 
-- `"$name"` は束縛した値、`"$sent:name"` はその派生の sent_ref（Message-ID）に置き換わる
-- 時刻は `2026-10-16T09:00:00.000Z` の形にそろえる（期限の比較は文字列で行う）
-- 観測された送信の返事期待は、ヒント実行では `"estimate"` で与える
+- `"$name"` は束縛した値に置き換わる（本文に `$` から始まる文字列を書くと失敗する）
+- 時刻は `2026-10-16T09:00:00.000Z` の形にそろえる
+- 送信の記録（`record_sent`）はステップ 4 で足す。それまでの送信は、メーラーなどから直接送った観測された送信として書く
 
 ## expected.json
 
-- `ingest`: 受信ステップごとの正解ラベル（`new`+list / `attach`+task / `ignore` / `merged` / `duplicate`）。
-  ヒント実行（AI なし）では、アンカーで決まらなかったシグナルの判断にこのラベルを使う。AI 実行では一致率を測る（H6）
-- `checkpoints`: そのステップの直後のタスクの通信状態・属性と派生の状態（H4）
-- `final`: 最終のタスク・派生・件数・イベント数
-- `visibility`: Viewer ごとの見え方（H3）。`access` は full / summary / null（見えない）
+- `ingest`: シグナルのステップごとの正解ラベル。`{"thread": "new" | "$<束縛名>", "needsResponse": true | false | null, "by"?: ..., "title"?: ...}` か `{"duplicate": true}`。
+  ヒント実行（AI なし）では、AI に聞く判断にこのラベルを使う。AI 実行（`--ai replay`）では一致率を測る（H6）。
+  `by` を書けば区切りの根拠（anchor / awaiting / no_match / ai）も確かめる。AI が区切るものには書かない（ヒント実行では human になる）
+- `checkpoints`: そのステップの直後のスレッドの状態（ボール・片付け・シグナル数など）
+- `final`: 最終のスレッド・スレッド数・イベントの件数
+- `visibility`: Viewer ごとの見え方（H3）。スレッドの詳細（`access` は full / null）、見えるシグナルの件数、`list_threads` の結果、ゴースト Party
 
 ## 状態
 
 | シナリオ | 状態 | 備考 |
 | --- | --- | --- |
-| repair-estimate（修繕見積） | desk-checked | 机上シミュレーションを機械で通したもの |
-| development（開発） | desk-checked | 同上 |
-| absence（欠勤連絡） | draft | スタンド主導で回して置き換える（H7） |
-| complaint（クレーム） | draft | 同上 |
+| repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る |
+| development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey） |
+| absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。スタンド主導で回して置き換える（H7） |
+| complaint（クレーム） | draft | 片付けたスレッドへの返信で別件が届き、シグナルを移し替える。同上 |
 
-`recordings/` はまだ空。H6 の Claude 判断の一致率は、`ANTHROPIC_API_KEY` を設定して
-`pnpm scenario verify all --ai record` を実行し、記録をコミットすると `pnpm test` で測られる。
+`recordings/` は v2 のプロンプトでまだ取っていない（v1 の記録は消した）。`ANTHROPIC_API_KEY` を設定して
+`pnpm scenario verify all --ai record` を実行し、記録をコミットすると `pnpm test` で H6 の一致率が測られる。
 添付の `files/` は参照（パスとハッシュ）だけで、実体は置いていない。

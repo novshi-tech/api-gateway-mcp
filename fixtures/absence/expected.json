@@ -1,40 +1,38 @@
 {
   "ingest": {
-    "s01": { "kind": "new", "list": "l_site", "title": "山本さん 10/17 欠勤" },
-    "s02": { "kind": "attach", "task": "$subTask" },
-    "s03": { "kind": "new", "list": "l_site", "title": "佐々木さん 10/17 遅刻" },
-    "s04": { "kind": "ignore", "reason": "スタンプのみで対応不要" },
-    "s05": { "kind": "attach", "task": "$absA" }
+    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "o01": { "thread": "new", "needsResponse": null, "by": "no_match" },
+    "o02": { "thread": "$absA", "needsResponse": null },
+    "s02": { "thread": "$subThread", "needsResponse": false, "by": "awaiting" },
+    "s03": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "s04": { "thread": "$lateB", "needsResponse": false },
+    "s05": { "thread": "$absA", "needsResponse": false, "by": "awaiting" },
+    "s06": { "thread": "new", "needsResponse": true, "title": "3階倉庫の洗剤の補充" }
   },
   "checkpoints": [
-    {
-      "after": "a05",
-      "tasks": {
-        "$absA": { "ballAt": { "kind": "list", "listId": "l_dispatch" } },
-        "$subTask": { "ballAt": { "kind": "party", "partyIds": ["p_ito"] } }
-      },
-      "derivations": { "$drvSub": "sent" }
-    },
-    {
-      "after": "s02",
-      "tasks": { "$absA": { "ballAt": { "kind": "list", "listId": "l_site" } } },
-      "derivations": { "$drvSub": "replied" }
-    }
+    { "after": "s01", "threads": { "$absA": { "ball": { "kind": "us" } } } },
+    { "after": "o01", "threads": { "$subThread": { "ball": { "kind": "party", "partyIds": ["p_ito"] } } } },
+    { "after": "o02", "threads": { "$absA": { "ball": { "kind": "party", "partyIds": ["p_yamamoto"] }, "unansweredSince": null } } },
+    { "after": "s02", "threads": { "$subThread": { "ball": { "kind": "none" }, "signalCount": 2 }, "$absA": { "signalCount": 2 } } },
+    { "after": "s04", "threads": { "$lateB": { "ball": { "kind": "us" }, "signalCount": 2, "unansweredSince": "2026-10-17T06:10:00.000Z" } } },
+    { "after": "a01", "threads": { "$lateB": { "ball": { "kind": "none" }, "dismissed": true } } }
   ],
   "final": {
-    "taskCount": 3,
-    "ignoredCount": 1,
-    "tasks": {
-      "$absA": { "status": "closed", "attributes": { "kind": "欠勤", "shift_date": "2026-10-17", "status": "手配済み", "substitute": "p_ito" } },
-      "$subTask": { "status": "closed", "attributes": { "status": "承諾" } },
-      "$lateB": { "status": "closed", "attributes": { "kind": "遅刻", "status": "対応不要" } }
+    "threads": {
+      "$absA": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 3 },
+      "$subThread": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_ito"], "signalCount": 2 },
+      "$lateB": { "ball": { "kind": "none" }, "dismissed": true, "activeSinceDismissed": false, "counterpartPartyIds": ["p_sasaki"], "signalCount": 2 },
+      "$supplyThread": { "ball": { "kind": "us" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 1 }
     },
-    "derivations": { "$drvSub": "replied" },
-    "eventCounts": { "ReplyOverdue": 0, "DerivationApproved": 1 }
+    "threadCount": 4,
+    "eventCounts": { "SignalObserved": 8, "SignalThreaded": 8, "ThreadDismissed": 1 }
   },
   "visibility": [
+    { "as": "u_kimura", "thread": "$absA", "access": "full", "mustContain": ["熱が出て", "お大事に"] },
+    { "as": "u_kimura", "signals": 8 },
+    { "as": "u_kimura", "threads": { "filter": "triage" }, "expect": ["$supplyThread"] },
+    { "as": "u_kimura", "threads": { "filter": "open" }, "expect": ["$absA", "$subThread", "$supplyThread"] },
     { "ghostParty": "p_yamamoto" },
-    { "ghostParty": "p_ito" },
-    { "as": "u_kimura", "task": "$absA", "access": "full" }
+    { "ghostParty": "p_ito" }
   ]
 }

@@ -89,7 +89,7 @@ v1 の ChannelPolicy と 0009 の Subscription はなくなる。置き先はデ
 | 種別 | 誰が出す | 要点 |
 | --- | --- | --- |
 | SignalObserved | コネクタ・人・スタンド | データソースで観測されたシグナル。受信も、ツール外で行われた送信（相手への返信をメーラーから直接送ったなど）も同じ種別で、direction（inbound / outbound）で区別する。direction は from がデータソースの送信元（こちら）かどうかでコネクタが機械的に決める。データソース、from / to、anchors（In-Reply-To・thread\_ts・Jira キー・PR 番号・LINE の quotedMessageId）、body、attachments（参照のみ）、source\_ref（データソースごとの重複排除キー）。個人のメモのシグナル（電話や対面の記録、判断の記録、スタンドとのやりとりの控え）も同じ種別で、データソースが個人のメモ、from が本人。Murmur は中身を解釈せず、タイムラインに並べるだけ（0012。v2 当初の SignalReceived・SignalObservedSent・MatterNoted を 1 つにしたもの） |
-| SignalThreaded | Ingest・人 | シグナルをスレッドに入れる（既存 / 新規）。by（anchor / awaiting / ai / human / self）、confidence、reason、返事や対応を求めているか。人の訂正（シグナルの移し替え）も同じイベントで追記する。個人のメモは本人が置き先を指定する（by: self。新規なら「この件」のスレッドができる） |
+| SignalThreaded | Ingest・人 | シグナルをスレッドに入れる（既存 / 新規）。by（anchor / awaiting / no\_match（どの規則にも当たらず候補もない） / ai / human / self）、confidence、reason、返事や対応を求めているか。人の訂正（シグナルの移し替え）も同じイベントで追記する。個人のメモは本人が置き先を指定する（by: self。新規なら「この件」のスレッドができる） |
 | ThreadClaimed | 人・スタンド | 持ち主。ボールを特定のユーザーへ明示の操作で動かす。userId が null なら手放す（ボールは「こちら」= 組織に戻る）、別の人なら引き継ぐ。理由を残す |
 | ThreadMirrored | コネクタ | 状態を持つデータソース（Jira の課題など）の状態の写し（ステータス・担当者・優先度・期日・完了）。0010 の MatterMirrored の後継 |
 | ThreadAttributeSet | 人・スタンド | 本人が付ける属性の値の変更（主に個人のメモのスレッド。定義は AttributeDef）。写しの属性は ThreadMirrored で、こちらでは触らない |
@@ -128,7 +128,7 @@ v1 の ChannelPolicy と 0009 の Subscription はなくなる。置き先はデ
 
 1. 受信: コネクタが SignalObserved を append する（direction は inbound / outbound）。source\_ref が既出なら弾く。outbound のシグナルが記録した送信の sent\_ref と一致すれば統合する。観測が記録より先に届いたときは受信と同じくスレッドに入れ（ボールは相手、返事期待なし）、後から記録が来たら統合する（H5）
 2. スレッドの区切り（上から順に）
-   1. アンカーで決まれば、そのスレッド
+   1. アンカーで決まれば、そのスレッド（同じデータソースの中だけ。ソースが元から持つ区切り（Jira の課題キー・PR）は、一致しなければ新しいスレッドに決まる）
    2. 同じ相手（グループのチャネルならそのチャネル）で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド
    3. 発信者の直近のスレッド（グループのチャネルならチャネルの直近のスレッド）から、話題の続きかを AI が判断する。「直近」の範囲は設定値
    4. どれにも当たらなければ新しいスレッド
@@ -251,7 +251,7 @@ v1 と同じ（`proto-v1`）。TypeScript（strict）、Cloudflare Workers、Hon
 | 1 | 計画の書き直し | この PLAN.md v2、`CLAUDE.md`、ADR 0008〜0014 | 直樹のレビュー（2026-10-17 済み。0013・0014 の反映は 2026-10-20 にレビュー済み） | — |
 | 2 | 外部リスト | DataSource、スレッド、Ingest v2（区切り + 返事や対応を求めているか）、片付け、シグナルの移し替え、記録の取り直し | H1（外部リストの段）・H3（外部リスト）・H6 が緑 | 4 本とも（受信の流れ） |
 | 3 | マイリスト | 個人のメモのデータソース（add\_note）、「自分の番」ビューと結び候補、リンク（ThreadLinked / unlink）、持ち主（ThreadClaimed）、本人が付ける属性、片付けと開き直し、導出したボールとタイムライン（クエリ層） | H1（リンク込み）・H2・H8 が緑 | absence・complaint |
-| 4 | 送信の記録 | `record_sent` と OutboundRecorded、sent\_ref のアンカー、期限の見回り、観測された送信の統合（両順）。`AiSummarizer`・`ReplyEstimator`・承認付きの送信を外す | H4・H5 が緑 | absence・complaint・repair-estimate |
+| 4 | 送信の記録 | `record_sent` と OutboundRecorded、sent\_ref のアンカー、期限の見回り、観測された送信の統合（両順）。v1 の `AiSummarizer`・`ReplyEstimator`・承認付きの送信は、タスクと派生に結びついていたのでステップ 2 でコアと一緒に外した | H4・H5 が緑 | absence・complaint・repair-estimate |
 | 5 | API・スキル・管理 UI | ツール一覧の作り直し（list\_threads・get\_thread・`claim_thread`・`link_threads`・`record_sent`・`add_note`・`since`）、スキルの更新（「送る → 記録する」を 1 つの手順に）、参照専用の管理 UI（リスト一覧・スレッドの一覧とリンク・詳細） | ゲートウェイ経由で一通り呼べる | — |
 | 6 | H7・H10 | 実環境で absence・complaint をスタンド主導で回し、記録を固める。absence は Murmur なしでも回して比べる | H7・H10 が緑 | absence・complaint |
 | 7 | 状態の写しを持つデータソース（Jira） | ダミーの Jira（外部リストとしての課題、状態の写し・コメント）、スタンドの起票とコメントの記録、アンカーでの結び | H9 が緑 | development |

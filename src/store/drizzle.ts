@@ -4,14 +4,11 @@ import {
   emptyProjections,
   parseEvent,
   Seed,
-  type Derivation,
   type DomainEvent,
   type DraftEvent,
-  type IgnoreEntry,
   type Projections,
   type SignalRecord,
-  type Task,
-  type TimelineEntry,
+  type Thread,
 } from '../domain';
 import * as schema from './schema';
 import { ConcurrencyError, type EventStore, type MasterStore, type ProjectionStore, type Repo } from './types';
@@ -70,23 +67,12 @@ export class PgProjectionStore implements ProjectionStore {
     const p = emptyProjections(tenantId);
     p.lastSeq = meta.lastSeq;
     p.index = meta.idx as Projections['index'];
-    const by = <T extends { tenantId: unknown }>(t: T) => eq((t as unknown as typeof schema.tasks).tenantId, tenantId);
-    for (const r of await this.db.select().from(schema.tasks).where(by(schema.tasks))) p.tasks[r.id] = r.data as Task;
-    for (const r of await this.db.select().from(schema.signals).where(by(schema.signals))) p.signals[r.id] = r.data as SignalRecord;
-    for (const r of await this.db.select().from(schema.derivations).where(by(schema.derivations))) {
-      p.derivations[r.id] = r.data as Derivation;
+    for (const r of await this.db.select().from(schema.threads).where(eq(schema.threads.tenantId, tenantId))) {
+      p.threads[r.id] = r.data as Thread;
     }
-    p.links = (await this.db.select().from(schema.taskLinks).where(by(schema.taskLinks))).map((r) => ({
-      derivationId: r.derivationId,
-      sourceTaskId: r.sourceTaskId,
-      targetTaskId: r.targetTaskId,
-    }));
-    p.timeline = (
-      await this.db.select().from(schema.timeline).where(by(schema.timeline)).orderBy(asc(schema.timeline.ord))
-    ).map((r) => r.data as TimelineEntry);
-    p.ignoreLog = (
-      await this.db.select().from(schema.ignoreLog).where(by(schema.ignoreLog)).orderBy(asc(schema.ignoreLog.ord))
-    ).map((r) => r.data as IgnoreEntry);
+    for (const r of await this.db.select().from(schema.signals).where(eq(schema.signals.tenantId, tenantId))) {
+      p.signals[r.id] = r.data as SignalRecord;
+    }
     return p;
   }
 
@@ -95,12 +81,16 @@ export class PgProjectionStore implements ProjectionStore {
     await this.db.transaction(async (tx) => {
       await clearTenant(tx as unknown as Db, tenantId);
       await tx.insert(schema.projectionMeta).values({ tenantId, lastSeq: p.lastSeq, idx: p.index });
-      await insertChunked(tx as unknown as Db, schema.tasks, Object.values(p.tasks).map((t) => ({ tenantId, id: t.id, listId: t.listId, status: t.status, data: t })));
-      await insertChunked(tx as unknown as Db, schema.signals, Object.values(p.signals).map((s) => ({ tenantId, id: s.signalId, taskId: s.taskId, data: s })));
-      await insertChunked(tx as unknown as Db, schema.derivations, Object.values(p.derivations).map((d) => ({ tenantId, id: d.id, status: d.status, data: d })));
-      await insertChunked(tx as unknown as Db, schema.taskLinks, p.links.map((l) => ({ tenantId, ...l })));
-      await insertChunked(tx as unknown as Db, schema.timeline, p.timeline.map((e, ord) => ({ tenantId, ord, taskId: e.taskId, data: e })));
-      await insertChunked(tx as unknown as Db, schema.ignoreLog, p.ignoreLog.map((e, ord) => ({ tenantId, ord, signalId: e.signalId, data: e })));
+      await insertChunked(
+        tx as unknown as Db,
+        schema.threads,
+        Object.values(p.threads).map((t) => ({ tenantId, id: t.id, dataSourceId: t.dataSourceId, data: t })),
+      );
+      await insertChunked(
+        tx as unknown as Db,
+        schema.signals,
+        Object.values(p.signals).map((s) => ({ tenantId, id: s.signalId, dataSourceId: s.dataSourceId, threadId: s.threadId, data: s })),
+      );
     });
   }
 
@@ -111,12 +101,8 @@ export class PgProjectionStore implements ProjectionStore {
 
 async function clearTenant(db: Db, tenantId: string): Promise<void> {
   await db.delete(schema.projectionMeta).where(eq(schema.projectionMeta.tenantId, tenantId));
-  await db.delete(schema.tasks).where(eq(schema.tasks.tenantId, tenantId));
+  await db.delete(schema.threads).where(eq(schema.threads.tenantId, tenantId));
   await db.delete(schema.signals).where(eq(schema.signals.tenantId, tenantId));
-  await db.delete(schema.derivations).where(eq(schema.derivations.tenantId, tenantId));
-  await db.delete(schema.taskLinks).where(eq(schema.taskLinks.tenantId, tenantId));
-  await db.delete(schema.timeline).where(eq(schema.timeline.tenantId, tenantId));
-  await db.delete(schema.ignoreLog).where(eq(schema.ignoreLog.tenantId, tenantId));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,11 +115,11 @@ const SEED_KINDS = [
   'users',
   'parties',
   'addresses',
+  'credentialRefs',
+  'dataSources',
   'lists',
   'listMembers',
   'attributeDefs',
-  'credentialRefs',
-  'channelPolicies',
 ] as const;
 
 export class PgMasterStore implements MasterStore {

@@ -2,12 +2,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Pool } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import { MurmurService, randomIds, systemClock } from './app/service';
+import { DEFAULT_POLICY } from './domain';
 import { verifyIdentity, verifyWebhookSignature } from './auth/identity';
 import { DummyConnector } from './connectors/dummy/connector';
 import { PgDummyBackend } from './connectors/dummy/pg-backend';
 import type { Connectors } from './connectors/types';
-import { AiSummarizer } from './derivation/summarizer';
-import { AiDecider, AiReplyEstimator } from './ingest/deciders';
+import { AiDecider } from './ingest/deciders';
 import { AnthropicLlm } from './ingest/llm';
 import { createApp } from './http/app';
 import { pgRepo, type Db } from './store/drizzle';
@@ -18,14 +18,15 @@ export interface Env {
   WEBHOOK_SECRET: string;
   TIMELINE_TOKEN?: string;
   CLAUDE_MODEL: string;
-  IGNORE_CONFIDENCE_THRESHOLD: string;
+  /** 「返事や対応を求めていない」を採用する confidence の下限 */
+  NO_RESPONSE_CONFIDENCE_THRESHOLD: string;
+  /** 区切りの AI 判断に渡す直近のスレッドの本数 */
+  RECENT_THREAD_LIMIT?: string;
   IDENTITY_AUDIENCE: string;
   /** ゲートウェイの PUBLIC_URL。設定すれば iss を確かめる */
   IDENTITY_ISSUER?: string;
   /** ゲートウェイの公開鍵（<gateway>/.well-known/jwks.json の中身の JSON 文字列） */
   GATEWAY_JWKS: string;
-  /** "true" なら、ダミーコネクタが送ったメッセージを observed-sent として折り返す */
-  DUMMY_ECHO_OBSERVED?: string;
 }
 
 const CHANNELS = ['email', 'slack', 'line', 'jira', 'bitbucket'] as const;
@@ -37,17 +38,18 @@ function build(env: Env): { service: MurmurService; close: () => Promise<void> }
   const llm = new AnthropicLlm(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }));
   const backend = new PgDummyBackend(db);
   const connectors: Connectors = Object.fromEntries(
-    CHANNELS.map((ch) => [ch, new DummyConnector(ch, backend, { echoObserved: env.DUMMY_ECHO_OBSERVED === 'true' })]),
+    CHANNELS.map((ch) => [ch, new DummyConnector(ch, backend)]),
   );
   const service = new MurmurService({
     repo: pgRepo(db),
     clock: systemClock,
     newId: randomIds,
     decider: new AiDecider(llm, env.CLAUDE_MODEL),
-    estimator: new AiReplyEstimator(llm, env.CLAUDE_MODEL),
-    summarizer: new AiSummarizer(llm, env.CLAUDE_MODEL),
     connectors,
-    policy: { ignoreThreshold: Number(env.IGNORE_CONFIDENCE_THRESHOLD) },
+    policy: {
+      noResponseThreshold: Number(env.NO_RESPONSE_CONFIDENCE_THRESHOLD),
+      recentThreadLimit: Number(env.RECENT_THREAD_LIMIT ?? DEFAULT_POLICY.recentThreadLimit),
+    },
   });
   return { service, close: () => pool.end() };
 }
@@ -77,7 +79,7 @@ export default {
     }
   },
 
-  /** 取り込みのポーリングと期限の見回り */
+  /** 取り込みのポーリング（期限の見回りはステップ 4 で戻す） */
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const { service, close } = build(env);
     try {

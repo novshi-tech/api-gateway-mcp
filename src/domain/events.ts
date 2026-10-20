@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { Channel, Principal } from './entities';
+import { Channel } from './entities';
 
 // 正は append-only のイベント列。payload は zod で定義し、DB では JSONB に入る。
 
 export const AddressRef = z.object({ channel: Channel, value: z.string() });
 export type AddressRef = z.infer<typeof AddressRef>;
 
-/** 構造アンカー。Ingest のアンカー解決に使う */
+/** 構造アンカー。区切り（同じデータソースの中）と、結び候補（ステップ 3）に使う */
 export const Anchors = z.object({
   /** このメッセージ自身の ID（Message-ID、Slack の ts、LINE の message id など） */
   messageId: z.string().optional(),
@@ -14,8 +14,16 @@ export const Anchors = z.object({
   inReplyTo: z.string().optional(),
   /** Slack のスレッド親 ts */
   threadTs: z.string().optional(),
+  /** LINE の引用返信の元 */
+  quotedMessageId: z.string().optional(),
+  /**
+   * ソースが元から持つ区切りの識別子（Jira の課題キー、PR）。
+   * 同じデータソースで一致すればそのスレッド、一致しなければ新しいスレッドに決まる
+   */
+  threadKey: z.string().optional(),
+  /** 本文などで触れている Jira キー（結び候補用。区切りには使わない） */
   jiraKeys: z.array(z.string()).optional(),
-  /** "<repo>#<number>" */
+  /** "<repo>#<number>"（結び候補用。区切りには使わない） */
   prRefs: z.array(z.string()).optional(),
 });
 export type Anchors = z.infer<typeof Anchors>;
@@ -24,14 +32,17 @@ export type Anchors = z.infer<typeof Anchors>;
 export const FileRef = z.object({ path: z.string(), sha256: z.string(), name: z.string().optional() });
 export type FileRef = z.infer<typeof FileRef>;
 
-export const BallAt = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('list'), listId: z.string() }),
-  z.object({ kind: z.literal('party'), partyIds: z.array(z.string()) }),
-]);
-export type BallAt = z.infer<typeof BallAt>;
+export const Direction = z.enum(['inbound', 'outbound']);
+export type Direction = z.infer<typeof Direction>;
 
-const signalBase = {
+/**
+ * データソースで観測されたシグナル（0014 の 5）。受信も、ツール外で行われた送信も同じ種別で、
+ * direction で区別する。direction は from がデータソースの送信元（こちら）かどうかで機械的に決まる。
+ */
+export const SignalObserved = z.object({
   signalId: z.string(),
+  dataSourceId: z.string(),
+  direction: Direction,
   channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef),
@@ -42,111 +53,50 @@ const signalBase = {
   body: z.string(),
   anchors: Anchors.default({}),
   attachments: z.array(FileRef).default([]),
-  /** コネクタ側の重複排除キー */
+  /** データソースごとの重複排除キー */
   sourceRef: z.string(),
-  acquiredAs: Principal,
-};
-
-export const SignalReceived = z.object(signalBase);
-export const SignalObservedSent = z.object({
-  ...signalBase,
-  /** 返事期待の推定値（Claude が推定、人が訂正） */
-  replyExpectedBy: z.string().nullable().default(null),
-  replyEstimatedBy: z.enum(['ai', 'human', 'none']).default('none'),
 });
 
-export const IngestDecision = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('attach'), taskId: z.string() }),
-  z.object({ kind: z.literal('new'), taskId: z.string(), listId: z.string(), title: z.string() }),
-  z.object({ kind: z.literal('ignore') }),
+export const ThreadChoice = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('existing'), threadId: z.string() }),
+  z.object({ kind: z.literal('new'), threadId: z.string(), title: z.string() }),
 ]);
-export type IngestDecision = z.infer<typeof IngestDecision>;
+export type ThreadChoice = z.infer<typeof ThreadChoice>;
 
-export const IngestDecided = z.object({
+/**
+ * 区切りの根拠
+ * - anchor: 構造アンカー（In-Reply-To・thread_ts・引用・ソースの区切り）
+ * - awaiting: 同じ相手で、こちらが返事を待っているスレッドが 1 本だけ
+ * - no_match: どの規則にも当たらず、候補もない → 新しいスレッド
+ * - ai: 直近のスレッドから AI が話題の続きかを判断した
+ * - human: 人の訂正（シグナルの移し替え）
+ * - self: 個人のメモで本人が置き先を指定した（ステップ 3）
+ */
+export const ThreadedBy = z.enum(['anchor', 'awaiting', 'no_match', 'ai', 'human', 'self']);
+export type ThreadedBy = z.infer<typeof ThreadedBy>;
+
+/** シグナルをスレッドに入れる。人の訂正（移し替え）も同じイベントで追記する */
+export const SignalThreaded = z.object({
   signalId: z.string(),
-  decision: IngestDecision,
-  reason: z.string().min(1),
-  decidedBy: z.enum(['anchor', 'ai', 'human']),
+  thread: ThreadChoice,
+  by: ThreadedBy,
   confidence: z.number().min(0).max(1),
+  reason: z.string().min(1),
+  /** 返事や対応を求めているか。観測された送信には判断しない（null） */
+  needsResponse: z.boolean().nullable(),
   /** 人の訂正のとき、訂正した User */
   actorUserId: z.string().optional(),
 });
 
-export const TaskAttributeSet = z.object({
-  taskId: z.string(),
-  name: z.string(),
-  value: z.unknown(),
-  actorUserId: z.string().optional(),
-});
-
-export const ReplyExpected = z.object({ by: z.string() });
-
-export const DerivationProposed = z.object({
-  derivationId: z.string(),
-  sourceTaskId: z.string(),
-  targetListId: z.string(),
-  /** 適用先のタスク。返事の派生なら既存（元の派生のソース）、そうでなければ新規 ID */
-  targetTaskId: z.string(),
-  /** external = 外部の Party に送る（sent を経る）。internal = 同一テナント内のリスト間 */
-  mode: z.enum(['internal', 'external']),
-  title: z.string(),
-  body: z.string(),
-  attachments: z.array(FileRef).default([]),
-  toPartyIds: z.array(z.string()).default([]),
-  /** 内部派生では省略可（2026-10-16 決定） */
-  replyExpected: ReplyExpected.nullable().default(null),
-  /** この派生が別の派生への返事なら、その ID */
-  replyToDerivationId: z.string().optional(),
-  proposedBy: z.enum(['ingest', 'stand', 'human']),
-  actorUserId: z.string().optional(),
-});
-
-export const DerivationApproved = z.object({
-  derivationId: z.string(),
-  actorUserId: z.string(),
-  /** 外部派生の送信元 Address（= 使う資格情報）。承認時に選ぶ */
-  fromAddress: AddressRef.optional(),
-  /** 宛先 Party の Address を承認時に解決して凍結したもの */
-  toAddresses: z.array(AddressRef).default([]),
-});
-
-export const DerivationRejected = z.object({
-  derivationId: z.string(),
-  actorUserId: z.string(),
-  reason: z.string(),
-});
-
-export const DerivationSent = z.object({
-  derivationId: z.string(),
-  /** Message-ID など。観測された送信との重複排除キー */
-  sentRef: z.string(),
-});
-
-export const DerivationReplied = z.object({
-  derivationId: z.string(),
-  /** 返事になった受信シグナル、または返事の派生 */
-  signalId: z.string().optional(),
-  replyDerivationId: z.string().optional(),
-});
-
-export const ReplyOverdue = z.object({ derivationId: z.string() });
-
-export const TaskClosed = z.object({ taskId: z.string(), actorUserId: z.string().optional(), reason: z.string().optional() });
-export const TaskReopened = z.object({ taskId: z.string(), actorUserId: z.string().optional() });
+/** 片付け（v1 の ignore の後継）。「このスレッドにこれ以上ボールは動かない」の宣言 */
+export const ThreadDismissed = z.object({ threadId: z.string(), actorUserId: z.string(), reason: z.string().min(1) });
+export const ThreadReopened = z.object({ threadId: z.string(), actorUserId: z.string(), reason: z.string().optional() });
 
 export const EventPayloads = {
-  SignalReceived,
-  SignalObservedSent,
-  IngestDecided,
-  TaskAttributeSet,
-  DerivationProposed,
-  DerivationApproved,
-  DerivationRejected,
-  DerivationSent,
-  DerivationReplied,
-  ReplyOverdue,
-  TaskClosed,
-  TaskReopened,
+  SignalObserved,
+  SignalThreaded,
+  ThreadDismissed,
+  ThreadReopened,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

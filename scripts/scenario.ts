@@ -41,15 +41,17 @@ async function main() {
     const run = await runScenario(scenario, { repo, decider });
     const p = await run.service.state(scenario.config.tenant);
     console.log(`\n# ${name}（${scenario.config.title}） ${scenario.config.hypotheses.join(' ')} [${scenario.config.status}]`);
-    console.log(`  steps=${scenario.steps.length} events=${p.lastSeq} tasks=${Object.keys(p.tasks).length} ignored=${p.ignoreLog.length}`);
+    console.log(`  steps=${scenario.steps.length} events=${p.lastSeq} threads=${Object.keys(p.threads).length}`);
     if (cmd === 'verify') {
       const v = await verifyScenario(run);
       const pct = (c: number, t: number) => (t === 0 ? '-' : `${((100 * c) / t).toFixed(1)}% (${c}/${t})`);
-      console.log(`  H1 replay: ${v.replayHashMatches ? 'OK' : 'NG'} task-hash=${v.taskHash.slice(0, 16)}`);
+      console.log(`  H1 replay: ${v.replayHashMatches ? 'OK' : 'NG'} thread-hash=${v.threadHash.slice(0, 16)}`);
       const who = decider.kind === 'hint' ? 'ヒント' : 'AI';
-      console.log(`  H6 ingest: 全体 ${pct(v.metrics.correct, v.metrics.total)} / アンカー ${pct(v.metrics.anchor.correct, v.metrics.anchor.total)} / ${who} ${pct(v.metrics.ai.correct, v.metrics.ai.total)}`);
-      if (v.metrics.confidences.length) console.log(`  confidence: ${v.metrics.confidences.map((c) => c.toFixed(2)).join(' ')}`);
-      console.log(`  承認: ${v.approvals.total} 件（内部 ${v.approvals.internal} / 外部 ${v.approvals.external}）`);
+      const m = v.metrics;
+      console.log(
+        `  H6 ingest: 全体 ${pct(m.correct, m.total)} / 構造の区切り ${pct(m.structural.correct, m.structural.total)} / ${who}の区切り ${pct(m.ai.correct, m.ai.total)} / 求めているか ${pct(m.needsResponse.correct, m.needsResponse.total)}`,
+      );
+      if (m.confidences.length) console.log(`  confidence: ${m.confidences.map((c) => c.toFixed(2)).join(' ')}`);
       if (v.errors.length) {
         failed = true;
         for (const e of v.errors) console.log(`  ✗ ${e}`);

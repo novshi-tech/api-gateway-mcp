@@ -1,139 +1,96 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, DomainError, draft, type AiDecision } from '../../src/domain';
+import { canonicalJson, draft } from '../../src/domain';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
-import { makeService, ManualClock } from '../helpers/service';
-import { email, seed } from '../helpers/world';
-
-const newIn = (list = 'l_cust', title = '雨漏り'): AiDecision => ({ decision: 'new', task_id: null, list_id: list, title, reason: '新規', confidence: 0.9 });
+import { makeService } from '../helpers/service';
+import { answer, email, line, seed } from '../helpers/world';
 
 describe('MurmurService.ingest', () => {
-  it('受信 → AI 判断 → タスク。同じ source_ref は duplicate', async () => {
-    const { service, decider } = await makeService(seed, { decide: () => newIn() });
+  it('H6 受信 → 区切り → スレッド。同じ source_ref は duplicate。観測された送信は構造で決まれば AI を呼ばない', async () => {
+    const { service, decider } = await makeService(seed, { decide: () => answer({ title: '雨漏り' }) });
     const r = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
-    expect(r).toMatchObject({ status: 'created', decidedBy: 'ai' });
+    expect(r).toEqual({ status: 'threaded', signalId: 'sig_1', threadId: 'thr_2', newThread: true, by: 'no_match', needsResponse: true });
+    expect(decider.requests.map((q) => q.mode)).toEqual(['new']);
+    expect(await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }))).toEqual({ status: 'duplicate', signalId: 'sig_1' });
+
+    const sent = await service.ingest('ubs', email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
+    expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect(await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }))).toMatchObject({ status: 'duplicate' });
-    // アンカーで決まるものは AI に渡さない
-    const r2 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
-    expect(r2).toMatchObject({ status: 'attached', decidedBy: 'anchor' });
-    expect(decider.requests).toHaveLength(1);
+    expect((await service.state('ubs')).threads.thr_2!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
   });
 
-  it('自分側からの送信は observed-sent になり、返事期待は推定器が埋める', async () => {
-    const { service } = await makeService(seed, {
-      decide: () => newIn(),
-      estimator: { estimate: async () => ({ replyExpectedBy: '2026-10-20T00:00:00.000Z', by: 'ai' }) },
-    });
-    await service.ingest('ubs', email({ from: 'alice@ubs.example', to: [{ channel: 'email', value: 'carol@example.com' }], sourceRef: 'o1', acquiredAs: { kind: 'user', userId: 'u_alice' } }));
-    const p = await service.state('ubs');
-    const t = Object.values(p.tasks)[0]!;
-    expect(t).toMatchObject({ ballAt: { kind: 'party', partyIds: ['p_carol'] }, replyExpectedBy: '2026-10-20T00:00:00.000Z' });
+  it('H3 データソースのない取り込みは invalid', async () => {
+    const { service } = await makeService(seed);
+    await expect(service.ingest('ubs', email({ dataSourceId: 'ds_notes_alice', from: 'a@x', sourceRef: 'r' }))).rejects.toMatchObject({ code: 'invalid' });
   });
 });
 
-describe('派生の承認と送信（ダミーコネクタ）', () => {
-  async function setup(echoObserved = false) {
-    const ctx = await makeService(seed, { decide: () => newIn(), echoObserved });
-    await ctx.service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
-    const [task] = await ctx.service.listMyTasks('u_alice');
-    return { ...ctx, taskId: task!.id };
-  }
-
-  it('外部派生は承認でそのまま送られ sent になる。送信ログに宛先・返信先が残る', async () => {
-    const { service, backend, taskId } = await setup();
-    const d = await service.proposeDerivation('u_alice', {
-      taskId,
-      targetListId: 'l_partner',
-      body: '見積を',
-      toPartyIds: ['p_dave'],
-      replyExpected: { by: '2026-10-20T00:00:00.000Z' },
-    });
-    expect(d.status).toBe('proposed');
-    expect(await service.listProposals('u_alice')).toHaveLength(1);
-    const approved = await service.approveDerivation('u_alice', { derivationId: d.id });
-    expect(approved.status).toBe('sent');
-    expect(backend.sent).toHaveLength(1);
-    expect(backend.sent[0]!.message).toMatchObject({ to: [{ value: 'info@dave.example' }], body: '見積を' });
-    expect(await service.listProposals('u_alice')).toHaveLength(0);
-  });
-
-  it('H5: echoObserved で戻ってきた送信は 1 本に統合され、状態が二重に変わらない', async () => {
-    const { service, taskId } = await setup(true);
-    const d = await service.proposeDerivation('u_alice', {
-      taskId,
-      targetListId: 'l_partner',
-      body: '見積を',
-      toPartyIds: ['p_dave'],
-      replyExpected: { by: '2026-10-20T00:00:00.000Z' },
-    });
-    await service.approveDerivation('u_alice', { derivationId: d.id });
-    const before = await service.state('ubs');
+describe('コネクタの取り込み（Cron）', () => {
+  it('H6 データソースごとにダミーのキューから取り込む', async () => {
+    const { service, backend } = await makeService(seed, { decide: () => answer() });
+    await backend.enqueue('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
+    await backend.enqueue('ubs', line({ from: 'U_carol', sourceRef: 'l1' }));
     const results = await service.pollConnectors();
-    expect(results).toEqual([{ status: 'merged', derivationId: d.id }]);
-    const after = await service.state('ubs');
-    expect(canonicalJson(after)).toBe(canonicalJson(before));
+    expect(results.map((r) => r.status)).toEqual(['threaded', 'threaded']);
+    expect(await service.pollConnectors()).toEqual([]);
+    const p = await service.state('ubs');
+    expect(Object.values(p.threads).map((t) => t.dataSourceId).sort()).toEqual(['ds_line', 'ds_support']);
+    expect(await service.tick()).toEqual({ ingested: 0 });
   });
+});
 
-  it('本文を省略すると境界越えの要約を使う', async () => {
-    const { service, taskId } = await setup();
-    const d = await service.proposeDerivation('u_alice', { taskId, targetListId: 'l_int', instruction: '手配を依頼' });
-    expect(d.body).toBe('[工事部向け要約] 手配を依頼');
-  });
+describe('スタンドの操作', () => {
+  it('H3 片付け・開き直し・移し替え。見えないものは not_found', async () => {
+    const { service } = await makeService(seed, { decide: () => answer({ thread: null }) });
+    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r2 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    const [t] = await service.listThreads('u_bob', { filter: 'triage' });
+    expect(t!.signalCount).toBe(2);
 
-  it('見えない派生・タスクは not_found', async () => {
-    const { service, taskId } = await setup();
-    await expect(service.getTask('u_bob', taskId)).rejects.toBeInstanceOf(DomainError);
-    await expect(service.approveDerivation('u_alice', { derivationId: 'drv_none' })).rejects.toMatchObject({ code: 'not_found' });
-    await expect(service.correctIngest('u_eve', { signalId: 'sig_1', decision: { kind: 'ignore' }, reason: 'x' })).rejects.toMatchObject({
+    const dismissed = await service.dismissThread('u_bob', { threadId: t!.id, reason: '対応済み' });
+    expect(dismissed.thread).toMatchObject({ dismissed: true, ball: { kind: 'none' } });
+    expect(await service.listThreads('u_bob', { filter: 'triage' })).toEqual([]);
+    expect((await service.reopenThread('u_alice', { threadId: t!.id })).thread.dismissed).toBe(false);
+
+    const moved = await service.moveSignal('u_alice', { signalId: r2.signalId, to: { kind: 'new', title: '別件' }, reason: '別の話題' });
+    expect(moved.thread).toMatchObject({ title: '別件', signalCount: 1 });
+    expect((await service.getThread('u_alice', t!.id)).thread.signalCount).toBe(1);
+
+    await expect(service.getThread('u_eve', t!.id)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(service.dismissThread('u_eve', { threadId: t!.id, reason: 'x' })).rejects.toMatchObject({ code: 'not_found' });
+    await expect(service.moveSignal('u_eve', { signalId: r2.signalId, to: { kind: 'new', title: 't' }, reason: 'x' })).rejects.toMatchObject({
       code: 'not_found',
     });
+    await expect(service.getList('u_bob', 'l_alice')).rejects.toMatchObject({ code: 'not_found' });
+    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ partyId: 'p_alice', name: 'Alice' }]);
   });
-});
 
-describe('期限の見回り', () => {
-  it('H4: 見回りを止めて再開しても ReplyOverdue は二重に出ない', async () => {
-    const clock = new ManualClock('2026-10-16T09:00:00.000Z');
-    const { service, repo } = await makeService(seed, { decide: () => newIn(), clock });
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
-    const [task] = await service.listMyTasks('u_alice');
-    const d = await service.proposeDerivation('u_alice', {
-      taskId: task!.id,
-      targetListId: 'l_partner',
-      body: 'x',
-      toPartyIds: ['p_dave'],
-      replyExpected: { by: '2026-10-17T00:00:00.000Z' },
-    });
-    await service.approveDerivation('u_alice', { derivationId: d.id });
-
-    expect(await service.checkOverdue()).toBe(0);
-    // 見回りが止まっている間に期限が過ぎ、何度も再開される
-    clock.set('2026-10-18T00:00:00.000Z');
-    expect(await service.checkOverdue()).toBe(1);
-    expect(await service.checkOverdue()).toBe(0);
-    clock.set('2026-10-25T00:00:00.000Z');
-    expect((await service.tick()).overdue).toBe(0);
-    const overdue = (await repo.events.read('ubs')).filter((e) => e.type === 'ReplyOverdue');
-    expect(overdue).toHaveLength(1);
-    expect(await service.listMyTasks('u_alice', 'overdue')).toHaveLength(1);
-
-    // 遅れて返事が来れば replied に進む
-    const sentRef = (await service.state('ubs')).derivations[d.id]!.sentRef!;
-    await service.ingest('ubs', email({ from: 'info@dave.example', sourceRef: 'r9', anchors: { inReplyTo: sentRef } }));
-    expect((await service.state('ubs')).derivations[d.id]!.status).toBe('replied');
-    expect(await service.listMyTasks('u_alice', 'overdue')).toHaveLength(0);
+  it('/me は User と各テナントの Party と、読者になっているリスト（データソース）を返す', async () => {
+    const { service } = await makeService(seed);
+    const me = await service.me('u_alice');
+    expect(me.parties.map((p) => [p.tenantId, p.partyId])).toEqual([
+      ['ubs', 'p_alice'],
+      ['nvt', 'p_alice_nvt'],
+    ]);
+    expect(me.parties[0]!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
+      ['l_support', 'ds_support', 'service'],
+      ['l_alice', 'ds_alice', 'service'],
+      ['l_notes_alice', 'ds_notes_alice', 'notes'],
+    ]);
+    await expect(service.me('u_ghost')).rejects.toMatchObject({ code: 'not_found' });
   });
 });
 
 describe('投影と並行性', () => {
-  it('投影が遅れていても state() がイベントから追いつき、rebuild で作り直せる', async () => {
-    const { service, repo } = await makeService(seed, { decide: () => newIn() });
+  it('H1 投影が遅れていても state() がイベントから追いつき、rebuild で作り直せる', async () => {
+    const { service, repo } = await makeService(seed, { decide: () => answer() });
     await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
     const full = await service.state('ubs');
     // 投影の保存に失敗したのと同じ状態を作る
-    await repo.events.append('ubs', full.lastSeq, [draft('TaskClosed', { taskId: Object.keys(full.tasks)[0]! })], '2026-10-16T10:00:00.000Z');
+    const threadId = Object.keys(full.threads)[0]!;
+    await repo.events.append('ubs', full.lastSeq, [draft('ThreadDismissed', { threadId, actorUserId: 'u_alice', reason: 'x' })], '2026-10-16T10:00:00.000Z');
     const caughtUp = await service.state('ubs');
-    expect(Object.values(caughtUp.tasks)[0]!.status).toBe('closed');
+    expect(caughtUp.threads[threadId]!.dismissed).toBe(true);
     expect(canonicalJson(await service.rebuild('ubs'))).toBe(canonicalJson(caughtUp));
   });
 
@@ -147,34 +104,32 @@ describe('投影と並行性', () => {
         append: async (t, seq, drafts, at) => {
           if (conflicts-- > 0) {
             // 別のリクエストが先に書いた
-            await inner.events.append(t, seq, [draft('SignalReceived', {
-              signalId: 'sig_other',
-              channel: 'email',
-              from: { channel: 'email', value: 'x@y' },
-              to: [],
-              body: 'other',
-              sourceRef: 'other',
-              acquiredAs: { kind: 'organization', tenantId: 'ubs' },
-            })], at);
+            await inner.events.append(
+              t,
+              seq,
+              [
+                draft('SignalObserved', {
+                  signalId: 'sig_other',
+                  dataSourceId: 'ds_support',
+                  direction: 'inbound',
+                  channel: 'email',
+                  from: { channel: 'email', value: 'x@y' },
+                  to: [],
+                  body: 'other',
+                  sourceRef: 'other',
+                }),
+              ],
+              at,
+            );
             throw new ConcurrencyError(t, seq);
           }
           return inner.events.append(t, seq, drafts, at);
         },
       },
     };
-    const { service } = await makeService(seed, { repo, decide: () => newIn() });
+    const { service } = await makeService(seed, { repo, decide: () => answer() });
     await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
     const events = await repo.events.read('ubs');
-    expect(events.map((e) => e.type)).toEqual(['SignalReceived', 'SignalReceived', 'IngestDecided']);
-  });
-
-  it('/me は User と各テナントの Party を返す', async () => {
-    const { service } = await makeService(seed);
-    const me = await service.me('u_alice');
-    expect(me.parties.map((p) => [p.tenantId, p.partyId])).toEqual([
-      ['ubs', 'p_alice'],
-      ['nvt', 'p_alice_nvt'],
-    ]);
-    await expect(service.me('u_ghost')).rejects.toMatchObject({ code: 'not_found' });
+    expect(events.map((e) => e.type)).toEqual(['SignalObserved', 'SignalObserved', 'SignalThreaded']);
   });
 });

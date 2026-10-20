@@ -1,8 +1,7 @@
 {
   "title": "開発",
   "tenant": "nvt",
-  "hypotheses": ["H1", "H3", "H4", "H6"],
+  "hypotheses": ["H1", "H3", "H6"],
   "status": "desk-checked",
-  "echoObserved": false,
-  "notes": "クライアント（別ワークスペースの Slack ユーザー、ゴースト）からの不具合報告を、Jira キー・PR 番号・thread_ts の構造アンカーでつなぐ。修正連絡への返事が期限を過ぎてから届く。"
+  "notes": "ステップ 2 は受信の流れだけ。Slack の共有チャンネル（能勢の資格情報、読者は能勢だけ、グループ）は thread_ts で、Jira と Bitbucket（組織の資格情報、読者は能勢と加藤）はソースの区切り（課題キー・PR）でスレッドが決まる。Jira キーの結び候補はステップ 3、Jira の状態の写しはステップ 7。"
 }

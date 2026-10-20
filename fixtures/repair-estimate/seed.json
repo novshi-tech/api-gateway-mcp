@@ -23,32 +23,31 @@
     { "id": "a_takahashi", "tenantId": "ubs", "channel": "email", "value": "takahashi@grandmaison.example", "partyId": "p_takahashi" },
     { "id": "a_yamada", "tenantId": "ubs", "channel": "email", "value": "mitsumori@yamada-koumuten.example", "partyId": "p_yamada" }
   ],
-  "lists": [
-    { "id": "l_customer", "tenantId": "ubs", "name": "顧客窓口（グランメゾン）", "description": "管理組合とのやりとり。顧客に見せる情報だけを置く" },
-    { "id": "l_internal", "tenantId": "ubs", "name": "工事部", "description": "社内の手配と原価。顧客にも協力会社にも見せない" },
-    { "id": "l_partner", "tenantId": "ubs", "name": "協力会社（山田工務店）", "description": "協力会社への依頼と見積の受け取り" },
-    { "id": "l_other", "tenantId": "other", "name": "別テナントのリスト", "description": "" }
-  ],
-  "listMembers": [
-    { "listId": "l_customer", "partyId": "p_sato" },
-    { "listId": "l_customer", "partyId": "p_takahashi" },
-    { "listId": "l_internal", "partyId": "p_sato" },
-    { "listId": "l_internal", "partyId": "p_suzuki" },
-    { "listId": "l_partner", "partyId": "p_suzuki" },
-    { "listId": "l_partner", "partyId": "p_yamada" },
-    { "listId": "l_other", "partyId": "p_outsider" }
-  ],
-  "attributeDefs": [
-    { "listId": "l_customer", "name": "stage", "type": "enum", "options": ["問い合わせ", "見積提示", "受注", "失注"], "description": "顧客との商談の段階" },
-    { "listId": "l_internal", "name": "status", "type": "enum", "options": ["受付", "手配中", "見積待ち", "見積提示済み", "完了"], "description": "工事部の作業状態" },
-    { "listId": "l_internal", "name": "assignee", "type": "party", "description": "工事部の担当者" },
-    { "listId": "l_internal", "name": "site", "type": "string", "description": "現場（物件名と部屋番号）" },
-    { "listId": "l_internal", "name": "quote_amount", "type": "number", "description": "顧客に出す見積金額（税込、円）" },
-    { "listId": "l_partner", "name": "status", "type": "enum", "options": ["依頼済み", "見積受領", "発注済み"], "description": "協力会社とのやりとりの段階" }
-  ],
   "credentialRefs": [
     { "id": "c_support", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_support" },
     { "id": "c_suzuki", "tenantId": "ubs", "principal": { "kind": "user", "userId": "u_suzuki" }, "addressId": "a_suzuki" }
   ],
-  "channelPolicies": [{ "tenantId": "ubs", "channel": "email", "allowedListIds": ["l_customer"] }]
+  "dataSources": [
+    { "kind": "service", "id": "ds_support", "tenantId": "ubs", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客からの問い合わせの窓口", "credentialRefId": "c_support", "selfAddressIds": ["a_support"] },
+    { "kind": "service", "id": "ds_suzuki_mail", "tenantId": "ubs", "channel": "email", "name": "鈴木のメールボックス", "description": "鈴木の個人のメールボックス", "credentialRefId": "c_suzuki", "selfAddressIds": ["a_suzuki"] },
+    { "kind": "notes", "id": "ds_notes_sato", "tenantId": "ubs", "name": "佐藤のメモ", "ownerPartyId": "p_sato" },
+    { "kind": "notes", "id": "ds_notes_suzuki", "tenantId": "ubs", "name": "鈴木のメモ", "ownerPartyId": "p_suzuki" },
+    { "kind": "notes", "id": "ds_notes_outsider", "tenantId": "other", "name": "別テナントの人のメモ", "ownerPartyId": "p_outsider" }
+  ],
+  "lists": [
+    { "id": "l_support", "tenantId": "ubs", "dataSourceId": "ds_support" },
+    { "id": "l_suzuki_mail", "tenantId": "ubs", "dataSourceId": "ds_suzuki_mail" },
+    { "id": "l_notes_sato", "tenantId": "ubs", "dataSourceId": "ds_notes_sato" },
+    { "id": "l_notes_suzuki", "tenantId": "ubs", "dataSourceId": "ds_notes_suzuki" },
+    { "id": "l_notes_outsider", "tenantId": "other", "dataSourceId": "ds_notes_outsider" }
+  ],
+  "listMembers": [
+    { "listId": "l_support", "partyId": "p_sato" },
+    { "listId": "l_support", "partyId": "p_suzuki" },
+    { "listId": "l_suzuki_mail", "partyId": "p_suzuki" },
+    { "listId": "l_notes_sato", "partyId": "p_sato" },
+    { "listId": "l_notes_suzuki", "partyId": "p_suzuki" },
+    { "listId": "l_notes_outsider", "partyId": "p_outsider" }
+  ],
+  "attributeDefs": []
 }

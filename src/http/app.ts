@@ -2,18 +2,7 @@ import { Hono, type Context } from 'hono';
 import { ZodError } from 'zod';
 import { DomainError } from '../domain';
 import type { MurmurService } from '../app/service';
-import {
-  ApproveBody,
-  CloseBody,
-  CorrectIngestBody,
-  ExplainIgnoreQuery,
-  InboundSignalBody,
-  ListMyTasksQuery,
-  ListProposalsQuery,
-  ProposeDerivationBody,
-  RejectBody,
-  SetAttributeBody,
-} from '../api/schemas';
+import { DismissBody, InboundSignalBody, ListThreadsQuery, MoveSignalBody, ReopenBody } from '../api/schemas';
 import { bearerToken } from '../auth/claims';
 import { renderTimeline } from './timeline';
 
@@ -71,71 +60,29 @@ export function createApp(opts: HttpOptions) {
 
   api.get('/me', async (c) => c.json(await c.var.service.me(c.var.userId)));
 
-  api.get('/tasks', async (c) => {
-    const q = ListMyTasksQuery.parse(c.req.query());
-    return c.json(await c.var.service.listMyTasks(c.var.userId, q.filter, q.tenant));
+  api.get('/threads', async (c) => {
+    const q = ListThreadsQuery.parse(c.req.query());
+    return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, tenantId: q.tenant, dataSourceId: q.data_source }));
   });
 
-  api.get('/tasks/:id', async (c) => c.json(await c.var.service.getTask(c.var.userId, c.req.param('id'))));
+  api.get('/threads/:id', async (c) => c.json(await c.var.service.getThread(c.var.userId, c.req.param('id'))));
 
-  api.post('/tasks/:id/attributes', async (c) => {
-    const b = SetAttributeBody.parse(await json(c));
-    return c.json(await c.var.service.setAttribute(c.var.userId, { taskId: c.req.param('id'), name: b.name, value: b.value }));
+  api.post('/threads/:id/dismiss', async (c) => {
+    const b = DismissBody.parse(await json(c));
+    return c.json(await c.var.service.dismissThread(c.var.userId, { threadId: c.req.param('id'), reason: b.reason }));
   });
 
-  api.post('/tasks/:id/close', async (c) => {
-    const b = CloseBody.parse(await json(c));
-    return c.json(await c.var.service.closeTask(c.var.userId, { taskId: c.req.param('id'), reason: b.reason }));
+  api.post('/threads/:id/reopen', async (c) => {
+    const b = ReopenBody.parse(await json(c));
+    return c.json(await c.var.service.reopenThread(c.var.userId, { threadId: c.req.param('id'), reason: b.reason }));
   });
 
-  api.post('/tasks/:id/reopen', async (c) => c.json(await c.var.service.reopenTask(c.var.userId, { taskId: c.req.param('id') })));
-
-  api.post('/derivations', async (c) => {
-    const b = ProposeDerivationBody.parse(await json(c));
-    const d = await c.var.service.proposeDerivation(c.var.userId, {
-      taskId: b.task_id,
-      targetListId: b.target_list,
-      title: b.title,
-      body: b.body,
-      instruction: b.instruction,
-      attachments: b.attachments,
-      toPartyIds: b.to_parties,
-      replyExpected: b.reply_expected ?? null,
-      replyToDerivationId: b.reply_to,
-    });
-    return c.json(d, 201);
-  });
-
-  api.get('/proposals', async (c) => {
-    const q = ListProposalsQuery.parse(c.req.query());
-    return c.json(await c.var.service.listProposals(c.var.userId, q.list_id));
-  });
-
-  api.post('/derivations/:id/approve', async (c) => {
-    const b = ApproveBody.parse(await json(c));
-    return c.json(await c.var.service.approveDerivation(c.var.userId, { derivationId: c.req.param('id'), fromAddress: b.from_address }));
-  });
-
-  api.post('/derivations/:id/reject', async (c) => {
-    const b = RejectBody.parse(await json(c));
-    return c.json(await c.var.service.rejectDerivation(c.var.userId, { derivationId: c.req.param('id'), reason: b.reason }));
-  });
-
-  api.post('/signals/:id/correct', async (c) => {
-    const b = CorrectIngestBody.parse(await json(c));
-    const d = b.decision;
-    const decision =
-      d.kind === 'attach'
-        ? { kind: 'attach' as const, taskId: d.task_id }
-        : d.kind === 'new'
-          ? { kind: 'new' as const, listId: d.list_id, title: d.title }
-          : { kind: 'ignore' as const };
-    return c.json(await c.var.service.correctIngest(c.var.userId, { signalId: c.req.param('id'), decision, reason: b.reason }));
-  });
-
-  api.get('/ignores', async (c) => {
-    const q = ExplainIgnoreQuery.parse(c.req.query());
-    return c.json(await c.var.service.explainIgnore(c.var.userId, q.since));
+  api.post('/signals/:id/move', async (c) => {
+    const b = MoveSignalBody.parse(await json(c));
+    const to = b.thread_id !== undefined ? { kind: 'existing' as const, threadId: b.thread_id } : { kind: 'new' as const, title: b.new_thread_title! };
+    return c.json(
+      await c.var.service.moveSignal(c.var.userId, { signalId: c.req.param('id'), to, needsResponse: b.needs_response, reason: b.reason }),
+    );
   });
 
   api.get('/lists/:id', async (c) => c.json(await c.var.service.getList(c.var.userId, c.req.param('id'))));
@@ -155,7 +102,7 @@ export function createApp(opts: HttpOptions) {
   });
 
   app.get('/timeline.html', async (c) => {
-    // 読み取り専用の確認用ページ。全リストが見えるので TIMELINE_TOKEN を知っている人だけ
+    // 読み取り専用の確認用ページ。全データソースが見えるので TIMELINE_TOKEN を知っている人だけ
     if (!opts.timelineToken || c.req.query('token') !== opts.timelineToken) return c.text('not found', 404);
     const tenantId = c.req.query('tenant') ?? '';
     const service = c.var.service;

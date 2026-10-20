@@ -14,24 +14,18 @@
     { "id": "a_sasaki", "tenantId": "ubs", "channel": "line", "value": "U_sasaki", "partyId": "p_sasaki" },
     { "id": "a_ito", "tenantId": "ubs", "channel": "line", "value": "U_ito", "partyId": "p_ito" }
   ],
+  "credentialRefs": [{ "id": "c_oa", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_oa" }],
+  "dataSources": [
+    { "kind": "service", "id": "ds_line_oa", "tenantId": "ubs", "channel": "line", "name": "LINE 公式アカウント @ubs-clean", "description": "清掃スタッフとの 1:1 のやりとり（勤怠の連絡、代務の打診など）", "credentialRefId": "c_oa", "selfAddressIds": ["a_oa"] },
+    { "kind": "notes", "id": "ds_notes_kimura", "tenantId": "ubs", "name": "木村のメモ", "ownerPartyId": "p_kimura" }
+  ],
   "lists": [
-    { "id": "l_site", "tenantId": "ubs", "name": "現場（グランメゾン清掃）", "description": "清掃スタッフからの欠勤・遅刻などの勤怠連絡" },
-    { "id": "l_dispatch", "tenantId": "ubs", "name": "代務調整", "description": "代わりに入れるスタッフへの打診" }
+    { "id": "l_line_oa", "tenantId": "ubs", "dataSourceId": "ds_line_oa" },
+    { "id": "l_notes_kimura", "tenantId": "ubs", "dataSourceId": "ds_notes_kimura" }
   ],
   "listMembers": [
-    { "listId": "l_site", "partyId": "p_kimura" },
-    { "listId": "l_site", "partyId": "p_yamamoto" },
-    { "listId": "l_site", "partyId": "p_sasaki" },
-    { "listId": "l_dispatch", "partyId": "p_kimura" },
-    { "listId": "l_dispatch", "partyId": "p_ito" }
+    { "listId": "l_line_oa", "partyId": "p_kimura" },
+    { "listId": "l_notes_kimura", "partyId": "p_kimura" }
   ],
-  "attributeDefs": [
-    { "listId": "l_site", "name": "kind", "type": "enum", "options": ["欠勤", "遅刻", "早退", "その他"], "description": "勤怠連絡の種類" },
-    { "listId": "l_site", "name": "shift_date", "type": "date", "description": "影響するシフトの日付" },
-    { "listId": "l_site", "name": "substitute", "type": "party", "description": "代わりに入るスタッフ" },
-    { "listId": "l_site", "name": "status", "type": "enum", "options": ["未対応", "代務手配中", "手配済み", "対応不要"], "description": "現場マネージャーの対応状況" },
-    { "listId": "l_dispatch", "name": "status", "type": "enum", "options": ["打診中", "承諾", "辞退"], "description": "代務の打診結果" }
-  ],
-  "credentialRefs": [{ "id": "c_oa", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_oa" }],
-  "channelPolicies": [{ "tenantId": "ubs", "channel": "line", "allowedListIds": ["l_site", "l_dispatch"] }]
+  "attributeDefs": []
 }

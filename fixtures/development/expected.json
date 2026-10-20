@@ -1,63 +1,47 @@
 {
   "ingest": {
-    "s01": { "kind": "new", "list": "l_client", "title": "ログイン画面の 500 エラー（森さん）" },
-    "s02": { "kind": "attach", "task": "$clientTask" },
-    "s03": { "kind": "attach", "task": "$devTask" },
-    "s04": { "kind": "attach", "task": "$devTask" },
-    "s05": { "kind": "attach", "task": "$devTask" },
-    "s06": { "kind": "attach", "task": "$devTask" },
-    "s07": { "kind": "ignore", "reason": "CI の成功通知で対応不要" },
-    "s08": { "kind": "new", "list": "l_dev", "title": "README の整備（NVT-50）" },
-    "s09": { "kind": "attach", "task": "$clientTask" }
+    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "s02": { "thread": "$clientThread", "needsResponse": true, "by": "anchor" },
+    "o01": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
+    "s03": { "thread": "new", "needsResponse": false, "by": "anchor" },
+    "s04": { "thread": "new", "needsResponse": true, "by": "anchor" },
+    "s05": { "thread": "$prThread", "needsResponse": false, "by": "anchor" },
+    "s06": { "thread": "$issueThread", "needsResponse": false, "by": "anchor" },
+    "s07": { "thread": "new", "needsResponse": false, "title": "main のパイプライン #881 成功" },
+    "s08": { "thread": "new", "needsResponse": false, "by": "anchor" },
+    "o02": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
+    "s09": { "thread": "$clientThread", "needsResponse": false, "by": "anchor" }
   },
   "checkpoints": [
-    {
-      "after": "a03",
-      "tasks": {
-        "$clientTask": { "ballAt": { "kind": "list", "listId": "l_dev" } },
-        "$devTask": { "ballAt": { "kind": "list", "listId": "l_dev" } }
-      }
-    },
-    {
-      "after": "a11",
-      "tasks": {
-        "$clientTask": { "ballAt": { "kind": "party", "partyIds": ["p_mori"] }, "replyExpectedBy": "2026-10-17T15:30:00.000Z" },
-        "$devTask": { "ballAt": { "kind": "list", "listId": "l_client" }, "replyExpectedBy": "2026-10-17T15:30:00.000Z", "overdue": false }
-      },
-      "derivations": { "$drvDev": "replied", "$drvRelease": "sent" }
-    },
-    { "after": "c01", "derivations": { "$drvRelease": "sent" } },
-    {
-      "after": "c02",
-      "tasks": { "$devTask": { "overdue": true } },
-      "derivations": { "$drvRelease": "overdue" }
-    },
-    {
-      "after": "s09",
-      "tasks": {
-        "$clientTask": { "ballAt": { "kind": "list", "listId": "l_client" } },
-        "$devTask": { "ballAt": { "kind": "list", "listId": "l_dev" }, "overdue": false }
-      },
-      "derivations": { "$drvRelease": "replied" }
-    }
+    { "after": "s02", "threads": { "$clientThread": { "ball": { "kind": "us" }, "signalCount": 2 } } },
+    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } },
+    { "after": "s04", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
+    { "after": "s05", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
+    { "after": "s06", "threads": { "$issueThread": { "ball": { "kind": "none" }, "signalCount": 2 } } },
+    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } }
   ],
   "final": {
-    "taskCount": 3,
-    "ignoredCount": 1,
-    "tasks": {
-      "$clientTask": { "status": "closed", "attributes": { "status": "回答済み" } },
-      "$devTask": { "status": "closed", "attributes": { "severity": "high", "assignee": "p_kato", "jira_key": "NVT-42", "status": "done" } },
-      "$docTask": { "status": "open", "listId": "l_dev", "attributes": {} }
+    "threads": {
+      "$clientThread": { "dataSourceId": "ds_slack_client", "ball": { "kind": "none" }, "counterpartPartyIds": ["p_mori"], "signalCount": 5, "unansweredSince": null },
+      "$issueThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "counterpartPartyIds": ["p_jira"], "signalCount": 2 },
+      "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2 },
+      "$pipelineThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "signalCount": 1 },
+      "$docThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "signalCount": 1 }
     },
-    "derivations": { "$drvDev": "replied", "$drvRelease": "replied" },
-    "eventCounts": { "ReplyOverdue": 1, "DerivationSent": 1, "DerivationApproved": 2, "SignalObservedSent": 0 }
+    "threadCount": 5,
+    "eventCounts": { "SignalObserved": 11, "SignalThreaded": 11, "ThreadDismissed": 1 }
   },
   "visibility": [
-    { "ghostParty": "p_mori" },
+    { "as": "u_nose", "thread": "$clientThread", "access": "full", "mustContain": ["500 エラー", "screenshot.png"] },
+    { "as": "u_kato", "thread": "$clientThread", "access": null },
+    { "as": "u_kato", "thread": "$issueThread", "access": "full", "mustContain": ["NVT-42"] },
+    { "as": "u_ubs_only", "thread": "$issueThread", "access": null },
+    { "as": "u_nose", "signals": 11 },
+    { "as": "u_kato", "signals": 6 },
     { "as": "u_ubs_only", "signals": 0 },
-    { "as": "u_ubs_only", "task": "$devTask", "access": null },
-    { "as": "u_kato", "task": "$clientTask", "access": "summary", "mustContain": ["クライアント（森さん）からの報告"], "mustNotContain": ["昨日のリリース後からです", "スクリーンショットです"] },
-    { "as": "u_kato", "task": "$devTask", "access": "full", "mustContain": ["セッション検証を修正"] },
-    { "as": "u_nose", "task": "$clientTask", "access": "full", "mustContain": ["昨日のリリース後からです"] }
+    { "as": "u_kato", "threads": { "filter": "open" }, "expect": ["$issueThread", "$pipelineThread", "$docThread"] },
+    { "as": "u_nose", "threads": { "filter": "triage" }, "expect": [] },
+    { "as": "u_nose", "threads": { "filter": "all", "dataSource": "ds_bitbucket" }, "expect": ["$prThread", "$pipelineThread"] },
+    { "ghostParty": "p_mori" }
   ]
 }

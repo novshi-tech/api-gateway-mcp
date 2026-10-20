@@ -2,10 +2,11 @@ import { z } from 'zod';
 
 // マスタ（イベントではない）。seed.json と DB のマスタテーブルが同じ形を持つ。
 
-export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'internal']);
+/** note = 個人のメモ（0014）。それ以外は外のサービス */
+export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'note']);
 export type Channel = z.infer<typeof Channel>;
 
-/** 取得・送信に使った資格情報の主体。取得主体ルールの入力になる */
+/** 資格情報の主体 */
 export const Principal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user'), userId: z.string() }),
   z.object({ kind: z.literal('organization'), tenantId: z.string() }),
@@ -46,29 +47,6 @@ export const Address = z.object({
 });
 export type Address = z.infer<typeof Address>;
 
-export const List = z.object({
-  id: z.string(),
-  tenantId: z.string(),
-  name: z.string(),
-  description: z.string().default(''),
-});
-export type List = z.infer<typeof List>;
-
-export const ListMember = z.object({ listId: z.string(), partyId: z.string() });
-export type ListMember = z.infer<typeof ListMember>;
-
-export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'party']);
-export const AttributeDef = z.object({
-  listId: z.string(),
-  name: z.string(),
-  type: AttributeType,
-  /** enum の選択肢 */
-  options: z.array(z.string()).optional(),
-  /** AI が読む意味の記述（必須） */
-  description: z.string().min(1),
-});
-export type AttributeDef = z.infer<typeof AttributeDef>;
-
 export const CredentialRef = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -79,24 +57,68 @@ export const CredentialRef = z.object({
 });
 export type CredentialRef = z.infer<typeof CredentialRef>;
 
-/** Organization 主体で取得したシグナルを置いてよいリスト（チャネルごと） */
-export const ChannelPolicy = z.object({
-  tenantId: z.string(),
-  channel: Channel,
-  allowedListIds: z.array(z.string()),
+/**
+ * データソース（0014）。リスト 1 つに対応する。
+ * - service: 外のサービス（メールボックス、Slack のチャネルや DM、LINE 公式アカウント、Jira のプロジェクト）。
+ *   資格情報で取り込み、selfAddressIds（送信元のアドレス = こちら）で受信と観測された送信を分ける
+ * - notes: 個人のメモ。ユーザーごとに 1 つ、読者は本人だけ
+ */
+export const DataSource = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('service'),
+    id: z.string(),
+    tenantId: z.string(),
+    channel: Channel.exclude(['note']),
+    name: z.string(),
+    description: z.string().default(''),
+    credentialRefId: z.string(),
+    selfAddressIds: z.array(z.string()).min(1),
+    /** グループのチャネル。区切りの「同じ相手」がチャネルになる */
+    group: z.boolean().default(false),
+  }),
+  z.object({
+    kind: z.literal('notes'),
+    id: z.string(),
+    tenantId: z.string(),
+    name: z.string(),
+    description: z.string().default(''),
+    ownerPartyId: z.string(),
+  }),
+]);
+export type DataSource = z.infer<typeof DataSource>;
+export type ServiceDataSource = Extract<DataSource, { kind: 'service' }>;
+
+/** データソース 1 つに 1 つ。可視性の単位 */
+export const List = z.object({ id: z.string(), tenantId: z.string(), dataSourceId: z.string() });
+export type List = z.infer<typeof List>;
+
+/** リストの読者 */
+export const ListMember = z.object({ listId: z.string(), partyId: z.string() });
+export type ListMember = z.infer<typeof ListMember>;
+
+export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'party']);
+/** 本人が付ける属性の定義。データソースに付く（ステップ 3 で使う） */
+export const AttributeDef = z.object({
+  dataSourceId: z.string(),
+  name: z.string(),
+  type: AttributeType,
+  /** enum の選択肢 */
+  options: z.array(z.string()).optional(),
+  /** AI が読む意味の記述（必須） */
+  description: z.string().min(1),
 });
-export type ChannelPolicy = z.infer<typeof ChannelPolicy>;
+export type AttributeDef = z.infer<typeof AttributeDef>;
 
 export const Seed = z.object({
   tenants: z.array(Tenant),
   users: z.array(User),
   parties: z.array(Party),
   addresses: z.array(Address),
-  lists: z.array(List),
-  listMembers: z.array(ListMember),
-  attributeDefs: z.array(AttributeDef),
   credentialRefs: z.array(CredentialRef).default([]),
-  channelPolicies: z.array(ChannelPolicy).default([]),
+  dataSources: z.array(DataSource).default([]),
+  lists: z.array(List).default([]),
+  listMembers: z.array(ListMember).default([]),
+  attributeDefs: z.array(AttributeDef).default([]),
 });
 export type Seed = z.infer<typeof Seed>;
 export type SeedInput = z.input<typeof Seed>;

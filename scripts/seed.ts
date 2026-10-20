@@ -9,7 +9,7 @@ import { parseUserMap, renameUsers } from './lib/seed';
 // 実環境（Neon）の DB を空にして（イベント・投影・ダミーのキューも）、fixtures/<scenario>/seed.json を入れる。
 // マスタはテナントをまたいで 1 組なので、シナリオは 1 つずつ回す（H7）
 
-const TABLES = ['events', 'projection_meta', 'tasks', 'signals', 'derivations', 'task_links', 'timeline', 'ignore_log', 'dummy_queue'];
+const TABLES = ['events', 'projection_meta', 'threads', 'signals', 'dummy_queue'];
 
 async function main() {
   const [name, ...rest] = process.argv.slice(2);

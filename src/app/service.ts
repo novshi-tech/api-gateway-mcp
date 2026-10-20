@@ -1,43 +1,31 @@
 import {
-  approveDerivation,
-  closeTask,
-  correctIngest,
   deriveViewer,
   Directory,
   DomainError,
-  explainIgnore,
-  finalizeDecision,
+  dismissThread,
+  emptyProjections,
+  finalizeIngest,
   fold,
   getListView,
-  getTaskView,
-  listMyTasks,
-  listProposalsFor,
-  derivationView,
-  planDecision,
+  getThreadView,
+  listThreads,
+  moveSignal,
+  planIngest,
   prepareInbound,
-  proposeDerivation,
-  recordSent,
-  rejectDerivation,
-  reopenTask,
-  scanOverdue,
-  setAttribute,
+  reopenThread,
   signalEvent,
-  emptyProjections,
-  type AddressRef,
   type CoreContext,
-  type CorrectionDecision,
-  type DecisionPolicy,
   type DraftEvent,
-  type FileRef,
   type InboundSignal,
-  type Principal,
+  type IngestOutcome,
+  type IngestPolicy,
+  type MoveTarget,
   type Projections,
-  type TaskFilter,
+  type ThreadFilter,
   type Viewer,
 } from '../domain';
 import type { Connectors } from '../connectors/types';
-import type { Summarizer } from '../derivation/summarizer';
-import type { Decider, ReplyEstimator } from '../ingest/deciders';
+import type { Decider } from '../ingest/deciders';
 import { ConcurrencyError, type Repo } from '../store/types';
 
 // 命令型シェル。IO（DB・Claude・コネクタ・時計・ID 生成）をここに集め、判断は全部コア（src/domain）に任せる。
@@ -56,16 +44,11 @@ export interface ServiceDeps {
   clock: Clock;
   newId: (prefix: string) => string;
   decider: Decider;
-  estimator: ReplyEstimator;
-  summarizer?: Summarizer;
   connectors: Connectors;
-  policy: DecisionPolicy;
+  policy: IngestPolicy;
 }
 
-export type IngestResult =
-  | { status: 'duplicate'; signalId: string }
-  | { status: 'merged'; derivationId: string }
-  | { status: 'ignored' | 'attached' | 'created'; signalId: string; taskId: string | null; decidedBy: 'anchor' | 'ai' | 'human' };
+export type IngestResult = { status: 'duplicate'; signalId: string } | ({ status: 'threaded'; signalId: string } & IngestOutcome);
 
 const MAX_RETRIES = 3;
 
@@ -128,15 +111,6 @@ export class MurmurService {
     return { viewer: deriveViewer(dir, userId), dir };
   }
 
-  /** タスク ID から、Viewer の所属テナントのどれにあるかを探す */
-  private async tenantOfTask(viewer: Viewer, taskId: string): Promise<string> {
-    for (const m of viewer.memberships) {
-      const p = await this.state(m.tenantId);
-      if (p.tasks[taskId]) return m.tenantId;
-    }
-    throw new DomainError('not_found', `task ${taskId} not found`);
-  }
-
   private async tenantOf(viewer: Viewer, pick: (p: Projections) => boolean, what: string): Promise<string> {
     for (const m of viewer.memberships) {
       if (pick(await this.state(m.tenantId))) return m.tenantId;
@@ -150,74 +124,43 @@ export class MurmurService {
     return this.run<IngestResult>(tenantId, async (p, ctx) => {
       const prepared = prepareInbound(p, ctx, inbound);
       if (prepared.kind === 'duplicate') return { events: [], result: { status: 'duplicate', signalId: prepared.signalId } };
-      if (prepared.kind === 'merged') return { events: [], result: { status: 'merged', derivationId: prepared.derivationId } };
 
-      const { direction, payload } = prepared;
-      const estimate = direction === 'out' ? await this.deps.estimator.estimate(payload, ctx.now) : undefined;
-      const sigEvent = signalEvent(direction, payload, estimate);
-      // シグナルを先に畳み込んだ状態で判断する（判断対象のシグナル自身を候補の文脈に含めないため、索引だけ使う）
+      const { payload, dataSource } = prepared;
+      const sigEvent = signalEvent(payload);
+      // シグナルを先に畳み込んだ状態で判断する（索引に入るだけで、どのスレッドにもまだ入っていない）
       const withSignal = fold([{ ...sigEvent, tenantId, seq: p.lastSeq + 1, at: ctx.now }], p);
-      const plan = planDecision(withSignal, ctx, direction, payload);
-
-      let decided: { events: DraftEvent[]; taskId: string | null; decidedBy: 'anchor' | 'ai' | 'human' };
-      if (plan.kind === 'decided') {
-        decided = { events: plan.events, taskId: plan.taskId, decidedBy: 'anchor' };
-      } else {
+      const plan = planIngest(withSignal, ctx, dataSource, payload, this.deps.policy);
+      let decided;
+      if (plan.kind === 'decided') decided = plan;
+      else {
         const { raw, by } = await this.deps.decider.decide(plan.request);
-        const fin = finalizeDecision(withSignal, ctx, plan.request, raw, by, this.deps.policy);
-        decided = { ...fin, decidedBy: by };
+        decided = finalizeIngest(ctx, plan.request, raw, by, this.deps.policy);
       }
-      const decision = decided.events[0];
-      const kind = decision?.type === 'IngestDecided' ? decision.payload.decision.kind : 'ignore';
       return {
         events: [sigEvent, ...decided.events],
-        result: {
-          status: kind === 'ignore' ? 'ignored' : kind === 'attach' ? 'attached' : 'created',
-          signalId: payload.signalId,
-          taskId: decided.taskId,
-          decidedBy: decided.decidedBy,
-        },
+        result: { status: 'threaded', signalId: payload.signalId, ...decided.outcome },
       };
     });
   }
 
   // ---- 定期処理（Cron） ----
 
-  /** ダミーを含む各コネクタから取り込む。資格情報（CredentialRef）ごとに pull する */
+  /** 各データソースから、そのチャネルのコネクタで取り込む */
   async pollConnectors(): Promise<IngestResult[]> {
     const dir = await this.directory();
     const results: IngestResult[] = [];
-    const seen = new Set<string>();
-    for (const cred of dir.seed.credentialRefs) {
-      const addr = dir.seed.addresses.find((a) => a.id === cred.addressId);
-      const connector = addr ? this.deps.connectors[addr.channel] : undefined;
-      if (!addr || !connector) continue;
-      const key = `${cred.tenantId}|${addr.channel}|${JSON.stringify(cred.principal)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const { signals } = await connector.pull(cred.principal, null);
-      for (const s of signals) results.push(await this.ingest(cred.tenantId, s));
+    for (const ds of dir.seed.dataSources) {
+      if (ds.kind !== 'service') continue;
+      const connector = this.deps.connectors[ds.channel];
+      if (!connector) continue;
+      const { signals } = await connector.pull(ds, null);
+      for (const s of signals) results.push(await this.ingest(ds.tenantId, s));
     }
     return results;
   }
 
-  /** 返事期待の期限の見回り。冪等 */
-  async checkOverdue(): Promise<number> {
-    const dir = await this.directory();
-    let count = 0;
-    for (const tenantId of dir.tenantIds()) {
-      count += await this.run(tenantId, (p, ctx) => {
-        const events = scanOverdue(p, ctx.now);
-        return { events, result: events.length };
-      });
-    }
-    return count;
-  }
-
-  async tick(): Promise<{ ingested: number; overdue: number }> {
-    const ingested = (await this.pollConnectors()).length;
-    const overdue = await this.checkOverdue();
-    return { ingested, overdue };
+  async tick(): Promise<{ ingested: number }> {
+    return { ingested: (await this.pollConnectors()).length };
   }
 
   // ---- スタンド向け API（Viewer = ゲートウェイから伝搬された User） ----
@@ -233,140 +176,51 @@ export class MurmurService {
         tenantName: dir.seed.tenants.find((t) => t.id === m.tenantId)?.name ?? m.tenantId,
         partyId: m.partyId,
         name: dir.party(m.partyId)?.name ?? '',
-        lists: m.listIds.map((id) => ({ id, name: dir.list(id)?.name ?? id })),
+        lists: m.listIds.map((id) => {
+          const ds = dir.dataSource(dir.list(id)?.dataSourceId ?? '');
+          return { id, dataSourceId: ds?.id ?? '', name: ds?.name ?? id, kind: ds?.kind ?? 'service' };
+        }),
       })),
     };
   }
 
-  async listMyTasks(userId: string, filter: TaskFilter = 'open', tenantId?: string) {
+  async listThreads(userId: string, opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string } = {}) {
     const { viewer } = await this.viewer(userId);
     const states = await Promise.all(viewer.memberships.map((m) => this.state(m.tenantId)));
-    return listMyTasks(viewer, states, filter, tenantId);
+    return listThreads(viewer, states, opts);
   }
 
-  async getTask(userId: string, taskId: string) {
+  async getThread(userId: string, threadId: string) {
     const { viewer, dir } = await this.viewer(userId);
     for (const m of viewer.memberships) {
-      const view = getTaskView(dir, viewer, await this.state(m.tenantId), taskId);
+      const view = getThreadView(dir, viewer, await this.state(m.tenantId), threadId);
       if (view) return view;
     }
-    throw new DomainError('not_found', `task ${taskId} not found`);
+    throw new DomainError('not_found', `thread ${threadId} not found`);
   }
 
-  async setAttribute(userId: string, input: { taskId: string; name: string; value: unknown }) {
+  async dismissThread(userId: string, input: { threadId: string; reason: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOfTask(viewer, input.taskId);
-    await this.run(tenantId, (p, ctx) => ({ events: setAttribute(p, viewer, ctx, input), result: undefined }));
-    return this.getTask(userId, input.taskId);
+    const tenantId = await this.tenantOf(viewer, (p) => !!p.threads[input.threadId], `thread ${input.threadId}`);
+    await this.run(tenantId, (p) => ({ events: dismissThread(p, viewer, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
   }
 
-  async proposeDerivation(
-    userId: string,
-    input: {
-      taskId: string;
-      targetListId: string;
-      title?: string;
-      /** 省略時は instruction をもとに Claude が境界越えの要約を書く */
-      body?: string;
-      instruction?: string;
-      attachments?: FileRef[];
-      toPartyIds?: string[];
-      replyExpected?: { by: string } | null;
-      replyToDerivationId?: string;
-    },
-  ) {
+  async reopenThread(userId: string, input: { threadId: string; reason?: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOfTask(viewer, input.taskId);
-    const derivationId = await this.run(tenantId, async (p, ctx) => {
-      let body = input.body;
-      if (!body) {
-        const target = ctx.dir.list(input.targetListId);
-        if (!this.deps.summarizer || !target) throw new DomainError('invalid', 'body is required');
-        body = await this.deps.summarizer.summarize(p, input.taskId, target, input.instruction ?? '');
-      }
-      const { events, derivationId } = proposeDerivation(p, viewer, ctx, { ...input, body });
-      return { events, result: derivationId };
-    });
-    const p = await this.state(tenantId);
-    return derivationView(p.derivations[derivationId]!);
+    const tenantId = await this.tenantOf(viewer, (p) => !!p.threads[input.threadId], `thread ${input.threadId}`);
+    await this.run(tenantId, (p) => ({ events: reopenThread(p, viewer, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
   }
 
-  async listProposals(userId: string, listId?: string) {
-    const { viewer } = await this.viewer(userId);
-    const out = [];
-    for (const m of viewer.memberships) {
-      const p = await this.state(m.tenantId);
-      for (const d of listProposalsFor(p, viewer, listId)) {
-        // 確認項目: 本文・添付・宛先・返事期待
-        out.push({ ...derivationView(d), sourceTaskTitle: p.tasks[d.sourceTaskId]?.title ?? '' });
-      }
-    }
-    return out;
-  }
-
-  /** 承認（ユーザーの明示の指示でスタンドが呼ぶ）。外部派生はそのままコネクタで送る */
-  async approveDerivation(userId: string, input: { derivationId: string; fromAddress?: AddressRef }) {
-    const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOf(viewer, (p) => !!p.derivations[input.derivationId], `derivation ${input.derivationId}`);
-    const send = await this.run(tenantId, (p, ctx) => {
-      const { events, send } = approveDerivation(p, viewer, ctx, input);
-      return { events, result: send };
-    });
-    if (send) {
-      const connector = this.deps.connectors[send.from.channel];
-      if (!connector) throw new DomainError('invalid', `no connector for ${send.from.channel}`);
-      const { sentRef } = await connector.send(send.principal, {
-        from: send.from,
-        to: send.to,
-        subject: send.subject,
-        body: send.body,
-        attachments: send.attachments,
-        inReplyTo: send.inReplyTo,
-      });
-      await this.run(tenantId, (p) => ({ events: recordSent(p, send.derivationId, sentRef), result: undefined }));
-    }
-    const p = await this.state(tenantId);
-    return derivationView(p.derivations[input.derivationId]!);
-  }
-
-  async rejectDerivation(userId: string, input: { derivationId: string; reason: string }) {
-    const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOf(viewer, (p) => !!p.derivations[input.derivationId], `derivation ${input.derivationId}`);
-    await this.run(tenantId, (p) => ({ events: rejectDerivation(p, viewer, input), result: undefined }));
-    const p = await this.state(tenantId);
-    return derivationView(p.derivations[input.derivationId]!);
-  }
-
-  async closeTask(userId: string, input: { taskId: string; reason?: string }) {
-    const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOfTask(viewer, input.taskId);
-    await this.run(tenantId, (p) => ({ events: closeTask(p, viewer, input), result: undefined }));
-    return this.getTask(userId, input.taskId);
-  }
-
-  async reopenTask(userId: string, input: { taskId: string }) {
-    const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOfTask(viewer, input.taskId);
-    await this.run(tenantId, (p) => ({ events: reopenTask(p, viewer, input), result: undefined }));
-    return this.getTask(userId, input.taskId);
-  }
-
-  async correctIngest(userId: string, input: { signalId: string; decision: CorrectionDecision; reason: string }) {
+  async moveSignal(userId: string, input: { signalId: string; to: MoveTarget; needsResponse?: boolean; reason: string }) {
     const { viewer } = await this.viewer(userId);
     const tenantId = await this.tenantOf(viewer, (p) => !!p.signals[input.signalId], `signal ${input.signalId}`);
-    await this.run(tenantId, (p, ctx) => ({ events: correctIngest(p, viewer, ctx, input), result: undefined }));
-    const p = await this.state(tenantId);
-    const s = p.signals[input.signalId]!;
-    return { signalId: s.signalId, taskId: s.taskId, decision: s.decision };
-  }
-
-  async explainIgnore(userId: string, since?: string) {
-    const { viewer, dir } = await this.viewer(userId);
-    const out = [];
-    for (const m of viewer.memberships) {
-      out.push(...explainIgnore(dir, viewer, await this.state(m.tenantId), since).map((e) => ({ tenantId: m.tenantId, ...e })));
-    }
-    return out;
+    const threadId = await this.run(tenantId, (p, ctx) => {
+      const { events, threadId } = moveSignal(p, viewer, ctx, input);
+      return { events, result: threadId };
+    });
+    return this.getThread(userId, threadId);
   }
 
   async getList(userId: string, listId: string) {
@@ -376,4 +230,3 @@ export class MurmurService {
     return view;
   }
 }
-

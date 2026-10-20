@@ -1,33 +1,62 @@
-import type { AddressRef, Anchors, BallAt, FileRef } from './events';
-import type { Channel, Principal } from './entities';
+import type { AddressRef, Anchors, Direction, FileRef, ThreadedBy } from './events';
+import type { Channel } from './entities';
 
-export type TaskStatus = 'open' | 'closed';
+/**
+ * ボールの所在（0014）。
+ * - us: こちら（組織）。持ち主がなく片付けていなければ仕分け待ち
+ * - party: 相手（こちらが返事を待っている）
+ * - none: 誰の番でもない
+ * 特定のユーザー（持ち主・構造で決まる「自分の番」）はステップ 3 で足す
+ */
+export type Ball = { kind: 'us' } | { kind: 'party'; partyIds: string[] } | { kind: 'none' };
 
-/** 通信状態。事前定義属性だけから機械的に導出される（comm.ts） */
+/** 通信状態。シグナルの向き・「返事や対応を求めているか」・片付けだけから機械的に導出される（comm.ts） */
 export interface CommState {
-  ballAt: BallAt;
+  ball: Ball;
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
-  replyExpectedBy: string | null;
+  /** こちらの返事を待たせている最初の受信（返事をすれば消える） */
   unansweredSince: string | null;
-  overdue: boolean;
+  dismissed: boolean;
+  dismissedAt: string | null;
+  dismissReason: string | null;
+  /** 片付けたあとにシグナルが来た（Murmur は自動で開き直さない。事実だけ返す） */
+  activeSinceDismissed: boolean;
 }
 
-export interface Task extends CommState {
+export type ThreadLogKind = 'signal' | 'dismissed' | 'reopened';
+
+/** スレッドに綴じたもの（シグナルと片付け）。通信状態の導出の入力 */
+export interface ThreadLogEntry {
+  seq: number;
+  at: string;
+  kind: ThreadLogKind;
+  signalId?: string;
+  direction?: Direction;
+  needsResponse?: boolean | null;
+  toPartyIds?: string[];
+  reason?: string;
+}
+
+/** エンティティはスレッドの 1 種類（0014）。データソースの写し */
+export interface Thread extends CommState {
   id: string;
   tenantId: string;
-  listId: string;
+  dataSourceId: string;
   title: string;
-  status: TaskStatus;
-  /** 作業状態は全部カスタム属性 */
-  attributes: Record<string, unknown>;
+  /** 相手の Party（受信の from と送信の to から） */
+  counterpartPartyIds: string[];
+  /** 時刻順 */
+  signalIds: string[];
+  log: ThreadLogEntry[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface SignalRecord {
   signalId: string;
-  direction: 'in' | 'out';
+  dataSourceId: string;
+  direction: Direction;
   channel: Channel;
   from: AddressRef;
   to: AddressRef[];
@@ -38,119 +67,30 @@ export interface SignalRecord {
   anchors: Anchors;
   attachments: FileRef[];
   sourceRef: string;
-  acquiredAs: Principal;
-  replyExpectedBy: string | null;
   at: string;
   seq: number;
-  /** 最新の Ingest 判断で置かれたタスク。ignore なら null */
-  taskId: string | null;
-  decision: 'pending' | 'attach' | 'new' | 'ignore';
-}
-
-export type DerivationStatus = 'proposed' | 'rejected' | 'approved' | 'sent' | 'overdue' | 'replied' | 'completed';
-
-export interface Derivation {
-  id: string;
-  tenantId: string;
-  sourceTaskId: string;
-  sourceListId: string;
-  targetListId: string;
-  targetTaskId: string;
-  mode: 'internal' | 'external';
-  title: string;
-  body: string;
-  attachments: FileRef[];
-  toPartyIds: string[];
-  replyExpected: { by: string } | null;
-  replyToDerivationId: string | null;
-  status: DerivationStatus;
-  proposedBy: 'ingest' | 'stand' | 'human';
-  fromAddress: AddressRef | null;
-  toAddresses: AddressRef[];
-  sentRef: string | null;
-  proposedAt: string;
-  approvedAt: string | null;
-  approvedBy: string | null;
-  /** 内部派生は approved で適用された時刻、外部派生は送信時刻 */
-  deliveredAt: string | null;
-  repliedAt: string | null;
-  overdueAt: string | null;
-  rejectedReason: string | null;
-}
-
-export type TimelineKind =
-  | 'inbound'
-  | 'outbound'
-  | 'derivation_out'
-  | 'derivation_in'
-  | 'derivation_replied'
-  | 'reply_overdue'
-  | 'attribute_set'
-  | 'closed'
-  | 'reopened';
-
-export interface TimelineEntry {
-  taskId: string;
-  seq: number;
-  at: string;
-  kind: TimelineKind;
-  signalId?: string;
-  derivationId?: string;
-  /** 通信状態の導出に使う事前定義の値 */
-  toPartyIds?: string[];
-  targetListId?: string;
-  replyExpectedBy?: string | null;
-  attribute?: { name: string; value: unknown };
-}
-
-export interface TaskLink {
-  derivationId: string;
-  sourceTaskId: string;
-  targetTaskId: string;
-}
-
-export interface IgnoreEntry {
-  signalId: string;
-  seq: number;
-  at: string;
-  channel: Channel;
-  from: AddressRef;
-  subject?: string;
-  bodyExcerpt: string;
-  reason: string;
-  confidence: number;
-  decidedBy: 'anchor' | 'ai' | 'human';
-  /** 後から人が訂正した場合の訂正イベントの seq */
-  overriddenAtSeq: number | null;
+  /** 最新の SignalThreaded で置かれたスレッド */
+  threadId: string | null;
+  threadedBy: ThreadedBy | null;
+  needsResponse: boolean | null;
 }
 
 export interface Projections {
   tenantId: string;
   lastSeq: number;
-  tasks: Record<string, Task>;
+  threads: Record<string, Thread>;
   signals: Record<string, SignalRecord>;
-  derivations: Record<string, Derivation>;
-  links: TaskLink[];
-  timeline: TimelineEntry[];
-  ignoreLog: IgnoreEntry[];
-  /** 重複排除とアンカー解決の索引 */
+  /** 重複排除とアンカー解決の索引。キーは `<dataSourceId>|<値>` */
   index: {
     sourceRefs: Record<string, string>;
     messageIds: Record<string, string>;
-    sentRefs: Record<string, string>;
   };
 }
 
 export function emptyProjections(tenantId: string): Projections {
-  return {
-    tenantId,
-    lastSeq: 0,
-    tasks: {},
-    signals: {},
-    derivations: {},
-    links: [],
-    timeline: [],
-    ignoreLog: [],
-    index: { sourceRefs: {}, messageIds: {}, sentRefs: {} },
-  };
+  return { tenantId, lastSeq: 0, threads: {}, signals: {}, index: { sourceRefs: {}, messageIds: {} } };
+}
+
+export function indexKey(dataSourceId: string, value: string): string {
+  return `${dataSourceId}|${value}`;
 }

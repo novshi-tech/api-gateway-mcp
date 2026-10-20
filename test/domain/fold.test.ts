@@ -2,218 +2,155 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson, draft, fold, FoldError, type DomainEvent } from '../../src/domain';
 import { EventLog } from '../helpers/world';
 
+// fold の純関数テスト（イベント型を変えたらここも更新する）
+
 const T0 = '2026-10-16T09:00:00.000Z';
 const T1 = '2026-10-16T10:00:00.000Z';
+const T2 = '2026-10-16T11:00:00.000Z';
 
-function received(signalId: string, extra: Record<string, unknown> = {}) {
-  return draft('SignalReceived', {
+function observed(signalId: string, extra: Record<string, unknown> = {}) {
+  return draft('SignalObserved', {
     signalId,
+    dataSourceId: 'ds_support',
+    direction: 'inbound',
     channel: 'email',
     from: { channel: 'email', value: 'carol@example.com' },
-    to: [],
+    to: [{ channel: 'email', value: 'support@ubs.example' }],
     fromPartyId: 'p_carol',
     body: '雨漏りしています',
     subject: '修繕のお願い',
     sourceRef: `src-${signalId}`,
-    acquiredAs: { kind: 'organization', tenantId: 'ubs' },
     anchors: { messageId: `<${signalId}@x>` },
     ...extra,
   });
 }
 
-const newTask = (signalId: string, taskId: string, listId = 'l_cust') =>
-  draft('IngestDecided', {
-    signalId,
-    decision: { kind: 'new', taskId, listId, title: '雨漏り' },
-    reason: 'r',
-    decidedBy: 'ai',
-    confidence: 0.9,
+const sent = (signalId: string, toPartyIds = ['p_carol']) =>
+  observed(signalId, {
+    direction: 'outbound',
+    from: { channel: 'email', value: 'support@ubs.example' },
+    to: [{ channel: 'email', value: 'carol@example.com' }],
+    fromPartyId: 'p_ubs',
+    toPartyIds,
   });
 
+const intoNew = (signalId: string, threadId: string, needsResponse: boolean | null = true) =>
+  draft('SignalThreaded', {
+    signalId,
+    thread: { kind: 'new', threadId, title: '雨漏り' },
+    by: 'no_match',
+    confidence: 1,
+    reason: 'r',
+    needsResponse,
+  });
+
+const into = (signalId: string, threadId: string, needsResponse: boolean | null = true, by: 'anchor' | 'human' = 'anchor') =>
+  draft('SignalThreaded', { signalId, thread: { kind: 'existing', threadId }, by, confidence: 1, reason: 'r', needsResponse });
+
 describe('fold', () => {
-  it('SignalReceived + IngestDecided(new) でタスクができ、通信状態が導出される', () => {
+  it('H1 SignalObserved + SignalThreaded(new) でスレッドができ、ボールがこちらに来る', () => {
     const log = new EventLog();
-    log.push([received('s1'), newTask('s1', 't1')], T0);
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
     const p = log.state();
-    expect(p.tasks.t1).toMatchObject({
-      listId: 'l_cust',
+    expect(p.threads.t1).toMatchObject({
+      dataSourceId: 'ds_support',
       title: '雨漏り',
-      status: 'open',
-      ballAt: { kind: 'list', listId: 'l_cust' },
+      ball: { kind: 'us' },
+      counterpartPartyIds: ['p_carol'],
+      signalIds: ['s1'],
       unansweredSince: T0,
+      lastInboundAt: T0,
+      dismissed: false,
     });
-    expect(p.signals.s1).toMatchObject({ taskId: 't1', decision: 'new', direction: 'in' });
-    expect(p.index).toEqual({ sourceRefs: { 'src-s1': 's1' }, messageIds: { '<s1@x>': 's1' }, sentRefs: {} });
+    expect(p.signals.s1).toMatchObject({ threadId: 't1', threadedBy: 'no_match', direction: 'inbound', needsResponse: true });
+    expect(p.index).toEqual({ sourceRefs: { 'ds_support|src-s1': 's1' }, messageIds: { 'ds_support|<s1@x>': 's1' } });
     expect(p.lastSeq).toBe(2);
   });
 
-  it('入力のイベント列も base の投影も変更しない（純関数）', () => {
+  it('H1 観測された送信でボールは相手へ、返事でこちらへ戻る。求めていない受信は相手待ちを「なし」にする', () => {
     const log = new EventLog();
-    log.push([received('s1')], T0);
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([sent('o1'), into('o1', 't1', null)], T1);
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, lastOutboundAt: T1, unansweredSince: null });
+    expect(log.state().signals.o1!.needsResponse).toBeNull();
+
+    log.push([observed('s2'), into('s2', 't1', false)], T2);
+    expect(log.state().threads.t1!.ball).toEqual({ kind: 'none' });
+    log.push([observed('s3'), into('s3', 't1', true)], '2026-10-16T12:00:00.000Z');
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'us' }, unansweredSince: '2026-10-16T12:00:00.000Z' });
+  });
+
+  it('H1 観測された送信の SignalThreaded に needsResponse が付いていても無視する', () => {
+    const log = new EventLog();
+    log.push([sent('o1'), intoNew('o1', 't1', true)], T0);
+    expect(log.state().signals.o1!.needsResponse).toBeNull();
+    expect(log.state().threads.t1!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+  });
+
+  it('H1 片付けるとボールは「なし」、その後のシグナルは綴じるが片付けたまま（開き直しで戻る）', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([draft('ThreadDismissed', { threadId: 't1', actorUserId: 'u_alice', reason: '対応不要' })], T1);
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'none' }, dismissed: true, dismissReason: '対応不要', dismissedAt: T1 });
+
+    log.push([observed('s2'), into('s2', 't1', true)], T2);
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'none' }, dismissed: true, activeSinceDismissed: true, signalIds: ['s1', 's2'] });
+
+    log.push([draft('ThreadReopened', { threadId: 't1', actorUserId: 'u_alice' })], '2026-10-16T12:00:00.000Z');
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'us' }, dismissed: false, activeSinceDismissed: false, dismissReason: null });
+    expect(log.state().threads.t1!.log.map((l) => l.kind)).toEqual(['signal', 'dismissed', 'signal', 'reopened']);
+  });
+
+  it('H1 移し替え: 元のスレッドから外れて通信状態が計算し直され、移し先に時刻順で入る', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1', false)], T0);
+    log.push([observed('s2'), into('s2', 't1', true)], T1);
+    expect(log.state().threads.t1!.ball).toEqual({ kind: 'us' });
+    log.push([draft('SignalThreaded', { signalId: 's2', thread: { kind: 'new', threadId: 't2', title: '別件' }, by: 'human', confidence: 1, reason: '別の話題', needsResponse: true, actorUserId: 'u_alice' })], T2);
+    const p = log.state();
+    expect(p.threads.t1).toMatchObject({ signalIds: ['s1'], ball: { kind: 'none' }, unansweredSince: null });
+    // 新しいスレッドの作成時刻はシグナルの時刻
+    expect(p.threads.t2).toMatchObject({ signalIds: ['s2'], ball: { kind: 'us' }, createdAt: T1, title: '別件' });
+    expect(p.signals.s2).toMatchObject({ threadId: 't2', threadedBy: 'human' });
+
+    // 戻すと元の順番に戻る
+    log.push([into('s2', 't1', true, 'human')], '2026-10-16T12:00:00.000Z');
+    expect(log.state().threads.t1!.signalIds).toEqual(['s1', 's2']);
+    expect(log.state().threads.t2!.signalIds).toEqual([]);
+  });
+
+  it('H1 入力のイベント列も base の投影も変更しない（純関数）', () => {
+    const log = new EventLog();
+    log.push([observed('s1')], T0);
     const snapshot = structuredClone(log.events);
     const base = log.state();
     const baseSnapshot = structuredClone(base);
-    log.push([newTask('s1', 't1')], T1);
+    log.push([intoNew('s1', 't1')], T1);
     fold(log.events.slice(1), base);
     expect(log.events.slice(0, 1)).toEqual(snapshot);
     expect(base).toEqual(baseSnapshot);
   });
 
-  it('一括の fold と、途中の投影からの増分 fold が一致する', () => {
+  it('H1 一括で畳んでも 1 件ずつ畳んでも同じ投影になる', () => {
     const log = new EventLog();
-    log.push([received('s1'), newTask('s1', 't1')], T0);
-    log.push([draft('TaskAttributeSet', { taskId: 't1', name: 'status', value: 'doing' })], T1);
-    log.push([draft('TaskClosed', { taskId: 't1' })], T1);
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([sent('o1'), into('o1', 't1', null)], T1);
+    log.push([draft('ThreadDismissed', { threadId: 't1', actorUserId: 'u_alice', reason: 'x' })], T2);
     const whole = fold(log.events);
-    const incremental = fold(log.events.slice(2), fold(log.events.slice(0, 2)));
-    expect(canonicalJson(incremental)).toBe(canonicalJson(whole));
+    const stepwise = log.events.reduce((p, e) => fold([e], p), fold([]));
+    expect(canonicalJson(stepwise)).toBe(canonicalJson(whole));
   });
 
-  it('seq が単調でないイベント・別テナントのイベントは拒否する', () => {
+  it('H1 不正な列は FoldError（seq の逆行・別テナント・未知のシグナルやスレッド・データソースをまたぐ置き先）', () => {
     const log = new EventLog();
-    const [e1] = log.push([received('s1')], T0) as [DomainEvent];
-    expect(() => fold([e1, e1])).toThrow(FoldError);
-    expect(() => fold([e1, { ...e1, seq: 2, tenantId: 'nvt' }])).toThrow(/tenant mismatch/);
-  });
-
-  it('存在しないタスクへの操作は FoldError', () => {
-    const log = new EventLog();
-    log.push([draft('TaskClosed', { taskId: 'nope' })], T0);
-    expect(() => log.state()).toThrow(FoldError);
-  });
-
-  it('ignore は IgnoreLog に理由付きで残り、後の訂正で overridden が付く', () => {
-    const log = new EventLog();
-    log.push(
-      [
-        received('s1'),
-        draft('IngestDecided', { signalId: 's1', decision: { kind: 'ignore' }, reason: '広告', decidedBy: 'ai', confidence: 0.95 }),
-      ],
-      T0,
-    );
-    let p = log.state();
-    expect(p.ignoreLog).toHaveLength(1);
-    expect(p.ignoreLog[0]).toMatchObject({ signalId: 's1', reason: '広告', confidence: 0.95, overriddenAtSeq: null });
-    expect(p.signals.s1!.taskId).toBeNull();
-
-    log.push([{ ...newTask('s1', 't9'), payload: { ...newTask('s1', 't9').payload, decidedBy: 'human' } } as never], T1);
-    p = log.state();
-    expect(p.ignoreLog[0]!.overriddenAtSeq).toBe(3);
-    expect(p.signals.s1).toMatchObject({ taskId: 't9', decision: 'new' });
-  });
-
-  it('訂正で別タスクへ付け替えると、元タスクのタイムラインと通信状態から外れる', () => {
-    const log = new EventLog();
-    log.push([received('s1'), newTask('s1', 't1')], T0);
-    log.push([received('s2'), newTask('s2', 't2')], T1);
-    log.push(
-      [draft('IngestDecided', { signalId: 's2', decision: { kind: 'attach', taskId: 't1' }, reason: '同じ件', decidedBy: 'human', confidence: 1 })],
-      T1,
-    );
-    const p = log.state();
-    expect(p.timeline.filter((e) => e.taskId === 't2')).toHaveLength(0);
-    expect(p.timeline.filter((e) => e.taskId === 't1').map((e) => e.signalId)).toEqual(['s1', 's2']);
-    expect(p.tasks.t1!.lastInboundAt).toBe(T1);
-    expect(p.tasks.t2!.lastInboundAt).toBeNull();
-  });
-
-  describe('派生のライフサイクル', () => {
-    const setup = (mode: 'internal' | 'external', replyBy: string | null) => {
-      const log = new EventLog();
-      log.push([received('s1'), newTask('s1', 't1')], T0);
-      log.push(
-        [
-          draft('DerivationProposed', {
-            derivationId: 'd1',
-            sourceTaskId: 't1',
-            targetListId: mode === 'internal' ? 'l_int' : 'l_partner',
-            targetTaskId: 't2',
-            mode,
-            title: '手配',
-            body: '見積をお願いします',
-            toPartyIds: mode === 'external' ? ['p_dave'] : [],
-            replyExpected: replyBy ? { by: replyBy } : null,
-            proposedBy: 'stand',
-          }),
-        ],
-        T0,
-      );
-      return log;
-    };
-
-    it('proposed ではタスクもボールも動かない', () => {
-      const p = setup('internal', null).state();
-      expect(p.derivations.d1!.status).toBe('proposed');
-      expect(p.tasks.t2).toBeUndefined();
-      expect(p.tasks.t1!.ballAt).toEqual({ kind: 'list', listId: 'l_cust' });
-    });
-
-    it('内部派生は approved で適用され、返事期待がなければ completed', () => {
-      const log = setup('internal', null);
-      log.push([draft('DerivationApproved', { derivationId: 'd1', actorUserId: 'u_alice' })], T1);
-      const p = log.state();
-      expect(p.derivations.d1).toMatchObject({ status: 'completed', deliveredAt: T1, sentRef: null });
-      expect(p.tasks.t2).toMatchObject({ listId: 'l_int', ballAt: { kind: 'list', listId: 'l_int' } });
-      expect(p.tasks.t1!.ballAt).toEqual({ kind: 'list', listId: 'l_int' });
-      expect(p.links).toEqual([{ derivationId: 'd1', sourceTaskId: 't1', targetTaskId: 't2' }]);
-    });
-
-    it('外部派生は approved では適用されず、sent で宛先 Party にボールが移る', () => {
-      const log = setup('external', '2026-10-20T00:00:00.000Z');
-      log.push(
-        [
-          draft('DerivationApproved', {
-            derivationId: 'd1',
-            actorUserId: 'u_alice',
-            fromAddress: { channel: 'email', value: 'support@ubs.example' },
-            toAddresses: [{ channel: 'email', value: 'info@dave.example' }],
-          }),
-        ],
-        T1,
-      );
-      let p = log.state();
-      expect(p.derivations.d1!.status).toBe('approved');
-      expect(p.derivations.d1!.deliveredAt).toBeNull();
-      expect(p.tasks.t1!.ballAt).toEqual({ kind: 'list', listId: 'l_cust' });
-
-      log.push([draft('DerivationSent', { derivationId: 'd1', sentRef: '<m1>' })], T1);
-      p = log.state();
-      expect(p.derivations.d1).toMatchObject({ status: 'sent', sentRef: '<m1>' });
-      expect(p.index.sentRefs['<m1>']).toBe('d1');
-      expect(p.tasks.t2!.ballAt).toEqual({ kind: 'party', partyIds: ['p_dave'] });
-      expect(p.tasks.t1).toMatchObject({ ballAt: { kind: 'list', listId: 'l_partner' }, replyExpectedBy: '2026-10-20T00:00:00.000Z' });
-
-      log.push([draft('ReplyOverdue', { derivationId: 'd1' })], '2026-10-21T00:00:00.000Z');
-      p = log.state();
-      expect(p.derivations.d1!.status).toBe('overdue');
-      expect(p.tasks.t1!.overdue).toBe(true);
-
-      log.push([draft('DerivationReplied', { derivationId: 'd1', signalId: 'sX' })], '2026-10-22T00:00:00.000Z');
-      p = log.state();
-      expect(p.derivations.d1!.status).toBe('replied');
-      expect(p.tasks.t1).toMatchObject({ ballAt: { kind: 'list', listId: 'l_cust' }, overdue: false });
-    });
-
-    it('rejected は何も動かさない', () => {
-      const log = setup('internal', null);
-      log.push([draft('DerivationRejected', { derivationId: 'd1', actorUserId: 'u_alice', reason: '不要' })], T1);
-      const p = log.state();
-      expect(p.derivations.d1).toMatchObject({ status: 'rejected', rejectedReason: '不要' });
-      expect(p.tasks.t2).toBeUndefined();
-    });
-  });
-
-  it('属性・クローズ・再オープンは作業状態だけを変える', () => {
-    const log = new EventLog();
-    log.push([received('s1'), newTask('s1', 't1')], T0);
-    const before = log.state().tasks.t1!;
-    log.push([draft('TaskAttributeSet', { taskId: 't1', name: 'status', value: 'doing' }), draft('TaskClosed', { taskId: 't1' })], T1);
-    let t = log.state().tasks.t1!;
-    expect(t.attributes).toEqual({ status: 'doing' });
-    expect(t.status).toBe('closed');
-    expect(t.ballAt).toEqual(before.ballAt);
-    log.push([draft('TaskReopened', { taskId: 't1' })], T1);
-    t = log.state().tasks.t1!;
-    expect(t.status).toBe('open');
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    const [a, b] = log.events as [DomainEvent, DomainEvent];
+    expect(() => fold([b, a])).toThrow(FoldError);
+    expect(() => fold([a, { ...b, tenantId: 'nvt' }])).toThrow(/tenant mismatch/);
+    expect(() => fold([{ ...b, seq: 1 }])).toThrow(/unknown signal/);
+    expect(() => fold([a, { ...into('s1', 'nope'), tenantId: 'ubs', seq: 2, at: T0 } as DomainEvent])).toThrow(/unknown thread/);
+    expect(() => fold([...log.events, { ...intoNew('s1', 't1'), tenantId: 'ubs', seq: 3, at: T0 } as DomainEvent])).toThrow(/already exists/);
+    const other = { ...observed('s9', { dataSourceId: 'ds_alice', sourceRef: 'x' }), tenantId: 'ubs', seq: 3, at: T0 } as DomainEvent;
+    expect(() => fold([...log.events, other, { ...into('s9', 't1'), tenantId: 'ubs', seq: 4, at: T0 } as DomainEvent])).toThrow(/cannot go into/);
   });
 });

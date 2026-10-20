@@ -3,7 +3,8 @@ import { canonicalJson } from '../domain';
 
 // Claude 呼び出しの境界。Claude API の呼び出しは必ずこの層（記録・再生）を通す。
 
-export type LlmPurpose = 'ingest_decision' | 'reply_estimate' | 'boundary_summary';
+/** Claude を使うのは Ingest の 1 か所だけ（計画 v2 のアーキテクチャ） */
+export type LlmPurpose = 'ingest_decision';
 
 export interface LlmRequest {
   purpose: LlmPurpose;
@@ -32,7 +33,7 @@ export class AnthropicLlm implements LlmClient {
       max_tokens: req.maxTokens ?? 4096,
       system: req.system,
       messages: [{ role: 'user', content: req.user }],
-      // 判断・要約は軽い用途なので low。ポリシー判定で断られたときはサーバ側の既定のフォールバックに任せる
+      // 判断は軽い用途なので low。ポリシー判定で断られたときはサーバ側の既定のフォールバックに任せる
       output_config: {
         effort: 'low',
         ...(req.schema ? { format: { type: 'json_schema' as const, schema: req.schema } } : {}),

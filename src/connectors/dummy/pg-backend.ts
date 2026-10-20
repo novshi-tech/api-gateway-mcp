@@ -1,36 +1,26 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import type { Channel, InboundSignal, Principal } from '../../domain';
+import type { InboundSignal } from '../../domain';
 import type { Db } from '../../store/drizzle';
 import { dummyQueue } from '../../store/schema';
-import { samePrincipal, type DummyBackend, type SentLogEntry } from './connector';
+import type { DummyBackend } from './connector';
 
 /** Worker 上で動かすときのダミー上流（Neon のテーブルに置く） */
 export class PgDummyBackend implements DummyBackend {
   constructor(private readonly db: Db) {}
 
-  async enqueue(channel: Channel, signal: InboundSignal) {
-    const tenantId = signal.acquiredAs.kind === 'organization' ? signal.acquiredAs.tenantId : '';
-    await this.db.insert(dummyQueue).values({ tenantId, channel, kind: 'inbound', message: signal });
+  async enqueue(tenantId: string, signal: InboundSignal) {
+    await this.db.insert(dummyQueue).values({ tenantId, dataSourceId: signal.dataSourceId, message: signal });
   }
 
-  async take(channel: Channel, principal: Principal) {
+  async take(dataSourceId: string) {
     const rows = await this.db
       .select()
       .from(dummyQueue)
-      .where(and(eq(dummyQueue.channel, channel), eq(dummyQueue.kind, 'inbound'), eq(dummyQueue.consumed, false)))
+      .where(and(eq(dummyQueue.dataSourceId, dataSourceId), eq(dummyQueue.consumed, false)))
       .orderBy(asc(dummyQueue.id));
-    const mine = rows.filter((r) => samePrincipal((r.message as InboundSignal).acquiredAs, principal));
-    if (mine.length > 0) {
-      await this.db.update(dummyQueue).set({ consumed: true }).where(inArray(dummyQueue.id, mine.map((r) => r.id)));
+    if (rows.length > 0) {
+      await this.db.update(dummyQueue).set({ consumed: true }).where(inArray(dummyQueue.id, rows.map((r) => r.id)));
     }
-    return mine.map((r) => r.message as InboundSignal);
-  }
-
-  async logSent(entry: SentLogEntry) {
-    const [row] = await this.db
-      .insert(dummyQueue)
-      .values({ tenantId: '', channel: entry.channel, kind: 'sent', message: entry })
-      .returning({ id: dummyQueue.id });
-    return row!.id;
+    return rows.map((r) => r.message as InboundSignal);
   }
 }

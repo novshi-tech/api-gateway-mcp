@@ -1,71 +1,63 @@
-import type { CommState, TimelineEntry } from './projections';
+import type { CommState, ThreadLogEntry } from './projections';
 
 /**
- * 通信状態の導出。タスクのタイムラインのうち事前定義の項目（受信・送信・派生・返事・期限超過）
- * だけを時刻順に畳み込む。カスタム属性（作業状態）は一切読まない。
+ * 通信状態の導出。スレッドに綴じたもの（シグナルの向き・「返事や対応を求めているか」・片付け）だけを
+ * 時刻順に畳み込む。本文や属性は読まない。
  *
  * ボールの所在:
- * - 受信、または内部派生の適用を受けた → 自リスト
- * - 外部へ送った（観測された送信・外部派生の送信） → 宛先 Party
- * - 派生を出した → 派生先リスト
- * - 出した派生に返事が来た → 自リスト
+ * - 送った（観測された送信） → 宛先の Party
+ * - 返事や対応を求める受信 → こちら
+ * - 求めていない受信（お礼・スタンプ・了解・通知） → 相手を待っていたなら「なし」、そうでなければ変わらない
+ * - 片付けた → 開き直すまで「なし」。その間もシグナルは綴じ、開き直したら綴じた分から決まる
  */
-export function deriveComm(listId: string, entries: readonly TimelineEntry[]): CommState {
+export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
+  let ball: CommState['ball'] = { kind: 'none' };
   const state: CommState = {
-    ballAt: { kind: 'list', listId },
+    ball,
     lastInboundAt: null,
     lastOutboundAt: null,
-    replyExpectedBy: null,
     unansweredSince: null,
-    overdue: false,
+    dismissed: false,
+    dismissedAt: null,
+    dismissReason: null,
+    activeSinceDismissed: false,
   };
-  for (const e of sortTimeline(entries)) {
+  for (const e of sortLog(entries)) {
     switch (e.kind) {
-      case 'inbound':
-      case 'derivation_in':
-        if (e.kind === 'derivation_in' && e.toPartyIds && e.toPartyIds.length > 0) {
-          // 外部派生の適用先タスク: こちらから外部へ送った扱い
-          markOutbound(state, e, { kind: 'party', partyIds: e.toPartyIds });
+      case 'signal':
+        if (e.direction === 'outbound') {
+          ball = { kind: 'party', partyIds: e.toPartyIds ?? [] };
+          state.lastOutboundAt = e.at;
+          state.unansweredSince = null;
         } else {
-          state.ballAt = { kind: 'list', listId };
           state.lastInboundAt = e.at;
-          state.unansweredSince ??= e.at;
-          state.replyExpectedBy = null;
-          state.overdue = false;
+          if (e.needsResponse === false) {
+            if (ball.kind === 'party') ball = { kind: 'none' };
+          } else {
+            ball = { kind: 'us' };
+            state.unansweredSince ??= e.at;
+          }
         }
+        if (state.dismissed) state.activeSinceDismissed = true;
         break;
-      case 'outbound':
-        markOutbound(state, e, { kind: 'party', partyIds: e.toPartyIds ?? [] });
+      case 'dismissed':
+        state.dismissed = true;
+        state.dismissedAt = e.at;
+        state.dismissReason = e.reason ?? null;
+        state.activeSinceDismissed = false;
         break;
-      case 'derivation_out':
-        markOutbound(state, e, { kind: 'list', listId: e.targetListId ?? listId });
-        break;
-      case 'derivation_replied':
-        state.ballAt = { kind: 'list', listId };
-        state.lastInboundAt = e.at;
-        state.unansweredSince ??= e.at;
-        state.replyExpectedBy = null;
-        state.overdue = false;
-        break;
-      case 'reply_overdue':
-        state.overdue = true;
-        break;
-      default:
-        // attribute_set / closed / reopened は通信状態に影響しない
+      case 'reopened':
+        state.dismissed = false;
+        state.dismissedAt = null;
+        state.dismissReason = null;
+        state.activeSinceDismissed = false;
         break;
     }
   }
+  state.ball = state.dismissed ? { kind: 'none' } : ball;
   return state;
 }
 
-function markOutbound(state: CommState, e: TimelineEntry, ballAt: CommState['ballAt']): void {
-  state.ballAt = ballAt;
-  state.lastOutboundAt = e.at;
-  state.unansweredSince = null;
-  state.replyExpectedBy = e.replyExpectedBy ?? null;
-  state.overdue = false;
-}
-
-export function sortTimeline<T extends Pick<TimelineEntry, 'at' | 'seq'>>(entries: readonly T[]): T[] {
+export function sortLog<T extends Pick<ThreadLogEntry, 'at' | 'seq'>>(entries: readonly T[]): T[] {
   return [...entries].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.seq - b.seq));
 }

@@ -28,23 +28,23 @@
 
 判断はすべて純関数のコアに置き、副作用（DB・Claude・コネクタ・HTTP・時計・ID 生成・暗号）はシェルに集める。`test/architecture.test.ts` がこの境界を検査する。
 
-下の `src/domain/` の中身は v1（`proto-v1`）のもの。計画 v2 のステップ 2〜4 で、スレッド 1 種類のデータモデル（`docs/adr/0013`・`0014`）に合わせて組み替え、組み替えたらここを直す。
+`src/domain/` はステップ 2 でスレッド 1 種類のデータモデル（`docs/adr/0013`・`0014`）に組み替えた。リンク・持ち主・属性はステップ 3、送信の記録はステップ 4 で足す。
 
 ```
 src/
   domain/        関数型コア。zod と domain 内しか import しない。Date.now・乱数・fetch・crypto 禁止
-    entities.ts    マスタ（Tenant / User / Party / Address / List / AttributeDef / CredentialRef / ChannelPolicy）
+    entities.ts    マスタ（Tenant / User / Party / Address / CredentialRef / DataSource / List / ListMember / AttributeDef）
     events.ts      イベント型（zod）
-    fold.ts        fold(events) → projections
-    comm.ts        通信状態の導出（事前定義の項目だけ）
-    commands.ts    スタンドの操作の判断（状態 + コマンド → イベント）、期限の見回り
-    ingest.ts      Ingest の判断（重複排除、アンカー解決、候補、AI 出力の検証）、プロンプト
+    fold.ts        fold(events) → projections（1 段）
+    comm.ts        通信状態（ボール）の導出。シグナルの向き・「求めているか」・片付けだけ
+    directory.ts   マスタの検索、seed の整合性（seedProblems）
+    commands.ts    スタンドの操作の判断（片付け・開き直し・シグナルの移し替え）
+    ingest.ts      Ingest の判断（重複排除、向き、区切り、AI 出力の検証）、プロンプト
     visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存
   store/         イベントストア・投影・マスタ（メモリ実装と Drizzle/Postgres 実装）
-  ingest/        Claude 呼び出し（記録・再生）、Decider / ReplyEstimator
-  derivation/    境界越えの要約
-  connectors/    Connector インタフェース + dummy/
+  ingest/        Claude 呼び出し（記録・再生）、Decider
+  connectors/    Connector インタフェース（取り込みだけ）+ dummy/
   api/           HTTP API の入力スキーマ
   auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
   http/          Hono ルート、timeline.html

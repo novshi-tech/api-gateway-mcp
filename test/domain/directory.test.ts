@@ -1,35 +1,75 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, deriveViewer, isMemberOfList } from '../../src/domain';
+import { canonicalJson, canReadDataSource, deriveViewer, Seed, seedProblems, type SeedInput } from '../../src/domain';
 import { bearerToken, checkClaims, selectKey, splitCompactJws, base64UrlEncode, base64UrlDecode } from '../../src/auth/claims';
-import { dir } from '../helpers/world';
+import { dir, seed } from '../helpers/world';
 
 describe('Directory', () => {
-  it('取得主体ルール: Organization はチャネルの許可リスト、User は自分の所属リスト', () => {
-    expect(dir.allowedListIds('ubs', { kind: 'organization', tenantId: 'ubs' }, 'email')).toEqual(['l_cust', 'l_partner']);
-    expect(dir.allowedListIds('ubs', { kind: 'organization', tenantId: 'ubs' }, 'line')).toEqual([]);
-    expect(dir.allowedListIds('ubs', { kind: 'organization', tenantId: 'nvt' }, 'email')).toEqual([]);
-    expect(dir.allowedListIds('ubs', { kind: 'user', userId: 'u_alice' }, 'email')).toEqual(['l_cust', 'l_int']);
-    // 別テナントの所属は混ざらない
-    expect(dir.allowedListIds('nvt', { kind: 'user', userId: 'u_alice' }, 'slack')).toEqual([]);
-    expect(dir.allowedListIds('ubs', { kind: 'user', userId: 'u_nobody' }, 'email')).toEqual([]);
-  });
-
   it('Address は期間付きで、大文字小文字を区別しない', () => {
     expect(dir.partyIdOfAddress('ubs', { channel: 'email', value: 'OLD@dave.example' }, '2025-06-01T00:00:00Z')).toBe('p_dave');
     expect(dir.partyIdOfAddress('ubs', { channel: 'email', value: 'old@dave.example' }, '2026-06-01T00:00:00Z')).toBeNull();
     expect(dir.partyIdOfAddress('nvt', { channel: 'email', value: 'info@dave.example' })).toBeNull();
-    expect(dir.isInternalAddress('ubs', { channel: 'email', value: 'support@ubs.example' })).toBe(true);
-    expect(dir.isInternalAddress('ubs', { channel: 'email', value: 'carol@example.com' })).toBe(false);
   });
 
-  it('Viewer は User の各テナントの Party と所属リストを束ねる', () => {
+  it('direction の判定: データソースの送信元（こちら）のアドレスか', () => {
+    const support = dir.dataSource('ds_support')!;
+    expect(dir.isSelfAddress(support, { channel: 'email', value: 'Support@ubs.example' })).toBe(true);
+    // 社員のアドレスでも、そのデータソースの送信元でなければ「こちら」ではない
+    expect(dir.isSelfAddress(support, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
+    expect(dir.isSelfAddress(dir.dataSource('ds_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(true);
+    expect(dir.isSelfAddress(dir.dataSource('ds_notes_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
+  });
+
+  it('H3 Viewer は User の各テナントの Party と、読者になっているリスト・データソースを束ねる', () => {
     const v = deriveViewer(dir, 'u_alice');
     expect(v.memberships).toEqual([
-      { tenantId: 'ubs', partyId: 'p_alice', listIds: ['l_cust', 'l_int'] },
-      { tenantId: 'nvt', partyId: 'p_alice_nvt', listIds: [] },
+      { tenantId: 'ubs', partyId: 'p_alice', listIds: ['l_support', 'l_alice', 'l_notes_alice'], dataSourceIds: ['ds_support', 'ds_alice', 'ds_notes_alice'] },
+      { tenantId: 'nvt', partyId: 'p_alice_nvt', listIds: [], dataSourceIds: [] },
     ]);
-    expect(isMemberOfList(v, 'ubs', 'l_int')).toBe(true);
-    expect(isMemberOfList(v, 'nvt', 'l_int')).toBe(false);
+    expect(canReadDataSource(v, 'ubs', 'ds_alice')).toBe(true);
+    expect(canReadDataSource(v, 'ubs', 'ds_line')).toBe(false);
+    expect(canReadDataSource(v, 'nvt', 'ds_support')).toBe(false);
+    // ゴースト Party は Viewer になれない
+    expect(deriveViewer(dir, 'p_carol').memberships).toEqual([]);
+  });
+});
+
+describe('H3 マスタの整合性（seedProblems）', () => {
+  it('テスト用の世界は整合している', () => {
+    expect(seedProblems(seed)).toEqual([]);
+  });
+
+  const broken = (f: (s: SeedInput) => void) => {
+    const s = structuredClone(seed) as SeedInput;
+    f(s);
+    return seedProblems(Seed.parse(s));
+  };
+
+  it('データソース 1 つにリスト 1 つ', () => {
+    expect(broken((s) => s.lists!.push({ id: 'l_dup', tenantId: 'ubs', dataSourceId: 'ds_support' })).join()).toMatch(/ds_support: リストが 2 個/);
+    expect(broken((s) => (s.lists = s.lists!.filter((l) => l.id !== 'l_line'))).join()).toMatch(/ds_line: リストが 0 個/);
+  });
+
+  it('個人のメモの読者は本人だけ', () => {
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_notes_alice', partyId: 'p_bob' })).join()).toMatch(/個人のメモの読者は本人/);
+  });
+
+  it('個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない', () => {
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_alice', partyId: 'p_bob' })).join()).toMatch(/個人の資格情報/);
+    // 組織の資格情報なら読者が複数でよい
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_line', partyId: 'p_alice' }))).toEqual([]);
+  });
+
+  it('読者はテナントの User を持つ Party だけ（ゴーストや別テナントは読者になれない）', () => {
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_support', partyId: 'p_carol' })).join()).toMatch(/ゴースト/);
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_support', partyId: 'p_eve' })).join()).toMatch(/別テナント/);
+  });
+
+  it('送信元のアドレスはデータソースのテナントとチャネルのもの', () => {
+    const problems = broken((s) => {
+      const ds = s.dataSources!.find((d) => d.id === 'ds_support')!;
+      if (ds.kind === 'service') ds.selfAddressIds = ['a_oa'];
+    });
+    expect(problems.join()).toMatch(/送信元のアドレス a_oa が不正/);
   });
 });
 

@@ -1,69 +1,38 @@
 import { z } from 'zod';
-import { AddressRef, FileRef } from '../domain';
+import { AddressRef, Anchors, Channel, FileRef } from '../domain';
 
-// HTTP API（ゲートウェイの上流として公開する 11 本）の入力スキーマ。キーはツール定義に合わせて snake_case。
+// HTTP API の入力スキーマ。キーはツール定義に合わせて snake_case。
+// ステップ 2 の分（スレッドの一覧・詳細・片付け・開き直し・シグナルの移し替え）。ツール一覧の作り直しはステップ 5
 
-/** 時刻はオフセット付きで受けて UTC（Z）にそろえる。コアは ISO 文字列の大小で期限を比べるため */
-const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
-
-export const ListMyTasksQuery = z.object({
-  filter: z.enum(['open', 'ball_at_me', 'overdue', 'all']).default('open'),
+export const ListThreadsQuery = z.object({
+  filter: z.enum(['open', 'triage', 'all']).default('open'),
   tenant: z.string().optional(),
+  data_source: z.string().optional(),
 });
 
-export const SetAttributeBody = z.object({ name: z.string().min(1), value: z.unknown() });
+export const DismissBody = z.object({ reason: z.string().min(1) });
+export const ReopenBody = z.object({ reason: z.string().optional() }).default({});
 
-export const ProposeDerivationBody = z
+export const MoveSignalBody = z
   .object({
-    task_id: z.string(),
-    target_list: z.string(),
-    title: z.string().optional(),
-    body: z.string().optional(),
-    /** body を省略したとき、Claude に要約・翻訳させる指示 */
-    instruction: z.string().optional(),
-    attachments: z.array(FileRef).default([]),
-    to_parties: z.array(z.string()).default([]),
-    reply_expected: z.object({ by: Instant }).nullable().optional(),
-    reply_to: z.string().optional(),
+    /** 移し先の既存のスレッド。省略して new_thread_title を渡せば新しいスレッド */
+    thread_id: z.string().optional(),
+    new_thread_title: z.string().min(1).optional(),
+    needs_response: z.boolean().optional(),
+    reason: z.string().min(1),
   })
-  .refine((b) => b.body !== undefined || b.instruction !== undefined, { message: 'body or instruction is required' });
-
-export const ListProposalsQuery = z.object({ list_id: z.string().optional() });
-
-export const ApproveBody = z.object({ from_address: AddressRef.optional() });
-export const RejectBody = z.object({ reason: z.string().min(1) });
-export const CloseBody = z.object({ reason: z.string().optional() }).default({});
-
-export const CorrectIngestBody = z.object({
-  decision: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('attach'), task_id: z.string() }),
-    z.object({ kind: z.literal('new'), list_id: z.string(), title: z.string().min(1) }),
-    z.object({ kind: z.literal('ignore') }),
-  ]),
-  reason: z.string().min(1),
-});
-
-export const ExplainIgnoreQuery = z.object({ since: z.string().optional() });
+  .refine((b) => (b.thread_id === undefined) !== (b.new_thread_title === undefined), {
+    message: 'thread_id か new_thread_title のどちらか一方',
+  });
 
 export const InboundSignalBody = z.object({
-  channel: z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'internal']),
+  dataSourceId: z.string(),
+  channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef).default([]),
   subject: z.string().optional(),
   body: z.string(),
-  anchors: z
-    .object({
-      messageId: z.string().optional(),
-      inReplyTo: z.string().optional(),
-      threadTs: z.string().optional(),
-      jiraKeys: z.array(z.string()).optional(),
-      prRefs: z.array(z.string()).optional(),
-    })
-    .default({}),
+  anchors: Anchors.default({}),
   attachments: z.array(FileRef).default([]),
   sourceRef: z.string(),
-  acquiredAs: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('user'), userId: z.string() }),
-    z.object({ kind: z.literal('organization'), tenantId: z.string() }),
-  ]),
 });

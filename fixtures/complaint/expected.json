@@ -1,67 +1,38 @@
 {
   "ingest": {
-    "s01": { "kind": "new", "list": "l_customer", "title": "エントランス床の濡れ残りのクレーム" },
-    "s02": { "kind": "attach", "task": "$partnerTask" },
-    "s03": { "kind": "attach", "task": "$compTask" },
-    "s04": { "kind": "new", "list": "l_customer", "title": "請求書の送付先変更" }
+    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "o01": { "thread": "new", "needsResponse": null, "by": "no_match" },
+    "o02": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
+    "s02": { "thread": "$partnerThread", "needsResponse": false, "by": "anchor" },
+    "o03": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
+    "s03": { "thread": "$compThread", "needsResponse": false, "by": "anchor" },
+    "s04": { "thread": "$compThread", "needsResponse": true, "by": "anchor" }
   },
   "checkpoints": [
-    {
-      "after": "a06",
-      "tasks": {
-        "$compTask": { "ballAt": { "kind": "list", "listId": "l_internal" }, "replyExpectedBy": "2026-10-16T11:00:00.000Z" },
-        "$intTask": { "ballAt": { "kind": "list", "listId": "l_partner" }, "replyExpectedBy": "2026-10-16T13:00:00.000Z" },
-        "$partnerTask": { "ballAt": { "kind": "party", "partyIds": ["p_cleanco"] } }
-      }
-    },
-    {
-      "after": "c01",
-      "tasks": { "$compTask": { "overdue": true }, "$intTask": { "overdue": false } },
-      "derivations": { "$drvInternal": "overdue", "$drvPartner": "sent" }
-    },
-    {
-      "after": "c02",
-      "tasks": { "$intTask": { "overdue": true } },
-      "derivations": { "$drvPartner": "overdue" }
-    },
-    {
-      "after": "s02",
-      "tasks": { "$intTask": { "overdue": false, "ballAt": { "kind": "list", "listId": "l_internal" } } },
-      "derivations": { "$drvPartner": "replied", "$drvInternal": "overdue" }
-    },
-    {
-      "after": "a11",
-      "tasks": {
-        "$compTask": { "overdue": false, "ballAt": { "kind": "party", "partyIds": ["p_tanaka"] } },
-        "$intTask": { "ballAt": { "kind": "list", "listId": "l_customer" } }
-      },
-      "derivations": { "$drvInternal": "replied", "$drvCustomer": "sent" }
-    },
-    {
-      "after": "s03",
-      "tasks": { "$compTask": { "ballAt": { "kind": "list", "listId": "l_customer" } } },
-      "derivations": { "$drvCustomer": "replied" }
-    }
+    { "after": "o01", "threads": { "$partnerThread": { "ball": { "kind": "party", "partyIds": ["p_cleanco"] } } } },
+    { "after": "o02", "threads": { "$compThread": { "ball": { "kind": "party", "partyIds": ["p_tanaka"] } } } },
+    { "after": "s02", "threads": { "$partnerThread": { "ball": { "kind": "none" } } } },
+    { "after": "s03", "threads": { "$compThread": { "ball": { "kind": "none" }, "signalCount": 4 } } },
+    { "after": "a01", "threads": { "$compThread": { "dismissed": true, "activeSinceDismissed": false } } },
+    { "after": "s04", "threads": { "$compThread": { "ball": { "kind": "none" }, "dismissed": true, "activeSinceDismissed": true, "signalCount": 5 } } }
   ],
   "final": {
-    "taskCount": 4,
-    "ignoredCount": 0,
-    "tasks": {
-      "$compTask": { "status": "closed", "attributes": { "severity": "緊急" } },
-      "$intTask": { "status": "closed", "attributes": { "status": "完了", "cause": "協力会社の作業員が乾拭きを省略" } },
-      "$partnerTask": { "status": "closed", "attributes": { "report_received": true } },
-      "$billingTask": { "status": "open", "listId": "l_customer" }
+    "threads": {
+      "$compThread": { "ball": { "kind": "none" }, "dismissed": true, "activeSinceDismissed": false, "counterpartPartyIds": ["p_tanaka"], "signalCount": 4 },
+      "$partnerThread": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_cleanco"], "signalCount": 2 },
+      "$billingThread": { "dataSourceId": "ds_support", "title": "請求書の送付先変更", "ball": { "kind": "us" }, "counterpartPartyIds": ["p_tanaka"], "signalCount": 1 }
     },
-    "derivations": { "$drvInternal": "replied", "$drvPartner": "replied", "$drvCustomer": "replied" },
-    "eventCounts": { "ReplyOverdue": 2, "DerivationApproved": 3, "DerivationSent": 2 }
+    "threadCount": 3,
+    "eventCounts": { "SignalObserved": 7, "SignalThreaded": 8, "ThreadDismissed": 1 }
   },
   "visibility": [
-    { "ghostParty": "p_tanaka" },
-    { "ghostParty": "p_cleanco" },
+    { "as": "u_suzuki", "thread": "$compThread", "access": "full", "mustContain": ["乾拭き"] },
+    { "as": "u_sato", "thread": "$billingThread", "access": "full", "mustContain": ["keiri@tanaka-bldg.example"] },
+    { "as": "u_nvt", "thread": "$compThread", "access": null },
+    { "as": "u_sato", "signals": 7 },
     { "as": "u_nvt", "signals": 0 },
-    { "as": "u_nvt", "task": "$compTask", "access": null },
-    { "as": "u_suzuki", "task": "$compTask", "access": "summary", "mustContain": ["原因調査と是正"], "mustNotContain": ["大事故になるところです"] },
-    { "as": "u_sato", "task": "$partnerTask", "access": "summary", "mustNotContain": ["時間が押していたため"] },
-    { "as": "u_suzuki", "task": "$partnerTask", "access": "full", "mustContain": ["時間が押していたため"] }
+    { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$billingThread"] },
+    { "as": "u_suzuki", "threads": { "filter": "all" }, "expect": ["$compThread", "$partnerThread", "$billingThread"] },
+    { "ghostParty": "p_tanaka" }
   ]
 }

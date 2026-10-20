@@ -1,7 +1,24 @@
 # 申し送り
 
-最終更新: 2026-10-20（ADR 0014 を採用し、計画 v2 と `CLAUDE.md` に反映した。直樹が同日レビューして「概要レベルでは納得。実装に進める」と言った）。**次はステップ 2。** 次のセッションは、まずこれと `docs/PLAN.md`（v2）、`docs/adr/0014`・`0013` を読む。
+最終更新: 2026-10-20（夜。ステップ 2「データソースのスレッド」を実装した。コアを v1 のタスク・派生からスレッド 1 種類に置き換え、4 シナリオを受信の流れで作り直した。残りは Claude の記録の取り直しだけ）。**次は `--ai record` で H6 を測り、それからステップ 3。** 次のセッションは、まずこれと `docs/PLAN.md`（v2）、`docs/adr/0014`・`0013` を読む。
+
 ## いまの状態
+
+**2026-10-20（夜）: ステップ 2 を実装した（ブランチ `ccr-fab8e92c-c9jtn1`。main にはまだ入れていない）。** 要点:
+- コア（`src/domain/`）を置き換えた。マスタは DataSource（service / notes）・List（データソース 1 つに 1 つ）・ListMember（読者）・AttributeDef（データソースに付く）。ChannelPolicy はなくした。
+  `seedProblems` が「データソース 1 つにリスト 1 つ」「個人のメモの読者は本人だけ」「個人の資格情報は読者 1 人のデータソースだけ」を検査し、シナリオの読み込みで必ず通す
+- イベントは `SignalObserved`（direction）・`SignalThreaded`（by: anchor / awaiting / no_match / ai / human / self、needsResponse）・`ThreadDismissed`（片付けと閉じるの兼用）・`ThreadReopened` の 4 つ。
+  `ThreadClaimed`・`ThreadLinked`・`ThreadAttributeSet` はステップ 3、`OutboundRecorded`・`ReplyOverdue` はステップ 4、`ThreadMirrored` はステップ 7
+- Ingest v2: 区切りは「アンカー（同じデータソースの中だけ）→ 返事待ちが 1 本だけ → 同じ相手の直近のスレッドから AI → 新しいスレッド」。受信はアンカーで決まっても AI が「返事や対応を求めているか」を判断する（mode: choose / new / fixed）。
+  観測された送信は「求めているか」を判断せず、構造で決まれば AI を呼ばない。「求めていない」は confidence 0.8 以上でだけ採用（拾いすぎに倒す。設定は `NO_RESPONSE_CONFIDENCE_THRESHOLD`、直近の本数は `RECENT_THREAD_LIMIT`、既定 5）
+- ボール（`comm.ts`）: 求める受信 → こちら、送信 → 相手、求めない受信 → 相手待ちなら「なし」、片付け → 開き直すまで「なし」。仕分け待ち = ボールがこちらで片付けていない
+- アンカーに `threadKey`（ソースが元から持つ区切り。Jira の課題キー・PR）を足した。一致すればそのスレッド、一致しなければ新しいスレッドに決まる（AI は区切らない）。`jiraKeys`・`prRefs` は区切りに使わず、ステップ 3 の結び候補に使う
+- 片付けたスレッドにアンカーでシグナルが来ても、Murmur は開き直さない。スレッドに `activeSinceDismissed` を立てて事実だけ返す（0014 の 4 を外のソースのスレッドにも当てた。complaint で確かめている）
+- v1 の派生・承認・`Connector.send`・`ReplyEstimator`・`AiSummarizer`・期限の見回り・属性は、タスクと派生に結びついていたのでコアと一緒に外した（計画ではステップ 4 で外す予定だった。計画のステップ 4 の行を直した）。
+  コネクタは取り込みだけ（`pull(source, cursor)`）。HTTP API はステップ 2 の分だけ（`/api/me`・`GET /api/threads`（filter: open / triage / all、data_source、tenant）・`GET /api/threads/:id`・`POST /api/threads/:id/dismiss`・`/reopen`・`POST /api/signals/:id/move`・`GET /api/lists/:id`）
+- 4 シナリオを受信の流れで作り直した。送信は record_sent がまだないので、メーラー・Slack・LINE の管理画面から直接送った観測された送信として書いた。absence の v1 の s02 の取り違えは「返事待ちが 1 本だけ」の規則で打診のスレッドに入る
+- 投影のテーブルは `threads`・`signals`・`dummy_queue`（データソースごと）。マイグレーションは `0001_v2_drop_v1_projections`（v1 の投影を落とす）と `0002_v2_threads`
+- テスト: `pnpm test` で 137 件が緑、1 件スキップ（H6 の Claude 再生。記録がないため）。`pnpm scenario verify all`（`--db pglite` も）は 4 本とも一致。H6 はヒント実行で 100%（構造の区切り 29/29、AI の区切り 5/5、求めているか 24/24）
 
 設計の正本はこのリポジトリ（`docs/PLAN.md` と `docs/adr/`、0011）。Google Doc は経緯の資料に格下げした。
 
@@ -32,11 +49,11 @@ H7 で absence を実環境で回したところ、リストの構成に根本�
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新 | v1 の実装（ステップ 1〜6）+ 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 1 は 2026-10-20 にレビュー済み。次はステップ 2 |
+| novshi-tech/murmur | 最新（ステップ 2 はブランチ `ccr-fab8e92c-c9jtn1`） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2（データソースのスレッド）を実装済み。H6 の記録の取り直しが残り |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
-| novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表のまま。v2 のステップ 5 で `list_threads` / `get_thread` / `add_note` / `link_threads` ほかに作り直す |
+| novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表のまま（ステップ 2 で本体の `/api/tasks` などは消えたので、表は今の本体と合っていない）。v2 のステップ 5 で作り直す |
 
-- murmur のテスト: `pnpm test` で 171 件が緑（v1 のコア）。v2 のステップ 2 からコアを置き換えるので、テストもステップごとに作り直す
+- murmur のテスト: `pnpm test` で 137 件が緑、1 件スキップ（v2 のステップ 2 のコア。v1 は 171 件だった）
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）
 - 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。v2 でも変えない
 
@@ -46,12 +63,12 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 | 仮説 | 状態 | どのステップで |
 | --- | --- | --- |
-| H1 リプレイの決定性（fold は 1 段、リンク込み） | v1 は緑。v2 は未着手 | 2〜4 |
+| H1 リプレイの決定性（fold は 1 段、リンク込み） | ステップ 2 の段（リンクなし）は緑。メモリと Postgres、1 段の検査も | 2〜4 |
 | H2 状態は属性と導出で足りる（0014 で書き直し） | 未着手 | 3 |
-| H3 境界 | 未着手 | 2（外のソース）・3（個人のメモ） |
+| H3 境界 | 外のソースの分は緑（読者・個人のメールボックス・テナント外・ゴースト・seed の整合性） | 2（外のソース）・3（個人のメモ） |
 | H4 送信の記録と持ち主の操作 | 未着手 | 3・4 |
 | H5 観測と送信の記録の重複排除（両順） | v1 は緑（送信 → 観測の順だけ）。v2 は未着手 | 4 |
-| H6 Ingest（区切り + 返事や対応を求めているか） | 未着手 | 2 |
+| H6 Ingest（区切り + 返事や対応を求めているか） | ヒント実行は緑。Claude の記録がまだない（次のセッション） | 2 |
 | H7 スタンドで完走 | v1 で absence を s02 まで回して止めた | 6 |
 | H8 構造と持ち主だけで「自分の番」が決まり、結び候補が正しく出る（0014 で書き直し） | 未着手 | 3 |
 | H9 状態の写しを持つデータソース（Jira。起票でリンクが付く） | 未着手 | 7 |
@@ -60,7 +77,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 ## 残作業（計画 v2 の実装ステップ）
 
 1. **計画の書き直し**（済み。2026-10-20 に 0014 反映まで直樹のレビューを通った）: `docs/PLAN.md` v2、`CLAUDE.md`、ADR 0008〜0014
-2. **データソースのスレッド**: DataSource、スレッド、Ingest v2（`SignalObserved` + direction）、片付け、シグナルの移し替え、記録の取り直し（H1・H3・H6）
+2. **データソースのスレッド**（実装済み。記録の取り直しと H6 の判定が残り）: DataSource、スレッド、Ingest v2（`SignalObserved` + direction）、片付け、シグナルの移し替え、記録の取り直し（H1・H3・H6）
 3. **個人のメモとリンク**（H1・H2・H8。`add_note`、「自分の番」ビューと結び候補、`ThreadLinked` / unlink、持ち主 `ThreadClaimed`、本人が付ける属性、片付けと開き直し、導出したボールとタイムライン） 4. **送信の記録**（H4・H5。派生はない） 5. **API・スキル・管理 UI** 6. **H7・H10** 7. **状態の写しを持つデータソース**（H9） 8. **振り返り**
 - 並行トラック: ステップ 2 のあと、0007 の実データでの試用（読み取り専用の Gmail を読者 1 人のデータソースとして）。前提は 0007 の 6（記録の置き場所）を決めること
 
@@ -76,11 +93,15 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 次のセッションでやること
 
-1. ステップ 2（データソースのスレッド）に入る。最初に、イベント（`SignalObserved`（direction 付き）・`SignalThreaded`・`ThreadDismissed`（片付けと閉じるの兼用。0014 の未決 1 で決定）・`ThreadReopened`。`ThreadClaimed`・`ThreadLinked`・`ThreadAttributeSet` はステップ 3、`ThreadMirrored` はステップ 7）と DataSource の zod スキーマ、
-   スレッドの投影と fold（1 段）、4 シナリオの seed（DataSource。個人のメモのデータソースも seed に入れておく）と正解ラベル（シグナルごとのスレッドと「返事や対応を求めているか」）を作る。
-   v1 のコアを置き換えるので、v1 の `Connector.send`・`ReplyEstimator`・`AiSummarizer`・承認付きの送信は、該当するステップ（4）で消す
-2. Ingest v2 のプロンプトを書いたら `--ai record` で記録を取り直す（`ANTHROPIC_API_KEY` は `dev.env` にはない。直樹に環境変数で渡してもらう）
-3. 手が空いたら、0012 の未決 2（LINE の Messaging API が自分の push を webhook で返すか）を WebSearch で確かめる。ステップ 4 までに分かっていればよい
+1. **H6 の記録を取る**: `ANTHROPIC_API_KEY=... pnpm scenario verify all --ai record`（キーは `dev.env` にない。直樹に環境変数で渡してもらう）。記録をコミットすると `pnpm test` の H6 の再生テストが動く。
+   目標は全体 90%・AI の区切り 80%。AI の区切りのラベルは 5 件しかない（repair-estimate s05、development s07、absence o02・s04・s06）ので、外れの中身を見る。
+   「求めているか」は受信 24 件。迷いそうなラベル: development s02（スクリーンショットの追加。補足は依頼の一部として true）・s04（PR の作成とレビュアー指定。true）、repair-estimate s02（見積の送付。true）、absence s03（遅刻の連絡。true で、木村が片付ける）・s05（回復の連絡。false）。
+   外れが多ければプロンプト（`INGEST_SYSTEM_PROMPT`）かラベルを見直し、`--ai rerecord` で取り直す
+2. main に入れる前に: CI が murmur-dev にデプロイするので、先に dev の DB に `DATABASE_URL=... pnpm db:migrate`（0001 で v1 の投影を落とし、0002 でスレッドのテーブルを作る）と `pnpm seed <scenario>`（イベントも空にする。v1 のイベントは v2 では読めない）を当てる。
+   wrangler の vars を `IGNORE_CONFIDENCE_THRESHOLD` から `NO_RESPONSE_CONFIDENCE_THRESHOLD` に改名した。スキルの API の表は今の本体と合わない（ステップ 5 まで、スタンドからは使えない）
+3. ステップ 3（個人のメモとリンク）に入る: `add_note`、`ThreadLinked` / unlink、`ThreadClaimed`、`ThreadAttributeSet`、「自分の番」ビューと結び候補（`jiraKeys`・`prRefs`・sent_ref）、導出したボールとタイムライン。development に DEV-12 / DEV-30 の例を足す
+4. 手が空いたら、0012 の未決 2（LINE の Messaging API が自分の push を webhook で返すか）を WebSearch で確かめる。ステップ 4 までに分かっていればよい
+5. ステップ 4 で `record_sent` の返事期待を受けるとき、v1 で直した「オフセット付きの時刻を UTC にそろえる」（`Instant`、v1 の `src/api/schemas.ts`）を戻す。派生と一緒に消えている
 
 ## H7 の absence を途中まで回して分かったこと（2026-10-17、Cowork）
 
@@ -94,6 +115,11 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 直樹に判断してもらうこと
 
+- ステップ 2 で決めた実装の細部（計画と食い違いはないと判断したが、見てほしい）:
+  1. 片付けたスレッドにアンカーで新しいシグナルが来ても開き直さず、`activeSinceDismissed` で知らせるだけにした（外のソースのスレッドにも 0014 の 4 を当てた）。仕分け待ちには出ないので、スタンドが `activeSinceDismissed` を見て開き直す運用になる
+  2. `SignalThreaded.by` に `no_match`（どの規則にも当たらず候補もない → 新しいスレッド）を足した。計画のイベントの表に書き足した
+  3. アンカーに `threadKey`（Jira の課題キー・PR。ソースが元から持つ区切り）を足し、一致しなければ AI に聞かず新しいスレッドにした。メールの In-Reply-To や Slack の thread_ts は「一致すれば続き」だけで、ないときは AI が区切る
+  4. v1 の派生・承認・送信・期限の見回り・属性を、計画より早くステップ 2 で外した（タスクと派生に結びついていて、スレッドの上に移す意味がないため）。期限の見回りはステップ 4、属性はステップ 3 で戻る
 - `docs/adr/0014` の未決 2〜5（急がない。ステップ 3 までに決まっていればよい。1 の `ThreadDismissed` の二役は「同じイベントで始める」と決めた）
 - `docs/adr/0013` の未決 3〜5（急がない。1 の単語と 2 の自動作成の範囲は 0014 で解消）
 - `docs/adr/0012` の未決 2〜5（急がない。未決 1 は 0013 で解消）

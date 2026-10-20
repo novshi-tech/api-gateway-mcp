@@ -8,6 +8,20 @@
       "when": 1792131969820,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792483640942,
+      "tag": "0001_v2_drop_v1_projections",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792483650443,
+      "tag": "0002_v2_threads",
+      "breakpoints": true
     }
   ]
 }
