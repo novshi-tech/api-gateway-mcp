@@ -1,6 +1,7 @@
 # 0012 Murmur は「人とエージェントが共有する判断の台帳」。外には何も書かない
 
-- 状態: 採用（2026-10-17、直樹と合意。計画 v2（`docs/PLAN.md`）と `CLAUDE.md` に反映した）
+- 状態: 採用（2026-10-17、直樹と合意。計画 v2（`docs/PLAN.md`）と `CLAUDE.md` に反映した）。
+  **2026-10-20: 0013 でチームリスト・購読・派生を外し、「共有の台帳」の定義文は書き直しになった（単語は直樹が練る）。未決 1 は 0013 で解消**
 - 関連: 0008（業務の知識を持たない）、0009（2 層のリスト）、0010（黒子、正は外）、0005（派生を起こすのはスタンド）、0006（ゲートウェイの拡張）、0007（実データの試用）、
   boid の計画（novshi-tech/boid の `docs/plans/`。特に `cross-project-issue-triage.md`、`ingestion-identity.md`、`card-next-step-and-timeline.md`、`card-model-cleanup.md`）
 
