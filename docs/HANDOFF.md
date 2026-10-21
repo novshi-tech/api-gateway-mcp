@@ -18,7 +18,7 @@
   コネクタは取り込みだけ（`pull(source, cursor)`）。HTTP API はステップ 2 の分だけ（`/api/me`・`GET /api/threads`（filter: open / triage / all、data_source、tenant）・`GET /api/threads/:id`・`POST /api/threads/:id/dismiss`・`/reopen`・`POST /api/signals/:id/move`・`GET /api/lists/:id`）
 - 4 シナリオを受信の流れで作り直した。送信は record_sent がまだないので、メーラー・Slack・LINE の管理画面から直接送った観測された送信として書いた。absence の v1 の s02 の取り違えは「返事待ちが 1 本だけ」の規則で打診のスレッドに入る
 - 投影のテーブルは `threads`・`signals`・`dummy_queue`（データソースごと）。マイグレーションは `0001_v2_drop_v1_projections`（v1 の投影を落とす）と `0002_v2_threads`
-- テスト: `pnpm test` で 137 件が緑、1 件スキップ（H6 の Claude 再生。記録がないため）。`pnpm scenario verify all`（`--db pglite` も）は 4 本とも一致。H6 はヒント実行で 100%（構造の区切り 29/29、AI の区切り 5/5、求めているか 24/24）
+- テスト: `pnpm test` で 139 件が全部緑（H6 の Claude 再生を含む）。`pnpm scenario verify all`（`--db pglite`・`--ai replay` も）は 4 本とも一致。H6 は再生で 35/35（構造の区切り 29/29、AI の区切り 5/5、求めているか 24/24）
 
 設計の正本はこのリポジトリ（`docs/PLAN.md` と `docs/adr/`、0011）。Google Doc は経緯の資料に格下げした。
 
@@ -49,11 +49,11 @@ H7 で absence を実環境で回したところ、リストの構成に根本�
 
 | リポジトリ | main | 内容 |
 | --- | --- | --- |
-| novshi-tech/murmur | 最新（デプロイ済み） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2（データソースのスレッド）を実装済み。H6 の記録の取り直しが残り |
+| novshi-tech/murmur | 最新（デプロイ済み） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2（データソースのスレッド）は完了（H1・H3・H6 が緑）。次はステップ 3 |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
 | novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表のまま（ステップ 2 で本体の `/api/tasks` などは消えたので、表は今の本体と合っていない）。v2 のステップ 5 で作り直す |
 
-- murmur のテスト: `pnpm test` で 137 件が緑、1 件スキップ（v2 のステップ 2 のコア。v1 は 171 件だった）
+- murmur のテスト: `pnpm test` で 139 件が全部緑（v2 のステップ 2 まで。v1 は 171 件だった）
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）
 - 構成は FC-IS（`src/domain` が純関数のコア、`test/architecture.test.ts` で検査）。v2 でも変えない
 
@@ -77,7 +77,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 ## 残作業（計画 v2 の実装ステップ）
 
 1. **計画の書き直し**（済み。2026-10-20 に 0014 反映まで直樹のレビューを通った）: `docs/PLAN.md` v2、`CLAUDE.md`、ADR 0008〜0014
-2. **データソースのスレッド**（実装済み。記録の取り直しと H6 の判定が残り）: DataSource、スレッド、Ingest v2（`SignalObserved` + direction）、片付け、シグナルの移し替え、記録の取り直し（H1・H3・H6）
+2. **データソースのスレッド**（済み。2026-10-21 に H6 まで緑）: DataSource、スレッド、Ingest v2（`SignalObserved` + direction）、片付け、シグナルの移し替え、記録の取り直し（H1・H3・H6）
 3. **個人のメモとリンク**（H1・H2・H8。`add_note`、「自分の番」ビューと結び候補、`ThreadLinked` / unlink、持ち主 `ThreadClaimed`、本人が付ける属性、片付けと開き直し、導出したボールとタイムライン） 4. **送信の記録**（H4・H5。派生はない） 5. **API・スキル・管理 UI** 6. **H7・H10** 7. **状態の写しを持つデータソース**（H9） 8. **振り返り**
 - 並行トラック: ステップ 2 のあと、0007 の実データでの試用（読み取り専用の Gmail を読者 1 人のデータソースとして）。前提は 0007 の 6（記録の置き場所）を決めること
 
