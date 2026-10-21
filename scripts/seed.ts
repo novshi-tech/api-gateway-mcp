@@ -30,6 +30,10 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e instanceof Error ? e.message : e);
+  // drizzle は Postgres のエラーを cause に包むので、原因までたどって出す（接続文字列は出さない）
+  for (let err: unknown = e; err; err = err instanceof Error ? err.cause : undefined) {
+    const code = (err as { code?: string }).code;
+    console.error(err instanceof Error ? `${err.message}${code ? ` (code ${code})` : ''}` : err);
+  }
   process.exitCode = 1;
 });
