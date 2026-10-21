@@ -64,6 +64,22 @@ describe("proxy", () => {
     expect(echoed.headers.authorization).toBeUndefined();
   });
 
+  it("sends the Serper API key in its own header", async () => {
+    const cred = await vaultFor(env, alice).add("serper", "main", { "x-api-key": "serper-key" });
+    expect("error" in cred).toBe(false);
+    const id = (cred as { id: string }).id;
+    const res = await SELF.fetch(`${BASE}/api/serper/search`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await apiToken(alice, { serper: id })}`, "content-type": "application/json" },
+      body: JSON.stringify({ q: "test", gl: "jp", hl: "ja" }),
+    });
+    expect(res.status).toBe(200);
+    const echoed = (await res.json()) as { url: string; headers: Record<string, string> };
+    expect(echoed.url).toBe("https://google.serper.dev/search");
+    expect(echoed.headers["x-api-key"]).toBe("serper-key");
+    expect(echoed.headers.authorization).toBeUndefined();
+  });
+
   it("forwards to the upstream with injected credentials", async () => {
     const cred = await addBoard(alice);
     const res = await SELF.fetch(`${BASE}/api/board/v1/clients?page=2`, {
@@ -224,7 +240,7 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board", "gbizinfo", "freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "graph", "murmur"]);
+    expect(listed.services).toEqual(["board", "gbizinfo", "serper", "freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "graph", "murmur"]);
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },

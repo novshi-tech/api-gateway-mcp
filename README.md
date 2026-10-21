@@ -63,6 +63,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
 | `google-analytics` | `analytics`・`analytics-admin` | GA4 のレポート取得、アカウントとプロパティの参照(読み取り専用) |
 | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
+| `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
 
 インストールの方法:
 
@@ -170,6 +171,10 @@ npx wrangler secret put OAUTH_ANALYTICS_ADMIN_CLIENT_SECRET
 #### gBizINFO(`gbizinfo`)
 
 gBizINFO の Web API 利用申請で API トークンを取得し、ユーザーが Web 画面で登録します。ゲートウェイは `X-hojinInfo-api-token` ヘッダーで送ります。
+
+#### Serper(`serper`)
+
+[serper.dev](https://serper.dev) のダッシュボードで API キーを発行し、ユーザーが Web 画面で登録します。ゲートウェイは `X-API-KEY` ヘッダーで送ります。ページの本文取得(`scrape.serper.dev`)はホストが別なので、このサービスでは扱いません。
 
 ## 注意
 

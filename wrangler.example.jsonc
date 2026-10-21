@@ -34,6 +34,15 @@
           "headers": [{ "name": "X-hojinInfo-api-token", "label": "gBizINFO の API トークン" }]
         }
       },
+      // Serper: the API key comes from the dashboard at serper.dev.
+      "serper": {
+        "display_name": "Serper",
+        "base_url": "https://google.serper.dev",
+        "auth": {
+          "type": "headers",
+          "headers": [{ "name": "X-API-KEY", "label": "Serper の API キー" }]
+        }
+      },
       // OAuth: register ${PUBLIC_URL}/connect/callback as the redirect URI and set
       // OAUTH_FREEE_CLIENT_ID and OAUTH_FREEE_CLIENT_SECRET with wrangler secret put.
       "freee": {
