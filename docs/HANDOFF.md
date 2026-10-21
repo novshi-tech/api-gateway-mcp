@@ -1,6 +1,6 @@
 # 申し送り
 
-最終更新: 2026-10-21（ステップ 5「API・スキル・管理 UI」の本体側を実装した。スキルの SKILL.md は `docs/stand/skill-murmur.md` に下書きし、スキルのリポへの反映が残っている）。以前: 2026-10-21（深夜。ステップ 4「送信の記録」を実装した。H4・H5 が緑。ステップ 3 と合わせて 2026-10-21 に main に反映（35f05ad、直樹の了承）。マイグレーションの追加はないので dev の DB はそのまま）。以前: 2026-10-21（夜。ステップ 3「個人のメモとリンク」。H1（リンク込み）・H2・H8 が緑）。**次はステップ 5 の残り（スキルのリポへの反映、ゲートウェイ経由で一通り呼ぶ確認、Claude の記録の取り直し）。直樹のレビュー（下の「ステップ 3 で決めた細部」「ステップ 4 で決めた細部」）も残っている。** 次のセッションは、まずこれと `docs/PLAN.md`（v2）、`docs/adr/0014`・`0013` を読む。
+最終更新: 2026-10-21（ステップ 5「API・スキル・管理 UI」の本体側を実装した。スキルは nvt-api-gateway-skills の main に反映した（c3e4c41、プラグイン 0.3.0）。本体のステップ 5 はブランチにあり、main には未反映）。以前: 2026-10-21（深夜。ステップ 4「送信の記録」を実装した。H4・H5 が緑。ステップ 3 と合わせて 2026-10-21 に main に反映（35f05ad、直樹の了承）。マイグレーションの追加はないので dev の DB はそのまま）。以前: 2026-10-21（夜。ステップ 3「個人のメモとリンク」。H1（リンク込み）・H2・H8 が緑）。**次はステップ 5 の残り（本体の main への反映、Cowork のプラグインを 0.3.0 に入れ替えてゲートウェイ経由で一通り呼ぶ確認、Claude の記録の取り直し）。直樹のレビュー（下の「ステップ 3 で決めた細部」「ステップ 4 で決めた細部」）も残っている。** 次のセッションは、まずこれと `docs/PLAN.md`（v2）、`docs/adr/0014`・`0013` を読む。
 
 ## いまの状態
 
@@ -12,7 +12,7 @@
   `/admin/threads/:id`（誰の番・結び・結び候補・属性・結んだ先のシグナルも並べたタイムライン）。`timeline.html` と同じく `TIMELINE_TOKEN` をクエリで渡した人だけ（ほかは 404）、トークンはリンクに引き回す。
   運用者は全データソースが見える（結び候補もテナントの全スレッドから出す）。`src/http/timeline.ts` は `admin.ts` に統合した
 - スキル: v2 の SKILL.md を `docs/stand/skill-murmur.md` に書いた（ツールの表、`record_sent` の入力、「送る → 記録する」を 1 つの手順に、リンクは候補を見てユーザーと決めてから張る、閉じたメモを勝手に開き直さない）。
-  **スキルのリポ（novshi-tech/nvt-api-gateway-skills）にはこのセッションから push できなかった**（リポの追加が権限で止められた）。`plugins/nvt-api-gateway/skills/murmur/SKILL.md` をこの下書きで置き換え、プラグインの版を上げる
+  2026-10-21 に、スキルのリポ（novshi-tech/nvt-api-gateway-skills）の `plugins/nvt-api-gateway/skills/murmur/SKILL.md` をこの下書きで置き換え、プラグインを 0.3.0 に上げて main に push した（c3e4c41。README の説明も直した。スキルのリポのテストは 22 件緑）。record_sent の anchors の例に `quoted_message_id` を足し、下書きもそろえた
 - `docs/stand/connect.md` の確認手順（list_my_tasks → list_threads）と管理画面の入口、`CLAUDE.md` の構成と公開ルートを直した
 - テスト: `pnpm test` で 180 件が全部緑。`pnpm scenario verify all` は 4 本とも一致。スキーマは変わらない（マイグレーション不要）
 - 残り（ステップ 5 の完了条件「ゲートウェイ経由で一通り呼べる」）: スキルを反映し、main に入れて murmur-dev にデプロイしたあと、Cowork か Claude Code から一通り呼ぶ（seed を入れて Webhook で受信を流す）。そのあと Claude の記録の取り直し（下の「次のセッションでやること」4）
@@ -93,7 +93,7 @@ H7 で absence を実環境で回したところ、リストの構成に根本�
 | --- | --- | --- |
 | novshi-tech/murmur | ステップ 2 まで（デプロイ済み） | v1 の実装 + 実環境の接続 + 計画 v2（0014 反映済み）。v2 のステップ 2 は main。ステップ 3（H1・H2・H8 が緑）はブランチ `ccr-fab8e92c-c9jtn1` |
 | novshi-tech/api-gateway-mcp | f6fa0ed（デプロイ済み） | 認証方式 `identity`（ユーザー ID を Ed25519 で署名して `Authorization: Bearer`）、`binding`（Service Binding 中継）、`/.well-known/jwks.json` |
-| novshi-tech/nvt-api-gateway-skills | 84d9fec | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.2.0）。v1 の API の表のまま（ステップ 2 で本体の `/api/tasks` などは消えたので、表は今の本体と合っていない）。v2 の版は murmur の `docs/stand/skill-murmur.md` にあり、反映待ち |
+| novshi-tech/nvt-api-gateway-skills | c3e4c41 | スタンド用スキル `murmur`（プラグイン `nvt-api-gateway` 0.3.0）。v2 の API（スレッド・メモ・リンク・持ち主・record_sent）の表。本体のステップ 5（`/lists`・`since`）が main に入るまでは、その 2 つは murmur-dev で使えない。Cowork のプラグインの入れ替えは直樹 |
 
 - murmur のテスト: `pnpm test` で 180 件が全部緑（v2 のステップ 5 の本体側まで。v1 は 171 件だった）
 - 3 リポとも、プロトタイプの間は main に直接 push する運用（直樹の指示）

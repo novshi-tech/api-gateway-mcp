@@ -66,7 +66,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
   "subject": "Re: エントランスの床について",
   "body": "送った本文",
   "sent_ref": "<20261016.0925@ubs.example>",
-  "anchors": { "in_reply_to": "<...>", "thread_ts": "...", "thread_key": "NVT-42", "jira_keys": ["NVT-42"], "pr_refs": [] },
+  "anchors": { "in_reply_to": "<...>", "thread_ts": "...", "quoted_message_id": "...", "thread_key": "NVT-42", "jira_keys": ["NVT-42"], "pr_refs": [] },
   "reply_to_thread_id": "thr_2",
   "source_thread_id": "thr_5",
   "reply_expected_by": "2026-10-16T17:00:00+09:00"

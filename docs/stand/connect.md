@@ -31,7 +31,7 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
 
 3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
 4. スタンド用スキルは nvt-api-gateway-skills のプラグイン `nvt-api-gateway` に入っている。api-gateway プラグインと一緒にインストールする。
-   v2（スレッドとリンク）の版の SKILL.md は `docs/stand/skill-murmur.md`。スキルのリポの `plugins/nvt-api-gateway/skills/murmur/SKILL.md` をこれで置き換える
+   v2（スレッドとリンク）の版はプラグイン 0.3.0（スキルのリポの c3e4c41）。下書きの `docs/stand/skill-murmur.md` と同じ内容
 
 ## 本体の準備
 
