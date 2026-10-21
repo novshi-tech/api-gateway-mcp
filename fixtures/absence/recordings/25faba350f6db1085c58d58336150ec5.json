@@ -1,0 +1,63 @@
+{
+  "key": "25faba350f6db1085c58d58336150ec5",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたは連絡の索引の Ingest 判断係です。\nデータソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。\n何をすべきか、誰が担当するかは判断しません。\n\n1. スレッドの区切り（mode が choose のときだけ）\n   候補のスレッドのどれかと同じ話題の続きなら thread を \"existing\" にして、その thread_id を選ぶ。\n   別の話題なら thread を \"new\" にして、短い件名を title に書く。\n   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。\n2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）\n   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。\n   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。\n   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。\n\nmode が new のとき: スレッドは新しく作られる。thread を \"new\"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。\nmode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。\n\nconfidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。",
+    "user": "{\n  \"mode\": \"choose\",\n  \"data_source\": {\n    \"name\": \"LINE 公式アカウント @ubs-clean\",\n    \"description\": \"清掃スタッフとの 1:1 のやりとり（勤怠の連絡、代務の打診など）\",\n    \"channel\": \"line\",\n    \"group\": false\n  },\n  \"signal\": {\n    \"direction\": \"received\",\n    \"from\": \"U_yamamoto\",\n    \"to\": [\n      \"@ubs-clean\"\n    ],\n    \"subject\": null,\n    \"body\": \"それと、3階の倉庫の洗剤がなくなりそうなので、補充をお願いできますか。\",\n    \"attachments\": []\n  },\n  \"candidates\": [\n    {\n      \"thread_id\": \"thr_2\",\n      \"title\": \"山本さん 明日(17日)朝シフトの欠勤連絡（発熱）\",\n      \"recent\": [\n        {\n          \"at\": \"2026-10-16T20:00:00.000Z\",\n          \"direction\": \"inbound\",\n          \"from\": \"U_yamamoto\",\n          \"excerpt\": \"木村さん、すみません。熱が出てしまったので、明日（17日）の朝のシフトを休ませてください。\"\n        },\n        {\n          \"at\": \"2026-10-16T20:12:00.000Z\",\n          \"direction\": \"outbound\",\n          \"from\": \"@ubs-clean\",\n          \"excerpt\": \"了解しました。お大事にしてください。代わりの人を探します。\"\n        },\n        {\n          \"at\": \"2026-10-17T18:30:00.000Z\",\n          \"direction\": \"inbound\",\n          \"from\": \"U_yamamoto\",\n          \"excerpt\": \"熱が下がりました。ご迷惑をおかけしました。明日からは出られます。\"\n        }\n      ]\n    }\n  ]\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "existing",
+                "new"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "thread",
+        "thread_id",
+        "title",
+        "needs_response",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"3階倉庫の洗剤補充のお願い\",\"needs_response\":true,\"reason\":\"候補スレッドは山本さんの発熱による欠勤連絡という勤怠の話題。今回は「それと」で始まるが、3階倉庫の洗剤の補充依頼で話題が別なので new にした。補充を「お願いできますか」と依頼しており、こちらの対応・返事を求めているため needs_response は true。\",\"confidence\":0.85}"
+}

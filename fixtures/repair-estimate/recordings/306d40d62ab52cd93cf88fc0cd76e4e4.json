@@ -1,0 +1,63 @@
+{
+  "key": "306d40d62ab52cd93cf88fc0cd76e4e4",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたは連絡の索引の Ingest 判断係です。\nデータソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。\n何をすべきか、誰が担当するかは判断しません。\n\n1. スレッドの区切り（mode が choose のときだけ）\n   候補のスレッドのどれかと同じ話題の続きなら thread を \"existing\" にして、その thread_id を選ぶ。\n   別の話題なら thread を \"new\" にして、短い件名を title に書く。\n   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。\n2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）\n   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。\n   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。\n   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。\n\nmode が new のとき: スレッドは新しく作られる。thread を \"new\"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。\nmode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。\n\nconfidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。",
+    "user": "{\n  \"mode\": \"choose\",\n  \"data_source\": {\n    \"name\": \"support@（組織のメールボックス）\",\n    \"description\": \"顧客からの問い合わせの窓口\",\n    \"channel\": \"email\",\n    \"group\": false\n  },\n  \"signal\": {\n    \"direction\": \"received\",\n    \"from\": \"takahashi@grandmaison.example\",\n    \"to\": [\n      \"support@ubs.example\"\n    ],\n    \"subject\": \"駐車場の照明について\",\n    \"body\": \"別件ですみません。駐車場の奥の照明が2本切れています。交換をお願いできますか。\",\n    \"attachments\": []\n  },\n  \"candidates\": [\n    {\n      \"thread_id\": \"thr_2\",\n      \"title\": \"302号室 天井の雨漏り（グランメゾン管理組合）\",\n      \"recent\": [\n        {\n          \"at\": \"2026-10-16T09:20:00.000Z\",\n          \"direction\": \"outbound\",\n          \"from\": \"support@ubs.example\",\n          \"excerpt\": \"高橋様\\nご連絡ありがとうございます。協力会社に現地調査を依頼し、お見積りとあわせてご連絡いたします。\"\n        },\n        {\n          \"at\": \"2026-10-17T16:00:00.000Z\",\n          \"direction\": \"outbound\",\n          \"from\": \"support@ubs.example\",\n          \"excerpt\": \"高橋様\\n302号室の雨漏りは屋上防水の劣化が原因でした。修繕費用は税込 385,000 円です。お見積書を添付いたします。ご検討をお願いいたします。\"\n        },\n        {\n          \"at\": \"2026-10-20T10:00:00.000Z\",\n          \"direction\": \"inbound\",\n          \"from\": \"takahashi@grandmaison.example\",\n          \"excerpt\": \"お見積りありがとうございます。理事会で承認されましたので、この内容で発注します。工事の日程をご連絡ください。\"\n        }\n      ]\n    }\n  ]\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "existing",
+                "new"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "thread",
+        "thread_id",
+        "title",
+        "needs_response",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"駐車場の照明交換依頼（グランメゾン）\",\"needs_response\":true,\"reason\":\"同じ高橋様からだが、本文で「別件」と明記されており、駐車場奥の照明2本の交換依頼は302号室の雨漏りとは別の話題のため新規スレッドにした。照明交換を依頼し「お願いできますか」と対応を求めているので返事・対応が必要と判断した。\",\"confidence\":0.95}"
+}
