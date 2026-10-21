@@ -226,26 +226,28 @@ describe('finalizeIngest（AI 出力の検証）', () => {
 
   it('H6 候補にないスレッドを選んだら新しいスレッドに倒し、理由に残す', () => {
     const req = { ...capture(), mode: 'choose' as const, threading: { kind: 'choose' as const, candidates: [] }, candidates: [] };
-    const r = finalizeIngest(ctx, req, answer({ thread: 'existing', thread_id: 'thr_x', title: '件名' }), 'ai', DEFAULT_POLICY);
+    const r = finalizeIngest(ctx, req, answer({ thread: 'existing', thread_id: 'thr_x', title: '件名' }), 'ai');
     expect(r.outcome).toMatchObject({ newThread: true, by: 'ai' });
     const e = r.events[0]!;
     expect(e.type === 'SignalThreaded' && e.payload).toMatchObject({ thread: { kind: 'new', title: '件名' } });
     expect(e.type === 'SignalThreaded' && e.payload.reason).toMatch(/候補外/);
   });
 
-  it('H6 「求めていない」は confidence が閾値以上のときだけ採用する（拾いすぎに倒す）', () => {
+  it('H6 「求めているか」は confidence に関係なく答えをそのまま使い、答えがなければ「求めている」に倒す', () => {
     const req = capture();
-    const low = finalizeIngest(ctx, req, answer({ needs_response: false, confidence: 0.6 }), 'ai', DEFAULT_POLICY);
-    expect(low.outcome.needsResponse).toBe(true);
+    const low = finalizeIngest(ctx, req, answer({ needs_response: false, confidence: 0.3 }), 'ai');
+    expect(low.outcome.needsResponse).toBe(false);
     const e = low.events[0]!;
-    expect(e.type === 'SignalThreaded' && e.payload.reason).toMatch(/閾値 0.8 未満/);
-    expect(finalizeIngest(ctx, req, answer({ needs_response: false, confidence: 0.85 }), 'ai', DEFAULT_POLICY).outcome.needsResponse).toBe(false);
-    expect(finalizeIngest(ctx, req, answer({ needs_response: null }), 'ai', DEFAULT_POLICY).outcome.needsResponse).toBe(true);
+    expect(e.type === 'SignalThreaded' && e.payload.confidence).toBe(0.3);
+    expect(finalizeIngest(ctx, req, answer({ needs_response: true, confidence: 0.3 }), 'ai').outcome.needsResponse).toBe(true);
+    const none = finalizeIngest(ctx, req, answer({ needs_response: null }), 'ai');
+    expect(none.outcome.needsResponse).toBe(true);
+    expect(none.events[0]!.type === 'SignalThreaded' && none.events[0]!.payload.reason).toMatch(/判断がない/);
   });
 
   it('H6 件名は AI の title、なければ件名か本文の先頭', () => {
     const req = capture();
-    const r = finalizeIngest(ctx, req, answer({ title: '  ' }), 'ai', DEFAULT_POLICY);
+    const r = finalizeIngest(ctx, req, answer({ title: '  ' }), 'ai');
     const e = r.events[0]!;
     expect(e.type === 'SignalThreaded' && e.payload.thread).toMatchObject({ kind: 'new', title: '本文' });
   });

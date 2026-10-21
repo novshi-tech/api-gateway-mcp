@@ -4,7 +4,7 @@
     "o01": { "thread": "new", "needsResponse": null, "by": "no_match" },
     "o02": { "thread": "$absA", "needsResponse": null },
     "s02": { "thread": "$subThread", "needsResponse": false, "by": "awaiting" },
-    "s03": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "s03": { "thread": "new", "needsResponse": false, "by": "no_match" },
     "s04": { "thread": "$lateB", "needsResponse": false },
     "s05": { "thread": "$absA", "needsResponse": false, "by": "awaiting" },
     "s06": { "thread": "new", "needsResponse": true, "title": "3階倉庫の洗剤の補充" }
@@ -14,7 +14,7 @@
     { "after": "o01", "threads": { "$subThread": { "ball": { "kind": "party", "partyIds": ["p_ito"] } } } },
     { "after": "o02", "threads": { "$absA": { "ball": { "kind": "party", "partyIds": ["p_yamamoto"] }, "unansweredSince": null } } },
     { "after": "s02", "threads": { "$subThread": { "ball": { "kind": "none" }, "signalCount": 2 }, "$absA": { "signalCount": 2 } } },
-    { "after": "s04", "threads": { "$lateB": { "ball": { "kind": "us" }, "signalCount": 2, "unansweredSince": "2026-10-17T06:10:00.000Z" } } },
+    { "after": "s04", "threads": { "$lateB": { "ball": { "kind": "none" }, "signalCount": 2, "unansweredSince": null } } },
     { "after": "a01", "threads": { "$lateB": { "ball": { "kind": "none" }, "dismissed": true } } }
   ],
   "final": {

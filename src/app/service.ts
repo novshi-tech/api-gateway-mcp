@@ -134,7 +134,7 @@ export class MurmurService {
       if (plan.kind === 'decided') decided = plan;
       else {
         const { raw, by } = await this.deps.decider.decide(plan.request);
-        decided = finalizeIngest(ctx, plan.request, raw, by, this.deps.policy);
+        decided = finalizeIngest(ctx, plan.request, raw, by);
       }
       return {
         events: [sigEvent, ...decided.events],

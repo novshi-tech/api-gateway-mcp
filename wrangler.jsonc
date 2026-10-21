@@ -11,7 +11,6 @@
   "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
     "CLAUDE_MODEL": "claude-sonnet-5-5",
-    "NO_RESPONSE_CONFIDENCE_THRESHOLD": "0.8",
     "IDENTITY_AUDIENCE": "murmur"
     // GATEWAY_JWKS はゲートウェイの <PUBLIC_URL>/.well-known/jwks.json の中身、IDENTITY_ISSUER はゲートウェイの PUBLIC_URL。
     // 秘密ではないが env ごとに違うので env 側で設定する
@@ -25,7 +24,6 @@
       "preview_urls": false,
       "vars": {
         "CLAUDE_MODEL": "claude-sonnet-5-5",
-        "NO_RESPONSE_CONFIDENCE_THRESHOLD": "0.8",
         "IDENTITY_AUDIENCE": "murmur",
         "IDENTITY_ISSUER": "https://api-gateway-mcp.nose-0d2.workers.dev",
         "GATEWAY_JWKS": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"MiS4fsNuFhRhzlIQVbAX3623EaYblKi4uXkaeAPBhrw\",\"kid\":\"KNBlv8ntIyJzelvRChDnIPMD9d1Eavr1BoXeJE7gYq0\",\"alg\":\"EdDSA\",\"use\":\"sig\"}]}"
@@ -36,7 +34,6 @@
       "name": "murmur",
       "vars": {
         "CLAUDE_MODEL": "claude-sonnet-5-5",
-        "NO_RESPONSE_CONFIDENCE_THRESHOLD": "0.8",
         "IDENTITY_AUDIENCE": "murmur",
         "IDENTITY_ISSUER": "",
         "GATEWAY_JWKS": ""

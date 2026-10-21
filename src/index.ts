@@ -18,8 +18,6 @@ export interface Env {
   WEBHOOK_SECRET: string;
   TIMELINE_TOKEN?: string;
   CLAUDE_MODEL: string;
-  /** 「返事や対応を求めていない」を採用する confidence の下限 */
-  NO_RESPONSE_CONFIDENCE_THRESHOLD: string;
   /** 区切りの AI 判断に渡す直近のスレッドの本数 */
   RECENT_THREAD_LIMIT?: string;
   IDENTITY_AUDIENCE: string;
@@ -47,7 +45,6 @@ function build(env: Env): { service: MurmurService; close: () => Promise<void> }
     decider: new AiDecider(llm, env.CLAUDE_MODEL),
     connectors,
     policy: {
-      noResponseThreshold: Number(env.NO_RESPONSE_CONFIDENCE_THRESHOLD),
       recentThreadLimit: Number(env.RECENT_THREAD_LIMIT ?? DEFAULT_POLICY.recentThreadLimit),
     },
   });

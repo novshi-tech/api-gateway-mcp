@@ -199,7 +199,7 @@ export function ingestPure(
   const withSignal = fold([{ ...sig, tenantId: log.tenantId, seq: p.lastSeq + 1, at: ctx.now } as DomainEvent], p);
   const plan = planIngest(withSignal, ctx, prepared.dataSource, prepared.payload, policy);
   const decided =
-    plan.kind === 'decided' ? plan : finalizeIngest(ctx, plan.request, decide(plan.request), 'ai', policy);
+    plan.kind === 'decided' ? plan : finalizeIngest(ctx, plan.request, decide(plan.request), 'ai');
   const events = log.push([sig, ...decided.events], ctx.now);
   return {
     duplicate: false,

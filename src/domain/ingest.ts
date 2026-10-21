@@ -71,14 +71,16 @@ export function signalEvent(payload: SignalPayload): DraftEvent {
   return draft('SignalObserved', payload);
 }
 
+/**
+ * 「返事や対応を求めているか」は Claude の答えをそのまま使う（confidence は監査用に残すだけ）。
+ * 閾値で「求めている」に倒すと挙動が読めなくなるので入れない（2026-10-21 直樹）
+ */
 export interface IngestPolicy {
-  /** 「求めていない」をこの confidence 以上のときだけ採用する。未満なら拾いすぎに倒して「求めている」にする */
-  noResponseThreshold: number;
   /** 区切りの AI 判断に渡す「直近のスレッド」の本数 */
   recentThreadLimit: number;
 }
 
-export const DEFAULT_POLICY: IngestPolicy = { noResponseThreshold: 0.8, recentThreadLimit: 5 };
+export const DEFAULT_POLICY: IngestPolicy = { recentThreadLimit: 5 };
 
 // ---- 区切り（上から順に） ----
 
@@ -285,14 +287,13 @@ export type AiIngestDecision = z.infer<typeof AiIngestDecision>;
 /**
  * Decider の出力を検証して SignalThreaded にする。
  * - 候補にないスレッドを選んだら新しいスレッドに倒す
- * - 「求めていない」は confidence が閾値以上のときだけ採用する（拾いすぎに倒す）
+ * - 「求めているか」は答えをそのまま使う。答えがなければ「求めている」に倒す
  */
 export function finalizeIngest(
   ctx: CoreContext,
   request: IngestRequest,
   raw: AiIngestDecision,
   decidedBy: 'ai' | 'human',
-  policy: IngestPolicy,
 ): { events: DraftEvent[]; outcome: IngestOutcome } {
   const sig = request.signal;
   const th = request.threading;
@@ -322,12 +323,7 @@ export function finalizeIngest(
   let needsResponse: boolean | null = null;
   if (sig.direction === 'inbound') {
     needsResponse = raw.needs_response !== false;
-    if (raw.needs_response === false && raw.confidence < policy.noResponseThreshold) {
-      needsResponse = true;
-      notes.push(`[「求めていない」の confidence ${raw.confidence} が閾値 ${policy.noResponseThreshold} 未満のため「求めている」]`);
-    } else if (raw.needs_response === null) {
-      notes.push('[「求めているか」の判断がないため「求めている」]');
-    }
+    if (raw.needs_response === null) notes.push('[「求めているか」の判断がないため「求めている」]');
   }
   const reason = [...notes, raw.reason.trim()].filter((x) => x).join(' ') || '(理由なし)';
   return {
