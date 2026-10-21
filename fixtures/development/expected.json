@@ -10,38 +10,84 @@
     "s07": { "thread": "new", "needsResponse": false, "title": "main のパイプライン #881 成功" },
     "s08": { "thread": "new", "needsResponse": false, "by": "anchor" },
     "o02": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
-    "s09": { "thread": "$clientThread", "needsResponse": false, "by": "anchor" }
+    "s09": { "thread": "$clientThread", "needsResponse": false, "by": "anchor" },
+    "o03": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" }
   },
   "checkpoints": [
+    {
+      "after": "s01",
+      "threads": {},
+      "views": [
+        { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$clientThread"] },
+        { "as": "u_nose", "thread": "$clientThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_nose"], "by": "reader" } } }
+      ]
+    },
     { "after": "s02", "threads": { "$clientThread": { "ball": { "kind": "us" }, "signalCount": 2 } } },
     { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } },
-    { "after": "s04", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
+    {
+      "after": "s04",
+      "threads": { "$prThread": { "ball": { "kind": "us" } } },
+      "views": [
+        { "as": "u_nose", "thread": "$issueThread", "access": "full", "candidates": ["$prThread"] },
+        { "as": "u_kato", "thread": "$prThread", "access": "full", "candidates": ["$issueThread"] }
+      ]
+    },
     { "after": "s05", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
     { "after": "s06", "threads": { "$issueThread": { "ball": { "kind": "none" }, "signalCount": 2 } } },
-    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } }
+    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } },
+    {
+      "after": "o03",
+      "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] }, "links": {} } },
+      "views": [{ "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$issueThread", "$prThread", "$docThread"] }]
+    },
+    {
+      "after": "a03",
+      "threads": { "$issueThread": { "links": { "$clientThread": "anchor", "$prThread": "anchor" } } },
+      "views": [
+        { "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$prThread", "$docThread"] },
+        { "as": "u_nose", "thread": "$issueThread", "access": "full", "candidates": [] },
+        { "as": "u_kato", "thread": "$issueThread", "access": "full", "candidates": [], "mustContain": ["$clientThread"], "mustNotContain": ["500 エラーが出ます"] }
+      ]
+    }
   ],
   "final": {
     "threads": {
-      "$clientThread": { "dataSourceId": "ds_slack_client", "ball": { "kind": "none" }, "counterpartPartyIds": ["p_mori"], "signalCount": 5, "unansweredSince": null },
-      "$issueThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "counterpartPartyIds": ["p_jira"], "signalCount": 2 },
-      "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2 },
+      "$clientThread": {
+        "dataSourceId": "ds_slack_client",
+        "ball": { "kind": "party", "partyIds": ["p_mori"] },
+        "counterpartPartyIds": ["p_mori"],
+        "signalCount": 6,
+        "unansweredSince": null,
+        "links": { "$issueThread": "anchor" }
+      },
+      "$issueThread": {
+        "dataSourceId": "ds_jira",
+        "ball": { "kind": "none" },
+        "counterpartPartyIds": ["p_jira"],
+        "signalCount": 2,
+        "links": { "$clientThread": "anchor", "$prThread": "anchor" }
+      },
+      "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2, "links": { "$issueThread": "anchor" } },
       "$pipelineThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "signalCount": 1 },
-      "$docThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "signalCount": 1 }
+      "$docThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "signalCount": 1, "links": {} }
     },
     "threadCount": 5,
-    "eventCounts": { "SignalObserved": 11, "SignalThreaded": 11, "ThreadDismissed": 1 }
+    "eventCounts": { "SignalObserved": 12, "SignalThreaded": 12, "ThreadDismissed": 1, "ThreadLinked": 2 }
   },
   "visibility": [
     { "as": "u_nose", "thread": "$clientThread", "access": "full", "mustContain": ["500 エラー", "screenshot.png"] },
     { "as": "u_kato", "thread": "$clientThread", "access": null },
     { "as": "u_kato", "thread": "$issueThread", "access": "full", "mustContain": ["NVT-42"] },
     { "as": "u_ubs_only", "thread": "$issueThread", "access": null },
-    { "as": "u_nose", "signals": 11 },
+    { "as": "u_nose", "signals": 12 },
     { "as": "u_kato", "signals": 6 },
     { "as": "u_ubs_only", "signals": 0 },
     { "as": "u_kato", "threads": { "filter": "open" }, "expect": ["$issueThread", "$pipelineThread", "$docThread"] },
     { "as": "u_nose", "threads": { "filter": "triage" }, "expect": [] },
     { "as": "u_nose", "threads": { "filter": "all", "dataSource": "ds_bitbucket" }, "expect": ["$prThread", "$pipelineThread"] },
-    { "ghostParty": "p_mori" }
+    { "ghostParty": "p_mori" },
+    { "as": "u_nose", "thread": "$docThread", "access": "full", "candidates": ["$clientThread"] },
+    { "as": "u_kato", "thread": "$docThread", "access": "full", "candidates": [] },
+    { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": [] }
   ]
 }

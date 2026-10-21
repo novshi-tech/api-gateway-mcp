@@ -1,14 +1,25 @@
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
-import type { Projections, SignalRecord, Thread } from './projections';
+import type { AttributeValue } from './events';
+import { sortLog } from './comm';
+import type { Projections, SignalRecord, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import { derivedBall, isMyTurn, linkCandidates, linkedActiveSinceDismissed, turnOf, type DerivedBall, type LinkCandidate, type Turn } from './turn';
 import { canReadDataSource, membership, type Viewer } from './viewer';
 
 // クエリ層の可視性。投影のスナップショットと Viewer から「見えるもの」だけを返す純関数。
 // - リストの読者には、そのデータソースのスレッドの生の中身が見える。個人のメモは本人だけ
+// - 持ち主とリンク（結び先の id）はスレッドの側にあるので、スレッドが見える人に見える。結び先の中身はその先の可視性に従う
 // - テナント外は 0 件、ゴースト Party は Viewer になれない
 
-/** ステップ 2 で実装する分。my_turn・mine はステップ 3、overdue はステップ 4 */
-export type ThreadFilter = 'open' | 'triage' | 'all';
+/**
+ * - my_turn: Viewer の番（持ち主・読者が 1 人・宛先）で、片付けていないもの
+ * - mine: Viewer の個人のメモのスレッド（閉じたものも）
+ * - open: 片付けていないもの
+ * - triage: 仕分け待ち（こちらで、誰の番かが決まらず、片付けていない）
+ * - all: 全部
+ * overdue はステップ 4
+ */
+export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'triage' | 'all';
 
 export interface ThreadSummary {
   id: string;
@@ -23,8 +34,20 @@ export interface ThreadSummary {
   dismissed: boolean;
   dismissReason: string | null;
   activeSinceDismissed: boolean;
+  ownerUserId: string | null;
+  links: ThreadLink[];
+  attributes: Record<string, AttributeValue>;
   signalCount: number;
   updatedAt: string;
+}
+
+/** 一覧と詳細で返すスレッド。投影の要約に、クエリ層で導出したもの（誰の番か・リンク先から導出したボール・結び候補）を足す */
+export interface ThreadItem extends ThreadSummary {
+  turn: Turn;
+  derivedBall: DerivedBall | null;
+  /** 閉じたスレッドに結ばれた先で、閉じたあとにシグナルが来た */
+  linkedActiveSinceDismissed: boolean;
+  linkCandidates: LinkCandidate[];
 }
 
 export function summarizeThread(t: Thread): ThreadSummary {
@@ -41,24 +64,38 @@ export function summarizeThread(t: Thread): ThreadSummary {
     dismissed: t.dismissed,
     dismissReason: t.dismissReason,
     activeSinceDismissed: t.activeSinceDismissed,
+    ownerUserId: t.ownerUserId,
+    links: t.links,
+    attributes: t.attributes,
     signalCount: t.signalIds.length,
     updatedAt: t.updatedAt,
   };
 }
 
-/** 仕分け待ち: ボールが「こちら」で、片付けていないスレッド（持ち主はステップ 3 で足す） */
-export function isTriage(t: Thread): boolean {
-  return t.ball.kind === 'us' && !t.dismissed;
+export function threadItem(dir: Directory, viewer: Viewer, p: Projections, t: Thread): ThreadItem {
+  return {
+    ...summarizeThread(t),
+    turn: turnOf(dir, p, t),
+    derivedBall: derivedBall(dir, viewer, p, t),
+    linkedActiveSinceDismissed: linkedActiveSinceDismissed(viewer, p, t),
+    linkCandidates: linkCandidates(viewer, p, t),
+  };
+}
+
+/** 仕分け待ち: こちら（組織）で、持ち主も構造で決まる人もなく、片付けていないスレッド */
+export function isTriage(dir: Directory, p: Projections, t: Thread): boolean {
+  return !t.dismissed && turnOf(dir, p, t).kind === 'triage';
 }
 
 /** User 横断の見えるスレッド。各テナントの Party を束ねて返す */
 export function listThreads(
+  dir: Directory,
   viewer: Viewer,
   projections: readonly Projections[],
   opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string } = {},
-): ThreadSummary[] {
+): ThreadItem[] {
   const filter = opts.filter ?? 'open';
-  const out: ThreadSummary[] = [];
+  const out: ThreadItem[] = [];
   for (const p of projections) {
     if (opts.tenantId && p.tenantId !== opts.tenantId) continue;
     const m = membership(viewer, p.tenantId);
@@ -67,8 +104,13 @@ export function listThreads(
       if (!m.dataSourceIds.includes(t.dataSourceId)) continue;
       if (opts.dataSourceId && t.dataSourceId !== opts.dataSourceId) continue;
       if (filter === 'open' && t.dismissed) continue;
-      if (filter === 'triage' && !isTriage(t)) continue;
-      out.push(summarizeThread(t));
+      if (filter === 'triage' && !isTriage(dir, p, t)) continue;
+      if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
+      if (filter === 'mine') {
+        const ds = dir.dataSource(t.dataSourceId);
+        if (ds?.kind !== 'notes' || ds.ownerPartyId !== m.partyId) continue;
+      }
+      out.push(threadItem(dir, viewer, p, t));
     }
   }
   return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1));
@@ -96,26 +138,80 @@ function signalView(s: SignalRecord): SignalView {
   };
 }
 
-export interface ThreadView {
-  thread: ThreadSummary;
-  dataSource: { id: string; name: string; kind: DataSource['kind']; channel: string };
-  /** 時刻順のシグナルと片付け */
-  log: { at: string; kind: Thread['log'][number]['kind']; signal?: SignalView; reason?: string }[];
+export interface TimelineEntry {
+  at: string;
+  /** どのスレッドに綴じたものか（このスレッドか、結んだ先のスレッド） */
+  threadId: string;
+  kind: ThreadLogEntry['kind'];
+  signal?: SignalView;
+  reason?: string;
+  actorUserId?: string;
+  userId?: string | null;
+  otherThreadId?: string;
+  route?: ThreadLogEntry['route'];
+  name?: string;
+  value?: AttributeValue | null;
 }
 
-export function getThreadView(dir: Directory, viewer: Viewer, p: Projections, threadId: string): ThreadView | null {
+/** 結んだ先の見え方。見えない先は id と経路だけ（中身はその先の可視性に従う） */
+export interface LinkView extends ThreadLink {
+  visible: boolean;
+  title?: string;
+  dataSourceId?: string;
+  turn?: Turn;
+  dismissed?: boolean;
+}
+
+export interface ThreadView {
+  thread: ThreadItem;
+  dataSource: { id: string; name: string; kind: DataSource['kind']; channel: string };
+  linked: LinkView[];
+  /**
+   * 時刻順のタイムライン: このスレッドに綴じたもの（シグナル・メモ・操作）と、結んだ先のうち見えるスレッドのシグナル。
+   * since を渡せば、それより後のものだけ
+   */
+  timeline: TimelineEntry[];
+}
+
+export function getThreadView(
+  dir: Directory,
+  viewer: Viewer,
+  p: Projections,
+  threadId: string,
+  opts: { since?: string } = {},
+): ThreadView | null {
   const t = p.threads[threadId];
   if (!t || !canReadDataSource(viewer, p.tenantId, t.dataSourceId)) return null;
   const ds = dir.dataSource(t.dataSourceId);
+  const linked: LinkView[] = t.links.map((l) => {
+    const u = p.threads[l.threadId];
+    if (!u || !canReadDataSource(viewer, p.tenantId, u.dataSourceId)) return { ...l, visible: false };
+    return { ...l, visible: true, title: u.title, dataSourceId: u.dataSourceId, turn: turnOf(dir, p, u), dismissed: u.dismissed };
+  });
+  const entries: (ThreadLogEntry & { threadId: string })[] = t.log.map((l) => ({ ...l, threadId: t.id }));
+  for (const l of linked) {
+    if (!l.visible) continue;
+    for (const e of p.threads[l.threadId]!.log) if (e.kind === 'signal' || e.kind === 'note') entries.push({ ...e, threadId: l.threadId });
+  }
+  const timeline = sortLog(entries)
+    .filter((e) => opts.since === undefined || e.at > opts.since)
+    .map((e) => {
+      const entry: TimelineEntry = { at: e.at, threadId: e.threadId, kind: e.kind };
+      if (e.signalId) entry.signal = signalView(p.signals[e.signalId]!);
+      if (e.reason !== undefined) entry.reason = e.reason;
+      if (e.actorUserId !== undefined) entry.actorUserId = e.actorUserId;
+      if (e.userId !== undefined) entry.userId = e.userId;
+      if (e.otherThreadId !== undefined) entry.otherThreadId = e.otherThreadId;
+      if (e.route !== undefined) entry.route = e.route;
+      if (e.name !== undefined) entry.name = e.name;
+      if (e.value !== undefined) entry.value = e.value;
+      return entry;
+    });
   return {
-    thread: summarizeThread(t),
+    thread: threadItem(dir, viewer, p, t),
     dataSource: { id: t.dataSourceId, name: ds?.name ?? t.dataSourceId, kind: ds?.kind ?? 'service', channel: ds?.kind === 'service' ? ds.channel : 'note' },
-    log: t.log.map((l) => ({
-      at: l.at,
-      kind: l.kind,
-      signal: l.signalId ? signalView(p.signals[l.signalId]!) : undefined,
-      reason: l.reason,
-    })),
+    linked,
+    timeline,
   };
 }
 

@@ -11,15 +11,25 @@
     "s06": { "duplicate": true }
   },
   "checkpoints": [
-    { "after": "s01", "threads": { "$custThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-16T09:00:00.000Z" } } },
+    {
+      "after": "s01",
+      "threads": { "$custThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-16T09:00:00.000Z" } },
+      "views": [{ "as": "u_sato", "threads": { "filter": "my_turn" }, "expect": [] }, { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$custThread"] }]
+    },
     {
       "after": "o01",
-      "threads": {
-        "$custThread": { "ball": { "kind": "party", "partyIds": ["p_takahashi"] }, "lastOutboundAt": "2026-10-16T09:20:00.000Z", "unansweredSince": null }
-      }
+      "threads": { "$custThread": { "ball": { "kind": "party", "partyIds": ["p_takahashi"] }, "lastOutboundAt": "2026-10-16T09:20:00.000Z", "unansweredSince": null } }
     },
     { "after": "o02", "threads": { "$partnerThread": { "ball": { "kind": "party", "partyIds": ["p_yamada"] }, "dataSourceId": "ds_suzuki_mail" } } },
-    { "after": "s02", "threads": { "$partnerThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-17T15:00:00.000Z" } } },
+    {
+      "after": "s02",
+      "threads": { "$partnerThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-17T15:00:00.000Z" } },
+      "views": [
+        { "as": "u_suzuki", "threads": { "filter": "my_turn" }, "expect": ["$partnerThread"] },
+        { "as": "u_suzuki", "thread": "$partnerThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_suzuki"], "by": "reader" } } },
+        { "as": "u_sato", "threads": { "filter": "my_turn" }, "expect": [] }
+      ]
+    },
     { "after": "o03", "threads": { "$custThread": { "ball": { "kind": "party", "partyIds": ["p_takahashi"] } } } },
     { "after": "s03", "threads": { "$custThread": { "ball": { "kind": "us" } } } }
   ],

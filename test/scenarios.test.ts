@@ -67,7 +67,7 @@ describe.each(names)('シナリオ %s', (name) => {
 
 /**
  * そのスレッドに関わるイベントか。そのスレッドに一度でも入ったシグナルの置き先の判断は全部残し、
- * そのシグナルが一時的に置かれた他のスレッドは、作った判断だけ残す（移し替えの元として存在が要るため）
+ * そのシグナルが一時的に置かれた他のスレッドと、結んだ相手のスレッドは、作った判断だけ残す（移し替えの元・リンクの端として存在が要るため）
  */
 function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]): boolean {
   const threadedOf = (signalId: string) =>
@@ -75,7 +75,10 @@ function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]):
   const ours = new Set(
     all.flatMap((x) => (x.type === 'SignalThreaded' && x.payload.thread.threadId === threadId ? [x.payload.signalId] : [])),
   );
-  const visited = new Set([...ours].flatMap((id) => threadedOf(id).map((x) => x.payload.thread.threadId)));
+  const partners = all.flatMap((x) =>
+    x.type === 'ThreadLinked' && (x.payload.a === threadId || x.payload.b === threadId) ? [x.payload.a, x.payload.b] : [],
+  );
+  const visited = new Set([...[...ours].flatMap((id) => threadedOf(id).map((x) => x.payload.thread.threadId)), ...partners]);
   switch (e.type) {
     case 'SignalObserved':
       return true; // シグナルの観測は置き先を決める前提（索引）なので全部残す
@@ -83,7 +86,11 @@ function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]):
       return ours.has(e.payload.signalId) || (e.payload.thread.kind === 'new' && visited.has(e.payload.thread.threadId));
     case 'ThreadDismissed':
     case 'ThreadReopened':
+    case 'ThreadClaimed':
+    case 'ThreadAttributeSet':
       return e.payload.threadId === threadId;
+    case 'ThreadLinked':
+      return e.payload.a === threadId || e.payload.b === threadId;
   }
 }
 

@@ -5,7 +5,8 @@ import { emptyProjections, indexKey, type Projections, type SignalRecord, type T
 /**
  * 畳み込み。IO を持たない純関数で、入力の state は変更しない。
  * `fold(events)` でいつでも投影をイベントから作り直せる（H1）。
- * fold は 1 段（0014）: スレッドの投影はそのスレッドのイベントだけから決まり、他のスレッドの状態は読まない。
+ * fold は 1 段（0014）: スレッドの投影はそのスレッドのイベントとリンクのイベントだけから決まり、
+ * リンク先の状態は読まない（リンク先と合わせるのはクエリ層）。
  */
 export function fold(events: readonly DomainEvent[], base?: Projections): Projections {
   const first = events[0];
@@ -35,10 +36,54 @@ function apply(s: Projections, e: DomainEvent): void {
         at: e.at,
         kind: e.type === 'ThreadDismissed' ? 'dismissed' : 'reopened',
         reason: e.payload.reason,
+        actorUserId: e.payload.actorUserId,
       });
       recompute(s, t, e.at);
       return;
     }
+    case 'ThreadClaimed': {
+      const t = mustThread(s, e.payload.threadId);
+      t.log.push({ seq: e.seq, at: e.at, kind: 'claimed', userId: e.payload.userId, actorUserId: e.payload.actorUserId, reason: e.payload.reason });
+      recompute(s, t, e.at);
+      return;
+    }
+    case 'ThreadLinked':
+      return onLinked(s, e, e.payload);
+    case 'ThreadAttributeSet': {
+      const p = e.payload;
+      const t = mustThread(s, p.threadId);
+      if (p.value === null) delete t.attributes[p.name];
+      else t.attributes[p.name] = p.value;
+      t.log.push({ seq: e.seq, at: e.at, kind: 'attribute', name: p.name, value: p.value, actorUserId: p.actorUserId });
+      recompute(s, t, e.at);
+      return;
+    }
+  }
+}
+
+/** 無向の辺を両端に載せる（外すときは両端から外す） */
+function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>): void {
+  if (p.a === p.b) throw new FoldError(`thread ${p.a} cannot link to itself`);
+  const ends: [Thread, string][] = [
+    [mustThread(s, p.a), p.b],
+    [mustThread(s, p.b), p.a],
+  ];
+  for (const [t, other] of ends) {
+    t.links = t.links.filter((l) => l.threadId !== other);
+    if (p.op === 'link') {
+      t.links.push({ threadId: other, route: p.route, linkedAt: e.at, actorUserId: p.actorUserId });
+      t.links.sort((x, y) => (x.threadId < y.threadId ? -1 : x.threadId > y.threadId ? 1 : 0));
+    }
+    t.log.push({
+      seq: e.seq,
+      at: e.at,
+      kind: p.op === 'link' ? 'linked' : 'unlinked',
+      otherThreadId: other,
+      route: p.route,
+      actorUserId: p.actorUserId,
+      reason: p.reason,
+    });
+    recompute(s, t, e.at);
   }
 }
 
@@ -96,7 +141,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
   t.log.push({
     seq: sig.seq,
     at: sig.at,
-    kind: 'signal',
+    kind: sig.channel === 'note' ? 'note' : 'signal',
     signalId: sig.signalId,
     direction: sig.direction,
     needsResponse: sig.needsResponse,
@@ -107,7 +152,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
 
 function recompute(s: Projections, t: Thread, at: string): void {
   t.log = sortLog(t.log);
-  t.signalIds = t.log.filter((l) => l.kind === 'signal').map((l) => l.signalId!);
+  t.signalIds = t.log.filter((l) => l.kind === 'signal' || l.kind === 'note').map((l) => l.signalId!);
   Object.assign(t, deriveComm(t.log));
   const parties = new Set<string>();
   for (const id of t.signalIds) {
@@ -128,6 +173,8 @@ function newThread(tenantId: string, id: string, dataSourceId: string, title: st
     counterpartPartyIds: [],
     signalIds: [],
     log: [],
+    links: [],
+    attributes: {},
     createdAt: at,
     updatedAt: at,
     ...deriveComm([]),

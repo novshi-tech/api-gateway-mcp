@@ -97,7 +97,7 @@ describe('HTTP API', () => {
     const threads = (await call('GET', '/api/threads?filter=triage', 'u_alice')).body as { id: string }[];
     expect(threads).toHaveLength(1);
     const threadId = threads[0]!.id;
-    expect((await call('GET', `/api/threads/${threadId}`, 'u_alice')).body.log).toHaveLength(2);
+    expect((await call('GET', `/api/threads/${threadId}`, 'u_alice')).body.timeline).toHaveLength(2);
     expect((await call('GET', `/api/threads/${threadId}`, 'u_eve')).status).toBe(404);
     expect((await call('GET', '/api/threads?data_source=ds_alice', 'u_alice')).body).toEqual([]);
 
@@ -115,6 +115,47 @@ describe('HTTP API', () => {
 
     expect((await call('GET', '/api/lists/l_support', 'u_alice')).body.dataSource.name).toBe('support@');
     expect((await call('GET', '/api/lists/l_alice', 'u_bob')).status).toBe(404);
+  });
+
+  it('H8 メモ・持ち主・リンク・属性・自分の番・タイムラインの since の一通り', async () => {
+    const { call, service, clock } = await app();
+    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const threadId = r1.status === 'threaded' ? r1.threadId : '';
+    expect((await call('GET', '/api/threads?filter=triage', 'u_bob')).body).toHaveLength(1);
+
+    const claimed = await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { reason: '自分で持つ' });
+    expect(claimed.body.thread).toMatchObject({ ownerUserId: 'u_alice', ball: { kind: 'user', userId: 'u_alice' }, turn: { kind: 'user', userIds: ['u_alice'], by: 'owner' } });
+    expect((await call('GET', '/api/threads?filter=triage', 'u_bob')).body).toEqual([]);
+    expect((await call('GET', '/api/threads?filter=my_turn', 'u_alice')).body.map((t: { id: string }) => t.id)).toEqual([threadId]);
+    expect((await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { user_id: 'u_eve' })).status).toBe(400);
+    const handed = await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { user_id: 'u_bob', reason: '引き継ぎ' });
+    expect(handed.body.thread.ownerUserId).toBe('u_bob');
+
+    clock.set('2026-10-16T10:00:00.000Z');
+    const note = await call('POST', '/api/notes', 'u_alice', { body: 'Carol さんの雨漏りの件\n電話で状況を聞いた' });
+    expect(note.body.thread).toMatchObject({ title: 'Carol さんの雨漏りの件', dataSourceId: 'ds_notes_alice', signalCount: 1 });
+    const noteId = note.body.thread.id as string;
+    expect((await call('POST', '/api/notes', 'u_bob', { thread_id: noteId, body: 'x' })).status).toBe(404);
+    const more = await call('POST', '/api/notes', 'u_alice', { thread_id: noteId, body: '見積を依頼する' });
+    expect(more.body.thread.signalCount).toBe(2);
+    expect((await call('GET', '/api/threads?filter=mine', 'u_alice')).body.map((t: { id: string }) => t.id)).toEqual([noteId]);
+
+    const linked = await call('POST', `/api/threads/${noteId}/links`, 'u_alice', { thread_id: threadId, reason: 'この件の問い合わせ' });
+    expect(linked.body.thread.links).toMatchObject([{ threadId, route: 'manual' }]);
+    expect(linked.body.timeline.map((e: { threadId: string }) => e.threadId)).toContain(threadId);
+    // Bob には辺は見えるが、メモのスレッドの中身は見えない
+    const bobView = await call('GET', `/api/threads/${threadId}`, 'u_bob');
+    expect(bobView.body.linked).toEqual([expect.objectContaining({ threadId: noteId, visible: false })]);
+    expect(JSON.stringify(bobView.body)).not.toContain('電話で状況');
+
+    const attr = await call('POST', `/api/threads/${noteId}/attributes`, 'u_alice', { name: 'status', value: 'todo' });
+    expect(attr.body.thread.attributes).toEqual({ status: 'todo' });
+    expect((await call('POST', `/api/threads/${noteId}/attributes`, 'u_alice', { name: 'status', value: 'later' })).status).toBe(400);
+    const since = await call('GET', `/api/threads/${noteId}?since=2026-10-16T09:30:00.000Z`, 'u_alice');
+    expect(since.body.timeline.every((e: { at: string }) => e.at > '2026-10-16T09:30:00.000Z')).toBe(true);
+
+    const unlinked = await call('POST', `/api/threads/${noteId}/unlink`, 'u_alice', { thread_id: threadId });
+    expect(unlinked.body.thread.links).toEqual([]);
   });
 
   it('入力の検証エラーは 400', async () => {

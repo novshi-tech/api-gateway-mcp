@@ -1,8 +1,11 @@
 import type { CoreContext } from './context';
+import type { Directory } from './directory';
+import type { AttributeDef, DataSource } from './entities';
 import { DomainError } from './errors';
-import { draft, type DraftEvent, type ThreadChoice } from './events';
+import { AttributeValue, draft, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
-import { canReadDataSource, type Viewer } from './viewer';
+import { linkCandidates } from './turn';
+import { canReadDataSource, membership, type Viewer } from './viewer';
 
 // スタンド（＝ユーザー）が呼ぶ操作の判断部分。状態とコマンドを受けてイベントを返すだけの純関数。
 // 操作できるのは、スレッドが見えている人（そのデータソースの読者）。
@@ -87,4 +90,179 @@ export function moveSignal(
       }),
     ],
   };
+}
+
+// ---- 個人のメモ（0014 の 2） ----
+
+/** Viewer のそのテナントでの個人のメモのデータソース */
+export function notesDataSourceOf(dir: Directory, viewer: Viewer, tenantId: string): Extract<DataSource, { kind: 'notes' }> | undefined {
+  const m = membership(viewer, tenantId);
+  if (!m) return undefined;
+  return dir
+    .dataSourcesOfTenant(tenantId)
+    .find((d): d is Extract<DataSource, { kind: 'notes' }> => d.kind === 'notes' && d.ownerPartyId === m.partyId && m.dataSourceIds.includes(d.id));
+}
+
+/**
+ * 個人のメモのデータソースへの SignalObserved（from は本人）と、置き先の SignalThreaded（by: self）。
+ * threadId を渡せば既存のメモのスレッドに足し、渡さなければ新しいスレッド（「この件」）を作る。
+ * 件名は title、なければ本文の最初の行（0014 の未決 2）
+ */
+export function addNote(
+  p: Projections,
+  viewer: Viewer,
+  ctx: CoreContext,
+  input: { threadId?: string; title?: string; body: string },
+): { events: DraftEvent[]; threadId: string; signalId: string } {
+  if (!input.body.trim()) throw new DomainError('invalid', 'body is required');
+  const ds = notesDataSourceOf(ctx.dir, viewer, p.tenantId);
+  if (!ds) throw new DomainError('not_found', `notes of ${viewer.userId} in tenant ${p.tenantId} not found`);
+
+  let choice: ThreadChoice;
+  if (input.threadId !== undefined) {
+    const t = visibleThreadOrThrow(p, viewer, input.threadId);
+    if (t.dataSourceId !== ds.id) throw new DomainError('invalid', `thread ${t.id} is not in your notes`);
+    if (input.title !== undefined) throw new DomainError('invalid', 'title is only for a new thread');
+    choice = { kind: 'existing', threadId: t.id };
+  } else {
+    const title = input.title?.trim() || firstLine(input.body);
+    choice = { kind: 'new', threadId: ctx.newId('thr'), title };
+  }
+  const signalId = ctx.newId('sig');
+  const self = { channel: 'note' as const, value: ds.ownerPartyId };
+  return {
+    threadId: choice.threadId,
+    signalId,
+    events: [
+      draft('SignalObserved', {
+        signalId,
+        dataSourceId: ds.id,
+        direction: 'outbound',
+        channel: 'note',
+        from: self,
+        to: [],
+        fromPartyId: ds.ownerPartyId,
+        toPartyIds: [],
+        body: input.body,
+        sourceRef: `note:${signalId}`,
+      }),
+      draft('SignalThreaded', {
+        signalId,
+        thread: choice,
+        by: 'self',
+        confidence: 1,
+        reason: choice.kind === 'new' ? '本人が新しい件として書いた' : '本人が置き先を指定した',
+        needsResponse: null,
+        actorUserId: viewer.userId,
+      }),
+    ],
+  };
+}
+
+function firstLine(body: string): string {
+  const line = body.trim().split('\n')[0]!.trim();
+  return line.length > 40 ? `${line.slice(0, 40)}…` : line;
+}
+
+// ---- 持ち主（ThreadClaimed） ----
+
+/**
+ * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Party）だけ。
+ * 個人のメモのスレッドは持ち主を持たない（本人のもの。ボールはリンク先から導出する）
+ */
+export function claimThread(
+  p: Projections,
+  viewer: Viewer,
+  dir: Directory,
+  input: { threadId: string; userId: string | null; reason?: string },
+): DraftEvent[] {
+  const t = visibleThreadOrThrow(p, viewer, input.threadId);
+  const ds = dir.dataSource(t.dataSourceId);
+  if (ds?.kind === 'notes') throw new DomainError('invalid', 'a notes thread has no owner');
+  if (input.userId !== null) {
+    const list = dir.listOfDataSource(t.dataSourceId);
+    const readers = list ? dir.readersOfList(list.id) : [];
+    if (!readers.some((r) => r.userId === input.userId)) {
+      throw new DomainError('invalid', `user ${input.userId} is not a reader of data source ${t.dataSourceId}`);
+    }
+  }
+  if (t.ownerUserId === input.userId) return [];
+  return [draft('ThreadClaimed', { threadId: t.id, userId: input.userId, actorUserId: viewer.userId, reason: input.reason })];
+}
+
+// ---- リンク（ThreadLinked） ----
+
+/**
+ * スレッドを結ぶ。両端とも見えている必要がある。経路は、結び候補（アンカーの一致）から張れば anchor、
+ * そうでなければ manual（sent は record_sent の副作用だけ）。結び済みなら何もしない
+ */
+export function linkThreads(
+  p: Projections,
+  viewer: Viewer,
+  input: { threadId: string; otherThreadId: string; reason?: string },
+): DraftEvent[] {
+  const a = visibleThreadOrThrow(p, viewer, input.threadId);
+  const b = visibleThreadOrThrow(p, viewer, input.otherThreadId);
+  if (a.id === b.id) throw new DomainError('invalid', 'cannot link a thread to itself');
+  if (a.links.some((l) => l.threadId === b.id)) return [];
+  const route = linkCandidates(viewer, p, a).some((c) => c.threadId === b.id) ? 'anchor' : 'manual';
+  return [draft('ThreadLinked', { a: a.id, b: b.id, op: 'link', route, actorUserId: viewer.userId, reason: input.reason })];
+}
+
+/** リンクを外す。外す側のスレッドが見えていればよい（相手の中身が見えなくても、辺は見えている） */
+export function unlinkThreads(
+  p: Projections,
+  viewer: Viewer,
+  input: { threadId: string; otherThreadId: string; reason?: string },
+): DraftEvent[] {
+  const a = visibleThreadOrThrow(p, viewer, input.threadId);
+  const link = a.links.find((l) => l.threadId === input.otherThreadId);
+  if (!link) return [];
+  return [draft('ThreadLinked', { a: a.id, b: link.threadId, op: 'unlink', route: link.route, actorUserId: viewer.userId, reason: input.reason })];
+}
+
+// ---- 本人が付ける属性（ThreadAttributeSet） ----
+
+/** 定義（AttributeDef）はスレッドのデータソースに付く。型を確かめる。value が null なら外す */
+export function setAttribute(
+  p: Projections,
+  viewer: Viewer,
+  dir: Directory,
+  input: { threadId: string; name: string; value: unknown },
+): DraftEvent[] {
+  const t = visibleThreadOrThrow(p, viewer, input.threadId);
+  const def = dir.attributeDefs(t.dataSourceId).find((d) => d.name === input.name);
+  if (!def) throw new DomainError('invalid', `attribute ${input.name} is not defined for data source ${t.dataSourceId}`);
+  const value = input.value === null ? null : checkAttribute(dir, p.tenantId, def, input.value);
+  if ((t.attributes[def.name] ?? null) === value) return [];
+  return [draft('ThreadAttributeSet', { threadId: t.id, name: def.name, value, actorUserId: viewer.userId })];
+}
+
+function checkAttribute(dir: Directory, tenantId: string, def: AttributeDef, raw: unknown): AttributeValue {
+  const bad = (why: string) => new DomainError('invalid', `attribute ${def.name} (${def.type}): ${why}`);
+  const parsed = AttributeValue.safeParse(raw);
+  if (!parsed.success) throw bad('value must be a string, number or boolean');
+  const v = parsed.data;
+  switch (def.type) {
+    case 'string':
+      if (typeof v !== 'string') throw bad('not a string');
+      return v;
+    case 'number':
+      if (typeof v !== 'number' || !Number.isFinite(v)) throw bad('not a number');
+      return v;
+    case 'boolean':
+      if (typeof v !== 'boolean') throw bad('not a boolean');
+      return v;
+    case 'date':
+      if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2}))?$/.test(v)) throw bad('not a date (YYYY-MM-DD)');
+      return v;
+    case 'enum':
+      if (typeof v !== 'string' || !(def.options ?? []).includes(v)) throw bad(`not one of ${(def.options ?? []).join(', ')}`);
+      return v;
+    case 'party': {
+      const party = typeof v === 'string' ? dir.party(v) : undefined;
+      if (!party || party.tenantId !== tenantId) throw bad('unknown party');
+      return v;
+    }
+  }
 }

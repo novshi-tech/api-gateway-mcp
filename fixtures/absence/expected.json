@@ -11,26 +11,39 @@
   },
   "checkpoints": [
     { "after": "s01", "threads": { "$absA": { "ball": { "kind": "us" } } } },
+    {
+      "after": "a00",
+      "threads": { "$absA": { "ball": { "kind": "user", "userId": "u_kimura" }, "ownerUserId": "u_kimura" } },
+      "views": [{ "as": "u_kimura", "threads": { "filter": "my_turn" }, "expect": ["$absA"] }, { "as": "u_kimura", "threads": { "filter": "triage" }, "expect": [] }]
+    },
     { "after": "o01", "threads": { "$subThread": { "ball": { "kind": "party", "partyIds": ["p_ito"] } } } },
     { "after": "o02", "threads": { "$absA": { "ball": { "kind": "party", "partyIds": ["p_yamamoto"] }, "unansweredSince": null } } },
     { "after": "s02", "threads": { "$subThread": { "ball": { "kind": "none" }, "signalCount": 2 }, "$absA": { "signalCount": 2 } } },
+    {
+      "after": "a02",
+      "threads": { "$absA": { "links": { "$subThread": "manual" } }, "$subThread": { "links": { "$absA": "manual" } } },
+      "views": [{ "as": "u_kimura", "thread": "$absA", "access": "full", "mustContain": ["大丈夫です、入れます"], "item": { "derivedBall": { "kind": "none" } } }]
+    },
     { "after": "s04", "threads": { "$lateB": { "ball": { "kind": "none" }, "signalCount": 2, "unansweredSince": null } } },
     { "after": "a01", "threads": { "$lateB": { "ball": { "kind": "none" }, "dismissed": true } } }
   ],
   "final": {
     "threads": {
-      "$absA": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 3 },
-      "$subThread": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_ito"], "signalCount": 2 },
+      "$absA": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 3, "ownerUserId": "u_kimura", "links": { "$subThread": "manual" } },
+      "$subThread": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_ito"], "signalCount": 2, "ownerUserId": null, "links": { "$absA": "manual" } },
       "$lateB": { "ball": { "kind": "none" }, "dismissed": true, "activeSinceDismissed": false, "counterpartPartyIds": ["p_sasaki"], "signalCount": 2 },
-      "$supplyThread": { "ball": { "kind": "us" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 1 }
+      "$supplyThread": { "ball": { "kind": "us" }, "counterpartPartyIds": ["p_yamamoto"], "signalCount": 1, "ownerUserId": null }
     },
     "threadCount": 4,
-    "eventCounts": { "SignalObserved": 8, "SignalThreaded": 8, "ThreadDismissed": 1 }
+    "eventCounts": { "SignalObserved": 8, "SignalThreaded": 8, "ThreadDismissed": 1, "ThreadClaimed": 1, "ThreadLinked": 1 }
   },
   "visibility": [
     { "as": "u_kimura", "thread": "$absA", "access": "full", "mustContain": ["熱が出て", "お大事に"] },
     { "as": "u_kimura", "signals": 8 },
-    { "as": "u_kimura", "threads": { "filter": "triage" }, "expect": ["$supplyThread"] },
+    { "as": "u_kimura", "threads": { "filter": "triage" }, "expect": [] },
+    { "as": "u_kimura", "threads": { "filter": "my_turn" }, "expect": ["$supplyThread"] },
+    { "as": "u_kimura", "thread": "$supplyThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kimura"], "by": "reader" } } },
+    { "as": "u_kimura", "threads": { "filter": "mine" }, "expect": [] },
     { "as": "u_kimura", "threads": { "filter": "open" }, "expect": ["$absA", "$subThread", "$supplyThread"] },
     { "ghostParty": "p_yamamoto" },
     { "ghostParty": "p_ito" }

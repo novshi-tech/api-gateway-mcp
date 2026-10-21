@@ -2,7 +2,18 @@ import { Hono, type Context } from 'hono';
 import { ZodError } from 'zod';
 import { DomainError } from '../domain';
 import type { MurmurService } from '../app/service';
-import { DismissBody, InboundSignalBody, ListThreadsQuery, MoveSignalBody, ReopenBody } from '../api/schemas';
+import {
+  AddNoteBody,
+  ClaimBody,
+  DismissBody,
+  GetThreadQuery,
+  InboundSignalBody,
+  LinkBody,
+  ListThreadsQuery,
+  MoveSignalBody,
+  ReopenBody,
+  SetAttributeBody,
+} from '../api/schemas';
 import { bearerToken } from '../auth/claims';
 import { renderTimeline } from './timeline';
 
@@ -65,7 +76,36 @@ export function createApp(opts: HttpOptions) {
     return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, tenantId: q.tenant, dataSourceId: q.data_source }));
   });
 
-  api.get('/threads/:id', async (c) => c.json(await c.var.service.getThread(c.var.userId, c.req.param('id'))));
+  api.get('/threads/:id', async (c) => {
+    const q = GetThreadQuery.parse(c.req.query());
+    return c.json(await c.var.service.getThread(c.var.userId, c.req.param('id'), { since: q.since }));
+  });
+
+  api.post('/notes', async (c) => {
+    const b = AddNoteBody.parse(await json(c));
+    return c.json(await c.var.service.addNote(c.var.userId, { threadId: b.thread_id, title: b.title, body: b.body, tenantId: b.tenant }));
+  });
+
+  api.post('/threads/:id/claim', async (c) => {
+    const b = ClaimBody.parse(await json(c));
+    const userId = b.user_id === undefined ? c.var.userId : b.user_id;
+    return c.json(await c.var.service.claimThread(c.var.userId, { threadId: c.req.param('id'), userId, reason: b.reason }));
+  });
+
+  api.post('/threads/:id/links', async (c) => {
+    const b = LinkBody.parse(await json(c));
+    return c.json(await c.var.service.linkThreads(c.var.userId, { threadId: c.req.param('id'), otherThreadId: b.thread_id, reason: b.reason }));
+  });
+
+  api.post('/threads/:id/unlink', async (c) => {
+    const b = LinkBody.parse(await json(c));
+    return c.json(await c.var.service.unlinkThreads(c.var.userId, { threadId: c.req.param('id'), otherThreadId: b.thread_id, reason: b.reason }));
+  });
+
+  api.post('/threads/:id/attributes', async (c) => {
+    const b = SetAttributeBody.parse(await json(c));
+    return c.json(await c.var.service.setAttribute(c.var.userId, { threadId: c.req.param('id'), name: b.name, value: b.value ?? null }));
+  });
 
   api.post('/threads/:id/dismiss', async (c) => {
     const b = DismissBody.parse(await json(c));

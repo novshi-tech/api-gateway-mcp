@@ -8,14 +8,40 @@ const esc = (s: unknown) =>
 export function renderTimeline(dir: Directory, p: Projections): string {
   const dsName = (id: string) => dir.dataSource(id)?.name ?? id;
   const partyName = (id: string) => dir.party(id)?.name ?? id;
+  const userName = (id: string) => dir.seed.users.find((u) => u.id === id)?.name ?? id;
   const ball = (b: Thread['ball']) =>
-    b.kind === 'us' ? 'こちら' : b.kind === 'party' ? `相手: ${b.partyIds.map((id) => esc(partyName(id))).join(', ') || '(不明)'}` : 'なし';
+    b.kind === 'us'
+      ? 'こちら'
+      : b.kind === 'user'
+        ? `持ち主: ${esc(userName(b.userId))}`
+        : b.kind === 'party'
+          ? `相手: ${b.partyIds.map((id) => esc(partyName(id))).join(', ') || '(不明)'}`
+          : 'なし';
+
+  const op = (l: Thread['log'][number]): string => {
+    switch (l.kind) {
+      case 'dismissed':
+        return `片付け ${esc(l.reason ?? '')}`;
+      case 'reopened':
+        return `開き直し ${esc(l.reason ?? '')}`;
+      case 'claimed':
+        return l.userId ? `持ち主 → ${esc(userName(l.userId))} ${esc(l.reason ?? '')}` : `手放した ${esc(l.reason ?? '')}`;
+      case 'linked':
+      case 'unlinked':
+        return `${l.kind === 'linked' ? '結んだ' : '外した'} ${esc(p.threads[l.otherThreadId!]?.title ?? l.otherThreadId)} [${esc(l.route)}] ${esc(l.reason ?? '')}`;
+      case 'attribute':
+        return `属性 ${esc(l.name)} = ${esc(l.value === null ? '(外した)' : l.value)}`;
+      default:
+        return '';
+    }
+  };
 
   const entry = (l: Thread['log'][number]) => {
-    if (l.kind !== 'signal') {
-      return `<li><time>${esc(l.at)}</time> <span class="k ${l.kind}">${l.kind === 'dismissed' ? '片付け' : '開き直し'}</span> ${esc(l.reason ?? '')}</li>`;
+    if (l.kind !== 'signal' && l.kind !== 'note') {
+      return `<li><time>${esc(l.at)}</time> <span class="k ${l.kind}">${l.kind}</span> ${op(l)}</li>`;
     }
     const s = p.signals[l.signalId!];
+    if (l.kind === 'note') return `<li><time>${esc(l.at)}</time> <span class="k note">メモ</span> ${esc(s?.body.slice(0, 140))}</li>`;
     const nr = s?.needsResponse === true ? ' · 求めている' : s?.needsResponse === false ? ' · 求めていない' : '';
     return `<li><time>${esc(l.at)}</time> <span class="k ${esc(s?.direction)}">${s?.direction === 'inbound' ? '受信' : '送信'}</span> ${esc(s?.from.value)}: ${esc(s?.subject ?? '')} — ${esc(s?.body.slice(0, 140))} <small>[${esc(s?.threadedBy)}${nr}]</small></li>`;
   };
@@ -27,7 +53,7 @@ export function renderTimeline(dir: Directory, p: Projections): string {
     .map(
       (t) => `<section class="thread${t.dismissed ? ' dismissed' : ''}">
   <h2>${esc(t.title)} <small>${esc(t.id)} · ${esc(dsName(t.dataSourceId))}${t.dismissed ? ` · 片付け済み（${esc(t.dismissReason)}）` : ''}</small></h2>
-  <p class="comm">ボール: ${ball(t.ball)}${t.unansweredSince ? ` · 未応答 ${esc(t.unansweredSince)}〜` : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}</p>
+  <p class="comm">ボール: ${ball(t.ball)}${t.unansweredSince ? ` · 未応答 ${esc(t.unansweredSince)}〜` : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(p.threads[l.threadId]?.title ?? l.threadId)).join(', ')}` : ''}</p>
   <ol>${t.log.map(entry).join('')}</ol>
 </section>`,
     )

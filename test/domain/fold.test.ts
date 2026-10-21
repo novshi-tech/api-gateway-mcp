@@ -153,4 +153,67 @@ describe('fold', () => {
     const other = { ...observed('s9', { dataSourceId: 'ds_alice', sourceRef: 'x' }), tenantId: 'ubs', seq: 3, at: T0 } as DomainEvent;
     expect(() => fold([...log.events, other, { ...into('s9', 't1'), tenantId: 'ubs', seq: 4, at: T0 } as DomainEvent])).toThrow(/cannot go into/);
   });
+
+  it('H1 個人のメモ: SignalObserved（channel note）+ SignalThreaded（by self）。ボールは動かず、シグナルとして並ぶ', () => {
+    const log = new EventLog();
+    log.push([note('n1'), draft('SignalThreaded', { signalId: 'n1', thread: { kind: 'new', threadId: 'm1', title: '雨漏りの件' }, by: 'self', confidence: 1, reason: 'r', needsResponse: null })], T0);
+    log.push([note('n2'), draft('SignalThreaded', { signalId: 'n2', thread: { kind: 'existing', threadId: 'm1' }, by: 'self', confidence: 1, reason: 'r', needsResponse: null })], T1);
+    const t = log.state().threads.m1!;
+    expect(t).toMatchObject({ dataSourceId: 'ds_notes_alice', ball: { kind: 'none' }, signalIds: ['n1', 'n2'], counterpartPartyIds: [], lastOutboundAt: null });
+    expect(t.log.map((l) => l.kind)).toEqual(['note', 'note']);
+  });
+
+  it('H4 ThreadClaimed: 持つ・引き継ぐ・手放すでボールと持ち主が変わり、ログに残る', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([draft('ThreadClaimed', { threadId: 't1', userId: 'u_alice', actorUserId: 'u_alice', reason: '持つ' })], T1);
+    expect(log.state().threads.t1).toMatchObject({ ownerUserId: 'u_alice', ball: { kind: 'user', userId: 'u_alice' } });
+    log.push([draft('ThreadClaimed', { threadId: 't1', userId: null, actorUserId: 'u_alice' })], T2);
+    expect(log.state().threads.t1).toMatchObject({ ownerUserId: null, ball: { kind: 'us' } });
+    expect(log.state().threads.t1!.log.map((l) => [l.kind, l.userId])).toEqual([['signal', undefined], ['claimed', 'u_alice'], ['claimed', null]]);
+  });
+
+  it('H1 ThreadLinked は無向: 1 つのイベントが両端に同じ辺を載せ、unlink で両端から外れる。リンク先の状態は読まない', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([note('n1'), draft('SignalThreaded', { signalId: 'n1', thread: { kind: 'new', threadId: 'm1', title: '件' }, by: 'self', confidence: 1, reason: 'r', needsResponse: null })], T0);
+    log.push([draft('ThreadLinked', { a: 'm1', b: 't1', route: 'manual', actorUserId: 'u_alice', reason: 'この件' })], T1);
+    let p = log.state();
+    const edge = { route: 'manual', linkedAt: T1, actorUserId: 'u_alice' };
+    expect(p.threads.m1!.links).toEqual([{ threadId: 't1', ...edge }]);
+    expect(p.threads.t1!.links).toEqual([{ threadId: 'm1', ...edge }]);
+    // リンクしてもボールはそれぞれのまま
+    expect(p.threads.m1!.ball).toEqual({ kind: 'none' });
+    expect(p.threads.t1!.ball).toEqual({ kind: 'us' });
+    log.push([draft('ThreadLinked', { a: 't1', b: 'm1', op: 'unlink', route: 'manual', actorUserId: 'u_alice' })], T2);
+    p = log.state();
+    expect(p.threads.m1!.links).toEqual([]);
+    expect(p.threads.t1!.links).toEqual([]);
+    expect(p.threads.t1!.log.map((l) => l.kind)).toEqual(['signal', 'linked', 'unlinked']);
+    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 't1', route: 'manual', actorUserId: 'u' }), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/itself/);
+    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 'nope', route: 'manual', actorUserId: 'u' }), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/unknown thread/);
+  });
+
+  it('H2 ThreadAttributeSet: 値を付け、null で外す。ボールは動かない', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([draft('ThreadAttributeSet', { threadId: 't1', name: 'status', value: 'todo', actorUserId: 'u_alice' })], T1);
+    expect(log.state().threads.t1).toMatchObject({ attributes: { status: 'todo' }, ball: { kind: 'us' } });
+    log.push([draft('ThreadAttributeSet', { threadId: 't1', name: 'status', value: null, actorUserId: 'u_alice' })], T2);
+    expect(log.state().threads.t1!.attributes).toEqual({});
+  });
 });
+
+function note(signalId: string) {
+  return draft('SignalObserved', {
+    signalId,
+    dataSourceId: 'ds_notes_alice',
+    direction: 'outbound',
+    channel: 'note',
+    from: { channel: 'note', value: 'p_alice' },
+    to: [],
+    fromPartyId: 'p_alice',
+    body: '電話で聞いた',
+    sourceRef: `note:${signalId}`,
+  });
+}

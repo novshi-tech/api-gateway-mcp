@@ -1,4 +1,6 @@
 import {
+  addNote,
+  claimThread,
   deriveViewer,
   Directory,
   DomainError,
@@ -8,12 +10,16 @@ import {
   fold,
   getListView,
   getThreadView,
+  linkThreads,
   listThreads,
   moveSignal,
+  notesDataSourceOf,
   planIngest,
   prepareInbound,
   reopenThread,
+  setAttribute,
   signalEvent,
+  unlinkThreads,
   type CoreContext,
   type DraftEvent,
   type InboundSignal,
@@ -185,18 +191,68 @@ export class MurmurService {
   }
 
   async listThreads(userId: string, opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string } = {}) {
-    const { viewer } = await this.viewer(userId);
+    const { viewer, dir } = await this.viewer(userId);
     const states = await Promise.all(viewer.memberships.map((m) => this.state(m.tenantId)));
-    return listThreads(viewer, states, opts);
+    return listThreads(dir, viewer, states, opts);
   }
 
-  async getThread(userId: string, threadId: string) {
+  async getThread(userId: string, threadId: string, opts: { since?: string } = {}) {
     const { viewer, dir } = await this.viewer(userId);
     for (const m of viewer.memberships) {
-      const view = getThreadView(dir, viewer, await this.state(m.tenantId), threadId);
+      const view = getThreadView(dir, viewer, await this.state(m.tenantId), threadId, opts);
       if (view) return view;
     }
     throw new DomainError('not_found', `thread ${threadId} not found`);
+  }
+
+  private async threadTenant(viewer: Viewer, threadId: string): Promise<string> {
+    return this.tenantOf(viewer, (p) => !!p.threads[threadId], `thread ${threadId}`);
+  }
+
+  /** 個人のメモ。thread_id がなければ新しいスレッド。テナントは thread_id か tenant から、なければ自分のメモが 1 つだけのテナント */
+  async addNote(userId: string, input: { threadId?: string; title?: string; body: string; tenantId?: string }) {
+    const { viewer, dir } = await this.viewer(userId);
+    let tenantId: string;
+    if (input.threadId !== undefined) tenantId = await this.threadTenant(viewer, input.threadId);
+    else if (input.tenantId !== undefined) tenantId = input.tenantId;
+    else {
+      const withNotes = viewer.memberships.filter((m) => notesDataSourceOf(dir, viewer, m.tenantId));
+      if (withNotes.length !== 1) throw new DomainError('invalid', 'tenant is required (notes in several tenants)');
+      tenantId = withNotes[0]!.tenantId;
+    }
+    const threadId = await this.run(tenantId, (p, ctx) => {
+      const { events, threadId } = addNote(p, viewer, ctx, input);
+      return { events, result: threadId };
+    });
+    return this.getThread(userId, threadId);
+  }
+
+  async claimThread(userId: string, input: { threadId: string; userId: string | null; reason?: string }) {
+    const { viewer } = await this.viewer(userId);
+    const tenantId = await this.threadTenant(viewer, input.threadId);
+    await this.run(tenantId, (p, ctx) => ({ events: claimThread(p, viewer, ctx.dir, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
+  }
+
+  async linkThreads(userId: string, input: { threadId: string; otherThreadId: string; reason?: string }) {
+    const { viewer } = await this.viewer(userId);
+    const tenantId = await this.threadTenant(viewer, input.threadId);
+    await this.run(tenantId, (p) => ({ events: linkThreads(p, viewer, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
+  }
+
+  async unlinkThreads(userId: string, input: { threadId: string; otherThreadId: string; reason?: string }) {
+    const { viewer } = await this.viewer(userId);
+    const tenantId = await this.threadTenant(viewer, input.threadId);
+    await this.run(tenantId, (p) => ({ events: unlinkThreads(p, viewer, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
+  }
+
+  async setAttribute(userId: string, input: { threadId: string; name: string; value: unknown }) {
+    const { viewer } = await this.viewer(userId);
+    const tenantId = await this.threadTenant(viewer, input.threadId);
+    await this.run(tenantId, (p, ctx) => ({ events: setAttribute(p, viewer, ctx.dir, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
   }
 
   async dismissThread(userId: string, input: { threadId: string; reason: string }) {

@@ -41,5 +41,7 @@
     { "listId": "l_notes_suzuki", "partyId": "p_suzuki" },
     { "listId": "l_notes_nvt", "partyId": "p_nvt" }
   ],
-  "attributeDefs": []
+  "attributeDefs": [
+    { "dataSourceId": "ds_notes_sato", "name": "priority", "type": "enum", "options": ["高", "中", "低"], "description": "件の優先度。本人が付ける" }
+  ]
 }

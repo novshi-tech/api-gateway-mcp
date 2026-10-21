@@ -28,7 +28,7 @@
 
 判断はすべて純関数のコアに置き、副作用（DB・Claude・コネクタ・HTTP・時計・ID 生成・暗号）はシェルに集める。`test/architecture.test.ts` がこの境界を検査する。
 
-`src/domain/` はステップ 2 でスレッド 1 種類のデータモデル（`docs/adr/0013`・`0014`）に組み替えた。リンク・持ち主・属性はステップ 3、送信の記録はステップ 4 で足す。
+`src/domain/` はステップ 2 でスレッド 1 種類のデータモデル（`docs/adr/0013`・`0014`）に組み替え、ステップ 3 で個人のメモ・持ち主・リンク・属性と、クエリ層の「誰の番か」・結び候補・導出したボール・タイムラインを足した。送信の記録はステップ 4 で足す。
 
 ```
 src/
@@ -36,11 +36,12 @@ src/
     entities.ts    マスタ（Tenant / User / Party / Address / CredentialRef / DataSource / List / ListMember / AttributeDef）
     events.ts      イベント型（zod）
     fold.ts        fold(events) → projections（1 段）
-    comm.ts        通信状態（ボール）の導出。シグナルの向き・「求めているか」・片付けだけ
+    comm.ts        通信状態（ボール）の導出。シグナルの向き・「求めているか」・持ち主・片付けだけ
     directory.ts   マスタの検索、seed の整合性（seedProblems）
-    commands.ts    スタンドの操作の判断（片付け・開き直し・シグナルの移し替え）
+    commands.ts    スタンドの操作の判断（片付け・開き直し・シグナルの移し替え・メモ・持ち主・リンク・属性）
     ingest.ts      Ingest の判断（重複排除、向き、区切り、AI 出力の検証）、プロンプト
-    visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）
+    turn.ts        クエリ層の「誰の番か」（持ち主・読者が 1 人・宛先）、リンク先から導出したボール、結び候補
+    visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）、一覧のフィルタ、スレッドの詳細とタイムライン
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存
   store/         イベントストア・投影・マスタ（メモリ実装と Drizzle/Postgres 実装）
   ingest/        Claude 呼び出し（記録・再生）、Decider

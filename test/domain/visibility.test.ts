@@ -20,17 +20,17 @@ function world() {
 describe('可視性', () => {
   it('H3 listThreads は読者になっているデータソースのスレッドだけを返す', () => {
     const { p, shared, personal, line: l } = world();
-    expect(listThreads(alice, [p], { filter: 'all' }).map((t) => t.id)).toEqual([personal, shared]);
-    expect(listThreads(bob, [p], { filter: 'all' }).map((t) => t.id)).toEqual([l, shared]);
-    expect(listThreads(eve, [p], { filter: 'all' })).toEqual([]);
-    expect(listThreads(alice, [p], { filter: 'all', dataSourceId: 'ds_alice' }).map((t) => t.id)).toEqual([personal]);
-    expect(listThreads(alice, [p], { filter: 'all', tenantId: 'nvt' })).toEqual([]);
+    expect(listThreads(dir, alice, [p], { filter: 'all' }).map((t) => t.id)).toEqual([personal, shared]);
+    expect(listThreads(dir, bob, [p], { filter: 'all' }).map((t) => t.id)).toEqual([l, shared]);
+    expect(listThreads(dir, eve, [p], { filter: 'all' })).toEqual([]);
+    expect(listThreads(dir, alice, [p], { filter: 'all', dataSourceId: 'ds_alice' }).map((t) => t.id)).toEqual([personal]);
+    expect(listThreads(dir, alice, [p], { filter: 'all', tenantId: 'nvt' })).toEqual([]);
   });
 
   it('H3 仕分け待ちはボールがこちらで片付けていないもの。open は片付けていないもの', () => {
     const { p, shared, line: l } = world();
-    expect(listThreads(bob, [p], { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
-    expect(listThreads(bob, [p], { filter: 'open' }).map((t) => t.id)).toEqual([l, shared]);
+    expect(listThreads(dir, bob, [p], { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, bob, [p], { filter: 'open' }).map((t) => t.id)).toEqual([l, shared]);
   });
 
   it('H3 getThreadView は読者にだけ生の中身を返す', () => {

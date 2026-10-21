@@ -44,8 +44,21 @@ export const ScenarioConfig = z.object({
 
 const Bind = z.record(z.string(), z.string());
 
-/** スタンドの操作（HTTP API と同じ入力）。ステップ 2 の分 */
-export const Tool = z.enum(['me', 'list_threads', 'get_thread', 'dismiss_thread', 'reopen_thread', 'move_signal', 'get_list']);
+/** スタンドの操作（HTTP API と同じ入力）。ステップ 3 までの分 */
+export const Tool = z.enum([
+  'me',
+  'list_threads',
+  'get_thread',
+  'dismiss_thread',
+  'reopen_thread',
+  'move_signal',
+  'get_list',
+  'add_note',
+  'claim_thread',
+  'link_threads',
+  'unlink_threads',
+  'set_attribute',
+]);
 export type Tool = z.infer<typeof Tool>;
 
 export const Step = z.union([
@@ -94,6 +107,10 @@ const ThreadExpectation = z
     unansweredSince: z.string().nullable(),
     activeSinceDismissed: z.boolean(),
     signalCount: z.number(),
+    ownerUserId: z.string().nullable(),
+    attributes: z.record(z.string(), z.unknown()),
+    /** 結んだスレッド（"$<束縛名>"）と経路 */
+    links: z.record(z.string(), z.enum(['sent', 'anchor', 'manual'])),
   })
   .partial()
   .strict();
@@ -105,20 +122,32 @@ const VisibilityCheck = z.union([
     access: z.enum(['full']).nullable(),
     mustContain: z.array(z.string()).default([]),
     mustNotContain: z.array(z.string()).default([]),
+    /** Viewer から見たクエリ層の導出（turn・derivedBall・linkedActiveSinceDismissed など）。"$<束縛名>" は置き換える */
+    item: z.record(z.string(), z.unknown()).optional(),
+    /** 結び候補のスレッド（"$<束縛名>"） */
+    candidates: z.array(z.string()).optional(),
   }),
   z.object({ as: z.string(), signals: z.number() }),
   z.object({
     as: z.string(),
-    threads: z.object({ filter: z.enum(['open', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
+    threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
     expect: z.array(z.string()),
   }),
   z.object({ ghostParty: z.string() }),
 ]);
+type VisibilityCheck = z.infer<typeof VisibilityCheck>;
 
 export const Expected = z.object({
   ingest: z.record(z.string(), Label),
   checkpoints: z
-    .array(z.object({ after: z.string(), threads: z.record(z.string(), ThreadExpectation).default({}) }))
+    .array(
+      z.object({
+        after: z.string(),
+        threads: z.record(z.string(), ThreadExpectation).default({}),
+        /** その時点の見え方（visibility と同じ形） */
+        views: z.array(VisibilityCheck).default([]),
+      }),
+    )
     .default([]),
   final: z
     .object({
@@ -298,6 +327,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
     for (const cp of scenario.expected.checkpoints.filter((c) => c.after === step.id)) {
       const p = await service.state(tenant);
       checkpointErrors.push(...compareThreads(p, cp.threads, resolve, `checkpoint after ${step.id}`));
+      checkpointErrors.push(...checkViews(new Directory(scenario.seed), p, cp.views, resolve, `checkpoint after ${step.id}`));
     }
   }
   return { scenario, service, repo, bindings, records, checkpointErrors, backend };
@@ -317,6 +347,11 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
       { thread_id: input.thread_id, new_thread_title: input.new_thread_title, needs_response: input.needs_response, reason: input.reason },
     ],
     get_list: () => ['GET', `/api/lists/${enc(String(input.list_id))}`],
+    add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body, tenant: input.tenant }],
+    claim_thread: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/claim`, { user_id: input.user_id, reason: input.reason }],
+    link_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/links`, { thread_id: input.other_thread_id, reason: input.reason }],
+    unlink_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/unlink`, { thread_id: input.other_thread_id, reason: input.reason }],
+    set_attribute: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/attributes`, { name: input.name, value: input.value }],
   };
   const [method, path, body] = route[tool]();
   const res = await http.request(path, {
@@ -346,8 +381,65 @@ function compareThreads(
       continue;
     }
     const actual = summarizeThread(t) as unknown as Record<string, unknown>;
-    for (const [k, v] of Object.entries(exp)) {
+    actual.links = Object.fromEntries(t.links.map((l) => [l.threadId, l.route]));
+    for (const [k, raw] of Object.entries(exp)) {
+      const v = k === 'links' ? Object.fromEntries(Object.entries(raw as Record<string, string>).map(([a, r]) => [resolve(a), r])) : raw;
       if (canonicalJson(actual[k]) !== canonicalJson(v)) errors.push(`${where}: ${alias}.${k} = ${canonicalJson(actual[k])}（期待 ${canonicalJson(v)}）`);
+    }
+  }
+  return errors;
+}
+
+/** "$<束縛名>" の文字列を深く置き換える */
+function substDeep(v: unknown, resolve: (s: string) => string): unknown {
+  if (typeof v === 'string') return v.startsWith('$') ? resolve(v) : v;
+  if (Array.isArray(v)) return v.map((x) => substDeep(x, resolve));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, substDeep(x, resolve)]));
+  return v;
+}
+
+/** Viewer ごとの見え方（H3・H8）。最終の visibility とチェックポイントの views で使う */
+function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityCheck[], resolve: (s: string) => string, where: string): string[] {
+  const errors: string[] = [];
+  for (const check of checks) {
+    if ('ghostParty' in check) {
+      const party = dir.party(check.ghostParty);
+      if (!party) errors.push(`${where}: party ${check.ghostParty} がない`);
+      else if (party.userId) errors.push(`${where}: ${check.ghostParty} はゴーストではない`);
+      else if (deriveViewer(dir, check.ghostParty).memberships.length > 0) errors.push(`${where}: ${check.ghostParty} が Viewer になれる`);
+      continue;
+    }
+    const viewer = deriveViewer(dir, check.as);
+    if ('signals' in check) {
+      const n = visibleSignals(viewer, p).length;
+      if (n !== check.signals) errors.push(`${where}: ${check.as} の見えるシグナル ${n} 件（期待 ${check.signals}）`);
+      continue;
+    }
+    if ('threads' in check) {
+      const got = listThreads(dir, viewer, [p], { filter: check.threads.filter, dataSourceId: check.threads.dataSource }).map((t) => t.id).sort();
+      const want = check.expect.map(resolve).sort();
+      if (canonicalJson(got) !== canonicalJson(want)) {
+        errors.push(`${where}: ${check.as} の ${check.threads.filter} は ${canonicalJson(got)}（期待 ${canonicalJson(want)}）`);
+      }
+      continue;
+    }
+    const view = getThreadView(dir, viewer, p, resolve(check.thread));
+    const access = view ? 'full' : null;
+    const label = `${where}: ${check.as} → ${check.thread}`;
+    if (access !== check.access) errors.push(`${label} は ${access}（期待 ${check.access}）`);
+    const json = JSON.stringify(view ?? null);
+    for (const s of check.mustContain.map((x) => substDeep(x, resolve) as string)) if (!json.includes(s)) errors.push(`${label} に「${s}」が見えない`);
+    for (const s of check.mustNotContain.map((x) => substDeep(x, resolve) as string)) if (json.includes(s)) errors.push(`${label} に「${s}」が見えてしまう`);
+    if (view && check.item) {
+      const actual = view.thread as unknown as Record<string, unknown>;
+      for (const [k, v] of Object.entries(substDeep(check.item, resolve) as Record<string, unknown>)) {
+        if (canonicalJson(actual[k]) !== canonicalJson(v)) errors.push(`${label} の ${k} = ${canonicalJson(actual[k])}（期待 ${canonicalJson(v)}）`);
+      }
+    }
+    if (view && check.candidates) {
+      const got = view.thread.linkCandidates.map((c) => c.threadId).sort();
+      const want = check.candidates.map(resolve).sort();
+      if (canonicalJson(got) !== canonicalJson(want)) errors.push(`${label} の結び候補は ${canonicalJson(got)}（期待 ${canonicalJson(want)}）`);
     }
   }
   return errors;
@@ -468,37 +560,8 @@ export async function verifyScenario(run: Run): Promise<Verification> {
   // どのシグナルもどこかのスレッドに入っている（取りこぼしがない）
   for (const s of Object.values(p.signals)) if (!s.threadId) errors.push(`signal ${s.signalId} がどのスレッドにもない`);
 
-  // H3 可視性
-  const dir = new Directory(scenario.seed);
-  for (const check of scenario.expected.visibility) {
-    if ('ghostParty' in check) {
-      const party = dir.party(check.ghostParty);
-      if (!party) errors.push(`visibility: party ${check.ghostParty} がない`);
-      else if (party.userId) errors.push(`visibility: ${check.ghostParty} はゴーストではない`);
-      else if (deriveViewer(dir, check.ghostParty).memberships.length > 0) errors.push(`visibility: ${check.ghostParty} が Viewer になれる`);
-      continue;
-    }
-    const viewer = deriveViewer(dir, check.as);
-    if ('signals' in check) {
-      const n = visibleSignals(viewer, p).length;
-      if (n !== check.signals) errors.push(`visibility: ${check.as} の見えるシグナル ${n} 件（期待 ${check.signals}）`);
-      continue;
-    }
-    if ('threads' in check) {
-      const got = listThreads(viewer, [p], { filter: check.threads.filter, dataSourceId: check.threads.dataSource }).map((t) => t.id).sort();
-      const want = check.expect.map(resolve).sort();
-      if (canonicalJson(got) !== canonicalJson(want)) {
-        errors.push(`visibility: ${check.as} の ${check.threads.filter} は ${canonicalJson(got)}（期待 ${canonicalJson(want)}）`);
-      }
-      continue;
-    }
-    const view = getThreadView(dir, viewer, p, resolve(check.thread));
-    const access = view ? 'full' : null;
-    if (access !== check.access) errors.push(`visibility: ${check.as} → ${check.thread} は ${access}（期待 ${check.access}）`);
-    const json = JSON.stringify(view ?? null);
-    for (const s of check.mustContain) if (!json.includes(s)) errors.push(`visibility: ${check.as} → ${check.thread} に「${s}」が見えない`);
-    for (const s of check.mustNotContain) if (json.includes(s)) errors.push(`visibility: ${check.as} → ${check.thread} に「${s}」が見えてしまう`);
-  }
+  // H3・H8 可視性と「自分の番」・結び候補
+  errors.push(...checkViews(new Directory(scenario.seed), p, scenario.expected.visibility, resolve, 'visibility'));
 
   const metrics = ingestMetrics(run);
   errors.push(...metrics.mismatches.map((m) => `ingest: ${m}`));

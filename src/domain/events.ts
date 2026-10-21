@@ -6,7 +6,7 @@ import { Channel } from './entities';
 export const AddressRef = z.object({ channel: Channel, value: z.string() });
 export type AddressRef = z.infer<typeof AddressRef>;
 
-/** 構造アンカー。区切り（同じデータソースの中）と、結び候補（ステップ 3）に使う */
+/** 構造アンカー。区切り（同じデータソースの中）と、結び候補に使う */
 export const Anchors = z.object({
   /** このメッセージ自身の ID（Message-ID、Slack の ts、LINE の message id など） */
   messageId: z.string().optional(),
@@ -70,7 +70,7 @@ export type ThreadChoice = z.infer<typeof ThreadChoice>;
  * - no_match: どの規則にも当たらず、候補もない → 新しいスレッド
  * - ai: 直近のスレッドから AI が話題の続きかを判断した
  * - human: 人の訂正（シグナルの移し替え）
- * - self: 個人のメモで本人が置き先を指定した（ステップ 3）
+ * - self: 個人のメモで本人が置き先を指定した
  */
 export const ThreadedBy = z.enum(['anchor', 'awaiting', 'no_match', 'ai', 'human', 'self']);
 export type ThreadedBy = z.infer<typeof ThreadedBy>;
@@ -92,11 +92,58 @@ export const SignalThreaded = z.object({
 export const ThreadDismissed = z.object({ threadId: z.string(), actorUserId: z.string(), reason: z.string().min(1) });
 export const ThreadReopened = z.object({ threadId: z.string(), actorUserId: z.string(), reason: z.string().optional() });
 
+/**
+ * 持ち主（0013 の 3）。ボールを特定のユーザーへ明示の操作で動かす。
+ * userId が null なら手放す（ボールは「こちら」= 組織に戻る）、別の人なら引き継ぐ
+ */
+export const ThreadClaimed = z.object({
+  threadId: z.string(),
+  userId: z.string().nullable(),
+  actorUserId: z.string(),
+  reason: z.string().optional(),
+});
+
+/**
+ * 結ばれ方（0014 の 3）
+ * - sent: 送信・起票の副作用（record_sent。ステップ 4）
+ * - anchor: アンカーの一致（結び候補）から人・スタンドが張った
+ * - manual: 候補にないものを人・スタンドが張った
+ */
+export const LinkRoute = z.enum(['sent', 'anchor', 'manual']);
+export type LinkRoute = z.infer<typeof LinkRoute>;
+
+/**
+ * スレッド a と b を結ぶ（op: unlink で外す）。無向で、1 つのイベントが両方のスレッドの投影に載る。
+ * 追記で、元の判断は消さない
+ */
+export const ThreadLinked = z.object({
+  a: z.string(),
+  b: z.string(),
+  op: z.enum(['link', 'unlink']).default('link'),
+  route: LinkRoute,
+  actorUserId: z.string(),
+  reason: z.string().optional(),
+});
+
+export const AttributeValue = z.union([z.string(), z.number(), z.boolean()]);
+export type AttributeValue = z.infer<typeof AttributeValue>;
+
+/** 本人が付ける属性の値（定義は AttributeDef）。value が null なら外す。ソースの写しの属性はこちらでは触らない */
+export const ThreadAttributeSet = z.object({
+  threadId: z.string(),
+  name: z.string(),
+  value: AttributeValue.nullable(),
+  actorUserId: z.string(),
+});
+
 export const EventPayloads = {
   SignalObserved,
   SignalThreaded,
   ThreadDismissed,
   ThreadReopened,
+  ThreadClaimed,
+  ThreadLinked,
+  ThreadAttributeSet,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

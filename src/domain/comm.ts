@@ -1,13 +1,14 @@
 import type { CommState, ThreadLogEntry } from './projections';
 
 /**
- * 通信状態の導出。スレッドに綴じたもの（シグナルの向き・「返事や対応を求めているか」・片付け）だけを
- * 時刻順に畳み込む。本文や属性は読まない。
+ * 通信状態の導出。スレッドに綴じたもの（シグナルの向き・「返事や対応を求めているか」・持ち主・片付け）だけを
+ * 時刻順に畳み込む。本文や属性・リンク・メモは読まない。
  *
  * ボールの所在:
  * - 送った（観測された送信） → 宛先の Party
- * - 返事や対応を求める受信 → こちら
+ * - 返事や対応を求める受信 → こちら。持ち主がいればその人
  * - 求めていない受信（お礼・スタンプ・了解・通知） → 相手を待っていたなら「なし」、そうでなければ変わらない
+ * - 持った・引き継いだ → その人。手放した → こちら（組織）
  * - 片付けた → 開き直すまで「なし」。その間もシグナルは綴じ、開き直したら綴じた分から決まる
  */
 export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
@@ -21,7 +22,9 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
     dismissedAt: null,
     dismissReason: null,
     activeSinceDismissed: false,
+    ownerUserId: null,
   };
+  const ours = (): CommState['ball'] => (state.ownerUserId ? { kind: 'user', userId: state.ownerUserId } : { kind: 'us' });
   for (const e of sortLog(entries)) {
     switch (e.kind) {
       case 'signal':
@@ -34,11 +37,15 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
           if (e.needsResponse === false) {
             if (ball.kind === 'party') ball = { kind: 'none' };
           } else {
-            ball = { kind: 'us' };
+            ball = ours();
             state.unansweredSince ??= e.at;
           }
         }
         if (state.dismissed) state.activeSinceDismissed = true;
+        break;
+      case 'claimed':
+        state.ownerUserId = e.userId ?? null;
+        ball = ours();
         break;
       case 'dismissed':
         state.dismissed = true;
@@ -51,6 +58,11 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
         state.dismissedAt = null;
         state.dismissReason = null;
         state.activeSinceDismissed = false;
+        break;
+      case 'note':
+      case 'linked':
+      case 'unlinked':
+      case 'attribute':
         break;
     }
   }

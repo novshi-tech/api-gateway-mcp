@@ -12,40 +12,45 @@ fixtures/<scenario>/
 seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で整合性を確かめる。データソース 1 つにリスト 1 つ、
 個人のメモの読者は本人だけ、個人の資格情報は読者 1 人（その本人）のデータソースにだけ使う（0013・0014）。
 
-## signals.jsonl のステップ（ステップ 2 の分）
+## signals.jsonl のステップ（ステップ 3 までの分）
 
 ```jsonc
 // 観測されたシグナル（ダミーコネクタが受け取ったもの）。from がデータソースの送信元なら観測された送信（outbound）
 // bind で結果（threadId / signalId）に名前を付ける
 {"id":"s01","at":"2026-10-16T09:00:00.000Z","signal":{"dataSourceId":"ds_support", /* InboundSignal */ },"bind":{"custThread":"threadId"}}
 // スタンドの操作（HTTP API と同じ入力）。me / list_threads / get_thread / dismiss_thread / reopen_thread / move_signal / get_list
+// / add_note（thread_id?・title?・body）/ claim_thread（user_id は省略で自分、null で手放す）/ link_threads・unlink_threads（other_thread_id）/ set_attribute（name・value）
 {"id":"a01","at":"...","action":{"tool":"move_signal","as":"u_sato","input":{"signal_id":"$sig","new_thread_title":"別件","reason":"..."}},"bind":{"t":"thread.id"}}
+{"id":"a02","at":"...","action":{"tool":"add_note","as":"u_sato","input":{"title":"この件","body":"..."}},"bind":{"note":"thread.id"}}
 // Cron（取り込みのポーリング）
 {"id":"c01","at":"...","cron":true}
 ```
 
 - `"$name"` は束縛した値に置き換わる（本文に `$` から始まる文字列を書くと失敗する）
 - 時刻は `2026-10-16T09:00:00.000Z` の形にそろえる
-- 送信の記録（`record_sent`）はステップ 4 で足す。それまでの送信は、メーラーなどから直接送った観測された送信として書く
+- 送信の記録（`record_sent`）はステップ 4 で足す。それまでの送信は、メーラーなどから直接送った観測された送信として書き、元のスレッドとは `link_threads` で手で結ぶ
+- ID は連番（`thr_1`・`sig_2` …）。AI に渡すプロンプトには候補のスレッドの id が入るので、AI 判断の前に `add_note`（ID を使う）を足すと記録のキーが変わる。記録を取り直さないなら、メモは AI に聞くスレッドができたあとに書く
 
 ## expected.json
 
 - `ingest`: シグナルのステップごとの正解ラベル。`{"thread": "new" | "$<束縛名>", "needsResponse": true | false | null, "by"?: ..., "title"?: ...}` か `{"duplicate": true}`。
   ヒント実行（AI なし）では、AI に聞く判断にこのラベルを使う。AI 実行（`--ai replay`）では一致率を測る（H6）。
   `by` を書けば区切りの根拠（anchor / awaiting / no_match / ai）も確かめる。AI が区切るものには書かない（ヒント実行では human になる）
-- `checkpoints`: そのステップの直後のスレッドの状態（ボール・片付け・シグナル数など）
+- `checkpoints`: そのステップの直後のスレッドの状態（ボール・片付け・シグナル数・持ち主・属性・`links`（`{"$束縛名": 経路}`）など）と、その時点の見え方（`views`、`visibility` と同じ形）
 - `final`: 最終のスレッド・スレッド数・イベントの件数
-- `visibility`: Viewer ごとの見え方（H3）。スレッドの詳細（`access` は full / null）、見えるシグナルの件数、`list_threads` の結果、ゴースト Party
+- `visibility`: Viewer ごとの見え方（H3・H8）。スレッドの詳細（`access` は full / null、`mustContain` / `mustNotContain` の `$束縛名` は置き換える）、
+  クエリ層の導出（`item`: `turn`・`derivedBall`・`linkedActiveSinceDismissed` など）、結び候補（`candidates`）、見えるシグナルの件数、
+  `list_threads` の結果（filter: my_turn / mine / open / triage / all）、ゴースト Party
 
 ## 状態
 
 | シナリオ | 状態 | 備考 |
 | --- | --- | --- |
-| repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る |
-| development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey） |
-| absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。スタンド主導で回して置き換える（H7） |
-| complaint（クレーム） | draft | 片付けたスレッドへの返信で別件が届き、シグナルを移し替える。同上 |
+| repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る。個人のメールボックスは読者 1 人なので本人の「自分の番」 |
+| development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey）。NVT-42 と NVT-50 に触れた Slack の結び候補から、NVT-42 だけを結ぶ |
+| absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。木村が持ち、欠勤と打診のスレッドを結ぶ（メモなし）。スタンド主導で回して置き換える（H7） |
+| complaint（クレーム） | draft | 佐藤が持ち、メモのスレッドで結んで優先度を付け、閉じる。片付けたスレッドへの返信で別件が届き（閉じた件に結ばれた先が動く）、シグナルを移し替える。同上 |
 
-`recordings/` は v2 のプロンプトでまだ取っていない（v1 の記録は消した）。`ANTHROPIC_API_KEY` を設定して
-`pnpm scenario verify all --ai record` を実行し、記録をコミットすると `pnpm test` で H6 の一致率が測られる。
+`recordings/` は v2 のプロンプトで 2026-10-21 に取った（claude-sonnet-5-5）。`pnpm test` で H6 の一致率が測られる。
+プロンプトかモデルを変えたら `ANTHROPIC_API_KEY` を設定して `pnpm scenario verify all --ai rerecord` で取り直す。
 添付の `files/` は参照（パスとハッシュ）だけで、実体は置いていない。

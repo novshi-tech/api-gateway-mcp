@@ -2,13 +2,37 @@ import { z } from 'zod';
 import { AddressRef, Anchors, Channel, FileRef } from '../domain';
 
 // HTTP API の入力スキーマ。キーはツール定義に合わせて snake_case。
-// ステップ 2 の分（スレッドの一覧・詳細・片付け・開き直し・シグナルの移し替え）。ツール一覧の作り直しはステップ 5
+// ステップ 3 までの分（スレッドの一覧・詳細・片付け・開き直し・シグナルの移し替え・メモ・持ち主・リンク・属性）。
+// ツール一覧の作り直しはステップ 5
 
 export const ListThreadsQuery = z.object({
-  filter: z.enum(['open', 'triage', 'all']).default('open'),
+  filter: z.enum(['my_turn', 'mine', 'open', 'triage', 'all']).default('open'),
   tenant: z.string().optional(),
   data_source: z.string().optional(),
 });
+
+export const GetThreadQuery = z.object({ since: z.string().optional() });
+
+export const AddNoteBody = z.object({
+  /** 足す先の自分のメモのスレッド。省略すれば新しいスレッド（「この件」） */
+  thread_id: z.string().optional(),
+  /** 新しいスレッドの件名。省略すれば本文の最初の行 */
+  title: z.string().min(1).optional(),
+  body: z.string().min(1),
+  tenant: z.string().optional(),
+});
+
+export const ClaimBody = z
+  .object({
+    /** 持たせる User。省略すれば自分、null なら手放す */
+    user_id: z.string().nullable().optional(),
+    reason: z.string().optional(),
+  })
+  .default({});
+
+export const LinkBody = z.object({ thread_id: z.string(), reason: z.string().optional() });
+
+export const SetAttributeBody = z.object({ name: z.string(), value: z.unknown() });
 
 export const DismissBody = z.object({ reason: z.string().min(1) });
 export const ReopenBody = z.object({ reason: z.string().optional() }).default({});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveComm, type ThreadLogEntry } from '../../src/domain';
 
-// 通信状態の導出（ボール）は、シグナルの向き・「返事や対応を求めているか」・片付けだけから決まる
+// 通信状態の導出（ボール）は、シグナルの向き・「返事や対応を求めているか」・持ち主・片付けだけから決まる
 
 const at = (h: number) => `2026-10-16T${String(h).padStart(2, '0')}:00:00.000Z`;
 let seq = 0;
@@ -9,6 +9,8 @@ const inbound = (h: number, needsResponse: boolean | null = true): ThreadLogEntr
 const outbound = (h: number, toPartyIds = ['p_carol']): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'signal', direction: 'outbound', needsResponse: null, toPartyIds });
 const dismissed = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'dismissed', reason: 'r' });
 const reopened = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'reopened' });
+const claimed = (h: number, userId: string | null): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'claimed', userId });
+const other = (h: number, kind: 'note' | 'linked' | 'attribute'): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind });
 
 describe('deriveComm', () => {
   it('空ならボールはなし', () => {
@@ -47,5 +49,22 @@ describe('deriveComm', () => {
     const later = [...xs, outbound(11)];
     expect(deriveComm(later)).toMatchObject({ ball: { kind: 'none' }, activeSinceDismissed: true, lastOutboundAt: at(11) });
     expect(deriveComm([...later, reopened(12)])).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, dismissed: false });
+  });
+
+  it('H4 持つとボールはその人へ、こちらの番はその後も持ち主へ。手放すとこちら（組織）、引き継ぐと移る', () => {
+    expect(deriveComm([inbound(9), claimed(10, 'u_alice')])).toMatchObject({ ball: { kind: 'user', userId: 'u_alice' }, ownerUserId: 'u_alice' });
+    // 送れば相手、返事が来れば持ち主に戻る
+    const xs = [inbound(9), claimed(10, 'u_alice'), outbound(11)];
+    expect(deriveComm(xs).ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(deriveComm([...xs, inbound(12)]).ball).toEqual({ kind: 'user', userId: 'u_alice' });
+    expect(deriveComm([...xs, inbound(12), claimed(13, 'u_bob')]).ball).toEqual({ kind: 'user', userId: 'u_bob' });
+    expect(deriveComm([...xs, inbound(12), claimed(13, null)])).toMatchObject({ ball: { kind: 'us' }, ownerUserId: null });
+    // 片付けている間はなし
+    expect(deriveComm([inbound(9), dismissed(10), claimed(11, 'u_alice')])).toMatchObject({ ball: { kind: 'none' }, ownerUserId: 'u_alice' });
+  });
+
+  it('H2 メモ・リンク・属性はボールを動かさない', () => {
+    expect(deriveComm([other(9, 'note'), other(10, 'linked'), other(11, 'attribute')])).toEqual(deriveComm([]));
+    expect(deriveComm([inbound(9), outbound(10), other(11, 'linked')]).ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
   });
 });
