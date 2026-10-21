@@ -35,7 +35,7 @@ describe('コネクタの取り込み（Cron）', () => {
     expect(await service.pollConnectors()).toEqual([]);
     const p = await service.state('ubs');
     expect(Object.values(p.threads).map((t) => t.dataSourceId).sort()).toEqual(['ds_line', 'ds_support']);
-    expect(await service.tick()).toEqual({ ingested: 0 });
+    expect(await service.tick()).toEqual({ ingested: 0, overdue: 0 });
   });
 });
 

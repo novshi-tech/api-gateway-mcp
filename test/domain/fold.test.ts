@@ -202,7 +202,52 @@ describe('fold', () => {
     log.push([draft('ThreadAttributeSet', { threadId: 't1', name: 'status', value: null, actorUserId: 'u_alice' })], T2);
     expect(log.state().threads.t1!.attributes).toEqual({});
   });
+
+  it('H4 OutboundRecorded（新しい送信）でシグナルができ、SignalThreaded で置かれる。返事期待が載り、ReplyOverdue で超過、受信で解消', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([recorded('o1', false, T2), into('o1', 't1', null, 'human')], T1);
+    let p = log.state();
+    expect(p.signals.o1).toMatchObject({ direction: 'outbound', sourceRef: 'sent:<o1@x>', anchors: { messageId: '<o1@x>' }, recorded: { actorUserId: 'u_alice', replyExpectedBy: T2 } });
+    expect(p.index.messageIds['ds_support|<o1@x>']).toBe('o1');
+    expect(p.threads.t1).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, replyExpectedBy: T2, replyExpectedSignalId: 'o1', overdue: false });
+    log.push([draft('ReplyOverdue', { threadId: 't1', signalId: 'o1', replyExpectedBy: T2 })], '2026-10-16T12:00:00.000Z');
+    expect(log.state().threads.t1!.overdue).toBe(true);
+    log.push([observed('s2'), into('s2', 't1', false)], '2026-10-16T13:00:00.000Z');
+    p = log.state();
+    expect(p.threads.t1).toMatchObject({ overdue: false, replyExpectedBy: null, ball: { kind: 'none' } });
+  });
+
+  it('H5 OutboundRecorded（merged）は観測された送信のシグナルに記録を重ねるだけで、シグナルもボールも増えない', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    log.push([sent('o1'), into('o1', 't1', null)], T1);
+    const before = log.state().threads.t1!;
+    log.push([recorded('o1', true, T2)], '2026-10-16T10:30:00.000Z');
+    const p = log.state();
+    expect(p.threads.t1).toMatchObject({ signalIds: before.signalIds, ball: before.ball, lastOutboundAt: T1, replyExpectedBy: T2 });
+    expect(p.signals.o1!.recorded).toMatchObject({ replyExpectedBy: T2 });
+    expect(() => fold([...log.events, { ...recorded('s1', true, T2), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/cannot merge/);
+  });
 });
+
+function recorded(signalId: string, merged: boolean, replyExpectedBy: string | null) {
+  return draft('OutboundRecorded', {
+    signalId,
+    merged,
+    dataSourceId: 'ds_support',
+    channel: 'email',
+    from: { channel: 'email', value: 'support@ubs.example' },
+    to: [{ channel: 'email', value: 'carol@example.com' }],
+    fromPartyId: 'p_ubs',
+    toPartyIds: ['p_carol'],
+    body: '調査します',
+    sentRef: `<${signalId}@x>`,
+    replyExpectedBy,
+    actorUserId: 'u_alice',
+  });
+}
+
 
 function note(signalId: string) {
   return draft('SignalObserved', {

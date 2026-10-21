@@ -58,6 +58,7 @@ export const Tool = z.enum([
   'link_threads',
   'unlink_threads',
   'set_attribute',
+  'record_sent',
 ]);
 export type Tool = z.infer<typeof Tool>;
 
@@ -73,6 +74,11 @@ export const Step = z.union([
     id: z.string(),
     at: z.string(),
     action: z.object({ tool: Tool, as: z.string(), input: z.record(z.string(), z.unknown()).default({}) }),
+    /**
+     * record_sent のとき、ダミー上流がその送信を観測された送信として次の pull で返す（記録 → 観測の順。H5）。
+     * 観測 → 記録の順は、signal の行を先に書く
+     */
+    echo: z.boolean().optional(),
     bind: Bind.optional(),
     note: z.string().optional(),
   }),
@@ -108,6 +114,8 @@ const ThreadExpectation = z
     activeSinceDismissed: z.boolean(),
     signalCount: z.number(),
     ownerUserId: z.string().nullable(),
+    replyExpectedBy: z.string().nullable(),
+    overdue: z.boolean(),
     attributes: z.record(z.string(), z.unknown()),
     /** 結んだスレッド（"$<束縛名>"）と経路 */
     links: z.record(z.string(), z.enum(['sent', 'anchor', 'manual'])),
@@ -130,7 +138,7 @@ const VisibilityCheck = z.union([
   z.object({ as: z.string(), signals: z.number() }),
   z.object({
     as: z.string(),
-    threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
+    threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
     expect: z.array(z.string()),
   }),
   z.object({ ghostParty: z.string() }),
@@ -208,7 +216,7 @@ export interface StepRecord {
   step: Step;
   ingest?: IngestResult;
   response?: { status: number; body: unknown };
-  cron?: { ingested: IngestResult[] };
+  cron?: { ingested: IngestResult[]; overdue: number };
   /** AI 判断の confidence（AI を呼んだときだけ） */
   confidence?: number;
 }
@@ -313,6 +321,24 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
       if (rec.response.status >= 400) {
         throw new Error(`step ${step.id} ${step.action.tool} failed: ${rec.response.status} ${JSON.stringify(rec.response.body)}`);
       }
+      if (step.action.tool === 'record_sent' && step.echo) {
+        const ds = scenario.seed.dataSources.find((d) => d.id === input.data_source);
+        const self = ds?.kind === 'service' ? scenario.seed.addresses.find((a) => a.id === ds.selfAddressIds[0]) : undefined;
+        if (!ds || ds.kind !== 'service' || !self) throw new Error(`step ${step.id}: echo の data_source が不正`);
+        const sentRef = String(input.sent_ref);
+        const body = rec.response.body as { timeline: { signal?: { anchors: Record<string, unknown>; to: { value: string }[]; signalId: string } }[] };
+        const sent = body.timeline.find((e) => e.signal?.anchors.messageId === sentRef)?.signal;
+        await backend.enqueue(tenant, {
+          dataSourceId: ds.id,
+          channel: ds.channel,
+          from: { channel: ds.channel, value: self.value },
+          to: (sent?.to ?? []).map((t) => ({ channel: ds.channel, value: t.value })),
+          subject: input.subject as string | undefined,
+          body: String(input.body),
+          anchors: { ...(sent?.anchors ?? {}), messageId: sentRef },
+          sourceRef: `${ds.channel}:${sentRef}`,
+        });
+      }
       for (const [alias, path] of Object.entries(step.bind ?? {})) {
         const v = getPath(rec.response.body, path);
         if (typeof v !== 'string') throw new Error(`step ${step.id}: ${path} が文字列でない`);
@@ -320,7 +346,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
       }
     } else {
       hint.current = { stepId: step.id };
-      rec.cron = { ingested: await service.pollConnectors() };
+      rec.cron = { ingested: await service.pollConnectors(), overdue: await service.checkOverdue() };
     }
     records.push(rec);
 
@@ -352,6 +378,7 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
     link_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/links`, { thread_id: input.other_thread_id, reason: input.reason }],
     unlink_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/unlink`, { thread_id: input.other_thread_id, reason: input.reason }],
     set_attribute: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/attributes`, { name: input.name, value: input.value }],
+    record_sent: () => ['POST', '/api/sent', input],
   };
   const [method, path, body] = route[tool]();
   const res = await http.request(path, {

@@ -6,7 +6,7 @@ import { AddressRef, Anchors, Channel, FileRef } from '../domain';
 // ツール一覧の作り直しはステップ 5
 
 export const ListThreadsQuery = z.object({
-  filter: z.enum(['my_turn', 'mine', 'open', 'triage', 'all']).default('open'),
+  filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'),
   tenant: z.string().optional(),
   data_source: z.string().optional(),
 });
@@ -31,6 +31,34 @@ export const ClaimBody = z
   .default({});
 
 export const LinkBody = z.object({ thread_id: z.string(), reason: z.string().optional() });
+
+/** オフセット付きの時刻を受け、UTC の ISO 8601 にそろえる（文字列で比べるため。v1 の H7 のバグ） */
+export const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
+
+export const RecordSentBody = z
+  .object({
+    data_source: z.string(),
+    /** 宛先のアドレス（チャネルはデータソースのもの） */
+    to: z.array(z.string()).default([]),
+    to_party_ids: z.array(z.string()).default([]),
+    subject: z.string().optional(),
+    body: z.string().min(1),
+    sent_ref: z.string().min(1),
+    anchors: z
+      .object({
+        in_reply_to: z.string().optional(),
+        thread_ts: z.string().optional(),
+        quoted_message_id: z.string().optional(),
+        thread_key: z.string().optional(),
+        jira_keys: z.array(z.string()).optional(),
+        pr_refs: z.array(z.string()).optional(),
+      })
+      .default({}),
+    reply_to_thread_id: z.string().optional(),
+    source_thread_id: z.string().optional(),
+    reply_expected_by: Instant.optional(),
+  })
+  .refine((b) => b.to.length + b.to_party_ids.length > 0, { message: 'to か to_party_ids のどちらかが要る' });
 
 export const SetAttributeBody = z.object({ name: z.string(), value: z.unknown() });
 

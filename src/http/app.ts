@@ -11,6 +11,7 @@ import {
   LinkBody,
   ListThreadsQuery,
   MoveSignalBody,
+  RecordSentBody,
   ReopenBody,
   SetAttributeBody,
 } from '../api/schemas';
@@ -100,6 +101,32 @@ export function createApp(opts: HttpOptions) {
   api.post('/threads/:id/unlink', async (c) => {
     const b = LinkBody.parse(await json(c));
     return c.json(await c.var.service.unlinkThreads(c.var.userId, { threadId: c.req.param('id'), otherThreadId: b.thread_id, reason: b.reason }));
+  });
+
+  api.post('/sent', async (c) => {
+    const b = RecordSentBody.parse(await json(c));
+    const a = b.anchors;
+    return c.json(
+      await c.var.service.recordSent(c.var.userId, {
+        dataSourceId: b.data_source,
+        to: b.to,
+        toPartyIds: b.to_party_ids,
+        subject: b.subject,
+        body: b.body,
+        sentRef: b.sent_ref,
+        anchors: {
+          inReplyTo: a.in_reply_to,
+          threadTs: a.thread_ts,
+          quotedMessageId: a.quoted_message_id,
+          threadKey: a.thread_key,
+          jiraKeys: a.jira_keys,
+          prRefs: a.pr_refs,
+        },
+        replyToThreadId: b.reply_to_thread_id,
+        sourceThreadId: b.source_thread_id,
+        replyExpectedBy: b.reply_expected_by,
+      }),
+    );
   });
 
   api.post('/threads/:id/attributes', async (c) => {

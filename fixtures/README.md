@@ -12,7 +12,7 @@ fixtures/<scenario>/
 seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で整合性を確かめる。データソース 1 つにリスト 1 つ、
 個人のメモの読者は本人だけ、個人の資格情報は読者 1 人（その本人）のデータソースにだけ使う（0013・0014）。
 
-## signals.jsonl のステップ（ステップ 3 までの分）
+## signals.jsonl のステップ（ステップ 4 までの分）
 
 ```jsonc
 // 観測されたシグナル（ダミーコネクタが受け取ったもの）。from がデータソースの送信元なら観測された送信（outbound）
@@ -22,13 +22,17 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 // / add_note（thread_id?・title?・body）/ claim_thread（user_id は省略で自分、null で手放す）/ link_threads・unlink_threads（other_thread_id）/ set_attribute（name・value）
 {"id":"a01","at":"...","action":{"tool":"move_signal","as":"u_sato","input":{"signal_id":"$sig","new_thread_title":"別件","reason":"..."}},"bind":{"t":"thread.id"}}
 {"id":"a02","at":"...","action":{"tool":"add_note","as":"u_sato","input":{"title":"この件","body":"..."}},"bind":{"note":"thread.id"}}
-// Cron（取り込みのポーリング）
+// 送信の記録（record_sent。入力は POST /api/sent と同じ）。echo: true ならダミー上流が次の pull でその送信を観測された送信として返す（記録 → 観測の順）
+{"id":"o01","at":"...","action":{"tool":"record_sent","as":"u_sato","input":{"data_source":"ds_support","to":["ops@clean-toto.example"],"body":"...","sent_ref":"<u1@ubs.example>","source_thread_id":"$comp","reply_expected_by":"2026-10-16T22:00:00+09:00"}},"echo":true,"bind":{"partner":"thread.id"}}
+// Cron（取り込みのポーリングと期限の見回り）
 {"id":"c01","at":"...","cron":true}
 ```
 
 - `"$name"` は束縛した値に置き換わる（本文に `$` から始まる文字列を書くと失敗する）
 - 時刻は `2026-10-16T09:00:00.000Z` の形にそろえる
-- 送信の記録（`record_sent`）はステップ 4 で足す。それまでの送信は、メーラーなどから直接送った観測された送信として書き、元のスレッドとは `link_threads` で手で結ぶ
+- 送信は、スタンド経由なら `record_sent`（返事をしているなら `reply_to_thread_id`、元のスレッドがあれば `source_thread_id` で経路 sent に結ぶ）、
+  メーラーなどから直接送ったものは観測された送信の signal の行で書く。観測 → 記録の順は、signal の行のあとに同じ `sent_ref` の `record_sent` を書く
+- 記録した送信は、観測された送信と同じ順で ID を使う（シグナル → 新しいスレッド）。観測された送信の行を `record_sent` に置き換えても、後の AI のプロンプトに入る id は変わらない
 - ID は連番（`thr_1`・`sig_2` …）。AI に渡すプロンプトには候補のスレッドの id が入るので、AI 判断の前に `add_note`（ID を使う）を足すと記録のキーが変わる。記録を取り直さないなら、メモは AI に聞くスレッドができたあとに書く
 
 ## expected.json
@@ -46,10 +50,10 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 
 | シナリオ | 状態 | 備考 |
 | --- | --- | --- |
-| repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る。個人のメールボックスは読者 1 人なので本人の「自分の番」 |
+| repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る。個人のメールボックスは読者 1 人なので本人の「自分の番」。鈴木の見積依頼を記録して問い合わせと結び、期限超過 → 見積で解消 |
 | development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey）。NVT-42 と NVT-50 に触れた Slack の結び候補から、NVT-42 だけを結ぶ |
-| absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。木村が持ち、欠勤と打診のスレッドを結ぶ（メモなし）。スタンド主導で回して置き換える（H7） |
-| complaint（クレーム） | draft | 佐藤が持ち、メモのスレッドで結んで優先度を付け、閉じる。片付けたスレッドへの返信で別件が届き（閉じた件に結ばれた先が動く）、シグナルを移し替える。同上 |
+| absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。木村が持ち、打診を送って記録して欠勤のスレッドと結ぶ（メモなし）。スタンド主導で回して置き換える（H7） |
+| complaint（クレーム） | draft | 佐藤が持ち、協力会社への依頼を記録（期限超過 → 解消）、お詫びは観測が先で記録があと。メモのスレッドで結んで優先度を付け、閉じる。片付けたスレッドへの返信で別件が届き（閉じた件に結ばれた先が動く）、シグナルを移し替える。同上 |
 
 `recordings/` は v2 のプロンプトで 2026-10-21 に取った（claude-sonnet-5-5）。`pnpm test` で H6 の一致率が測られる。
 プロンプトかモデルを変えたら `ANTHROPIC_API_KEY` を設定して `pnpm scenario verify all --ai rerecord` で取り直す。

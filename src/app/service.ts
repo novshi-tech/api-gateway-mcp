@@ -2,6 +2,9 @@ import {
   addNote,
   claimThread,
   deriveViewer,
+  planOverdue,
+  recordSent,
+  type RecordSentInput,
   Directory,
   DomainError,
   dismissThread,
@@ -54,7 +57,10 @@ export interface ServiceDeps {
   policy: IngestPolicy;
 }
 
-export type IngestResult = { status: 'duplicate'; signalId: string } | ({ status: 'threaded'; signalId: string } & IngestOutcome);
+export type IngestResult =
+  | { status: 'duplicate'; signalId: string }
+  | { status: 'merged'; signalId: string; threadId: string | null }
+  | ({ status: 'threaded'; signalId: string } & IngestOutcome);
 
 const MAX_RETRIES = 3;
 
@@ -130,6 +136,8 @@ export class MurmurService {
     return this.run<IngestResult>(tenantId, async (p, ctx) => {
       const prepared = prepareInbound(p, ctx, inbound);
       if (prepared.kind === 'duplicate') return { events: [], result: { status: 'duplicate', signalId: prepared.signalId } };
+      // 記録した送信の観測（記録が先に届いた順）。シグナルは 1 本のまま、イベントは出さない（H5）
+      if (prepared.kind === 'merged') return { events: [], result: { status: 'merged', signalId: prepared.signalId, threadId: prepared.threadId } };
 
       const { payload, dataSource } = prepared;
       const sigEvent = signalEvent(payload);
@@ -165,8 +173,22 @@ export class MurmurService {
     return results;
   }
 
-  async tick(): Promise<{ ingested: number }> {
-    return { ingested: (await this.pollConnectors()).length };
+  /** 期限の見回り。返事期待の期限を過ぎたスレッドに ReplyOverdue を出す（冪等） */
+  async checkOverdue(): Promise<number> {
+    const dir = await this.directory();
+    let n = 0;
+    for (const tenantId of dir.tenantIds()) {
+      n += await this.run(tenantId, (p, ctx) => {
+        const events = planOverdue(p, ctx.now);
+        return { events, result: events.length };
+      });
+    }
+    return n;
+  }
+
+  async tick(): Promise<{ ingested: number; overdue: number }> {
+    const ingested = (await this.pollConnectors()).length;
+    return { ingested, overdue: await this.checkOverdue() };
   }
 
   // ---- スタンド向け API（Viewer = ゲートウェイから伝搬された User） ----
@@ -246,6 +268,20 @@ export class MurmurService {
     const tenantId = await this.threadTenant(viewer, input.threadId);
     await this.run(tenantId, (p) => ({ events: unlinkThreads(p, viewer, input), result: undefined }));
     return this.getThread(userId, input.threadId);
+  }
+
+  /** 送信の記録。スタンドがゲートウェイ経由で送った直後に呼ぶ。返すのは送ったシグナルの入ったスレッド */
+  async recordSent(userId: string, input: RecordSentInput) {
+    const { viewer, dir } = await this.viewer(userId);
+    const ds = dir.dataSource(input.dataSourceId);
+    if (!ds || !viewer.memberships.some((m) => m.dataSourceIds.includes(ds.id))) {
+      throw new DomainError('not_found', `data source ${input.dataSourceId} not found`);
+    }
+    const threadId = await this.run(ds.tenantId, (p, ctx) => {
+      const { events, threadId } = recordSent(p, viewer, ctx, input);
+      return { events, result: threadId };
+    });
+    return this.getThread(userId, threadId);
   }
 
   async setAttribute(userId: string, input: { threadId: string; name: string; value: unknown }) {

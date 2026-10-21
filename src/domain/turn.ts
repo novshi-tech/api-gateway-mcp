@@ -82,12 +82,16 @@ function visibleLinked(viewer: Viewer, p: Projections, t: Thread): Thread[] {
 
 // ---- 結び候補 ----
 
-/** スレッドのアンカーのうち、データソースをまたいで同じ件を指すキー（ソースの区切り・Jira キー・PR） */
+/**
+ * スレッドのアンカーのうち、データソースをまたいで同じ件を指すキー（ソースの区切り・Jira キー・PR・メッセージ ID）。
+ * メッセージ ID は sent_ref（`msg:` を付ける）。同じメールや DM を 2 人がそれぞれのデータソースで見ていれば一致する
+ */
 export function crossKeys(p: Projections, t: Thread): string[] {
   const keys = new Set<string>();
   for (const id of t.signalIds) {
     const a = p.signals[id]!.anchors;
     if (a.threadKey) keys.add(a.threadKey);
+    if (a.messageId) keys.add(`msg:${a.messageId}`);
     for (const k of a.jiraKeys ?? []) keys.add(k);
     for (const k of a.prRefs ?? []) keys.add(k);
   }

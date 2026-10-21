@@ -49,6 +49,14 @@ function apply(s: Projections, e: DomainEvent): void {
     }
     case 'ThreadLinked':
       return onLinked(s, e, e.payload);
+    case 'OutboundRecorded':
+      return onRecorded(s, e, e.payload);
+    case 'ReplyOverdue': {
+      const t = mustThread(s, e.payload.threadId);
+      t.log.push({ seq: e.seq, at: e.at, kind: 'overdue', signalId: e.payload.signalId, replyExpectedBy: e.payload.replyExpectedBy });
+      recompute(s, t, e.at);
+      return;
+    }
     case 'ThreadAttributeSet': {
       const p = e.payload;
       const t = mustThread(s, p.threadId);
@@ -88,7 +96,40 @@ function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>):
 }
 
 function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserved' }>): void {
-  const p = e.payload;
+  addSignal(s, e, { ...e.payload, recorded: null });
+}
+
+/**
+ * 送信の記録。新しい送信ならシグナルを作り（置き先は続く SignalThreaded）、観測が先に届いていれば
+ * そのシグナルに記録を重ねる（シグナルは 1 本のまま。返事期待だけがスレッドに載る）
+ */
+function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecorded'>): void {
+  const recorded = { actorUserId: p.actorUserId, at: e.at, replyExpectedBy: p.replyExpectedBy, sourceThreadId: p.sourceThreadId };
+  if (!p.merged) {
+    addSignal(s, e, {
+      ...p,
+      direction: 'outbound',
+      attachments: [],
+      anchors: { ...p.anchors, messageId: p.sentRef },
+      sourceRef: `sent:${p.sentRef}`,
+      recorded,
+    });
+    return;
+  }
+  const sig = s.signals[p.signalId];
+  if (!sig || sig.direction !== 'outbound') throw new FoldError(`cannot merge record into signal ${p.signalId}`);
+  sig.recorded = recorded;
+  const t = sig.threadId ? s.threads[sig.threadId] : undefined;
+  const entry = t?.log.find((l) => l.signalId === sig.signalId && l.kind === 'signal');
+  if (t && entry) {
+    entry.replyExpectedBy = p.replyExpectedBy;
+    recompute(s, t, e.at);
+  }
+}
+
+type NewSignal = Omit<SignalRecord, 'at' | 'seq' | 'threadId' | 'threadedBy' | 'needsResponse'>;
+
+function addSignal(s: Projections, e: DomainEvent, p: NewSignal): void {
   const record: SignalRecord = {
     signalId: p.signalId,
     dataSourceId: p.dataSourceId,
@@ -103,6 +144,7 @@ function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserve
     anchors: p.anchors,
     attachments: p.attachments,
     sourceRef: p.sourceRef,
+    recorded: p.recorded,
     at: e.at,
     seq: e.seq,
     threadId: null,
@@ -146,6 +188,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
     direction: sig.direction,
     needsResponse: sig.needsResponse,
     toPartyIds: sig.direction === 'outbound' ? sig.toPartyIds : undefined,
+    replyExpectedBy: sig.recorded?.replyExpectedBy ?? undefined,
   });
   recompute(s, t, e.at);
 }

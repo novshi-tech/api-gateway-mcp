@@ -1,7 +1,6 @@
 {
   "ingest": {
     "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
-    "o01": { "thread": "new", "needsResponse": null, "by": "no_match" },
     "o02": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
     "s02": { "thread": "$partnerThread", "needsResponse": false, "by": "anchor" },
     "o03": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
@@ -35,7 +34,19 @@
         { "as": "u_suzuki", "thread": "$noteThread", "access": null }
       ]
     },
-    { "after": "o01", "threads": { "$partnerThread": { "ball": { "kind": "party", "partyIds": ["p_cleanco"] } } } },
+    {
+      "after": "o01",
+      "threads": {
+        "$partnerThread": {
+          "ball": { "kind": "party", "partyIds": ["p_cleanco"] },
+          "replyExpectedBy": "2026-10-16T13:00:00.000Z",
+          "overdue": false,
+          "links": { "$compThread": "sent" }
+        },
+        "$compThread": { "links": { "$partnerThread": "sent" } }
+      }
+    },
+    { "after": "c_o01", "threads": { "$partnerThread": { "signalCount": 1 } } },
     { "after": "o02", "threads": { "$compThread": { "ball": { "kind": "party", "partyIds": ["p_tanaka"] } } } },
     {
       "after": "o02",
@@ -50,7 +61,23 @@
         }
       ]
     },
-    { "after": "s02", "threads": { "$partnerThread": { "ball": { "kind": "none" } } } },
+    {
+      "after": "c_due",
+      "threads": { "$partnerThread": { "overdue": true, "ball": { "kind": "party", "partyIds": ["p_cleanco"] } } },
+      "views": [
+        { "as": "u_sato", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] },
+        { "as": "u_suzuki", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] }
+      ]
+    },
+    {
+      "after": "s02",
+      "threads": { "$partnerThread": { "ball": { "kind": "none" }, "overdue": false, "replyExpectedBy": null } },
+      "views": [{ "as": "u_sato", "threads": { "filter": "overdue" }, "expect": [] }]
+    },
+    {
+      "after": "r03",
+      "threads": { "$compThread": { "replyExpectedBy": "2026-10-18T09:00:00.000Z", "signalCount": 3, "ball": { "kind": "party", "partyIds": ["p_tanaka"] } } }
+    },
     { "after": "s03", "threads": { "$compThread": { "ball": { "kind": "none" }, "signalCount": 4 } } },
     { "after": "a01", "threads": { "$compThread": { "dismissed": true, "activeSinceDismissed": false } } },
     {
@@ -79,9 +106,16 @@
         "counterpartPartyIds": ["p_tanaka"],
         "signalCount": 4,
         "ownerUserId": "u_sato",
-        "links": { "$noteThread": "manual" }
+        "links": { "$noteThread": "manual", "$partnerThread": "sent" },
+        "replyExpectedBy": null
       },
-      "$partnerThread": { "ball": { "kind": "none" }, "counterpartPartyIds": ["p_cleanco"], "signalCount": 2, "links": { "$noteThread": "manual" } },
+      "$partnerThread": {
+        "ball": { "kind": "none" },
+        "counterpartPartyIds": ["p_cleanco"],
+        "signalCount": 2,
+        "links": { "$noteThread": "manual", "$compThread": "sent" },
+        "overdue": false
+      },
       "$billingThread": { "dataSourceId": "ds_support", "title": "請求書の送付先変更", "ball": { "kind": "us" }, "counterpartPartyIds": ["p_tanaka"], "signalCount": 1 },
       "$noteThread": {
         "dataSourceId": "ds_notes_sato",
@@ -94,7 +128,17 @@
       }
     },
     "threadCount": 4,
-    "eventCounts": { "SignalObserved": 8, "SignalThreaded": 9, "ThreadDismissed": 2, "ThreadClaimed": 1, "ThreadLinked": 2, "ThreadAttributeSet": 1, "ThreadReopened": 0 }
+    "eventCounts": {
+      "SignalObserved": 7,
+      "SignalThreaded": 9,
+      "ThreadDismissed": 2,
+      "ThreadClaimed": 1,
+      "ThreadLinked": 3,
+      "ThreadAttributeSet": 1,
+      "ThreadReopened": 0,
+      "OutboundRecorded": 2,
+      "ReplyOverdue": 1
+    }
   },
   "visibility": [
     { "as": "u_suzuki", "thread": "$compThread", "access": "full", "mustContain": ["乾拭き"] },

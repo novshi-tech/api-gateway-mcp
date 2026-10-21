@@ -194,7 +194,7 @@ export function ingestPure(
 ): { duplicate: boolean; events: DomainEvent[]; signalId?: string; outcome?: IngestOutcome; request?: IngestRequest } {
   const p = log.state();
   const prepared = prepareInbound(p, ctx, inbound);
-  if (prepared.kind === 'duplicate') return { duplicate: true, events: [], signalId: prepared.signalId };
+  if (prepared.kind !== 'signal') return { duplicate: true, events: [], signalId: prepared.signalId };
   const sig = signalEvent(prepared.payload);
   const withSignal = fold([{ ...sig, tenantId: log.tenantId, seq: p.lastSeq + 1, at: ctx.now } as DomainEvent], p);
   const plan = planIngest(withSignal, ctx, prepared.dataSource, prepared.payload, policy);

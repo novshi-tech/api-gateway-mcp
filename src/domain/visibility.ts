@@ -15,11 +15,11 @@ import { canReadDataSource, membership, type Viewer } from './viewer';
  * - my_turn: Viewer の番（持ち主・読者が 1 人・宛先）で、片付けていないもの
  * - mine: Viewer の個人のメモのスレッド（閉じたものも）
  * - open: 片付けていないもの
+ * - overdue: 返事期待の期限を過ぎたもの
  * - triage: 仕分け待ち（こちらで、誰の番かが決まらず、片付けていない）
  * - all: 全部
- * overdue はステップ 4
  */
-export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'triage' | 'all';
+export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'overdue' | 'triage' | 'all';
 
 export interface ThreadSummary {
   id: string;
@@ -35,6 +35,8 @@ export interface ThreadSummary {
   dismissReason: string | null;
   activeSinceDismissed: boolean;
   ownerUserId: string | null;
+  replyExpectedBy: string | null;
+  overdue: boolean;
   links: ThreadLink[];
   attributes: Record<string, AttributeValue>;
   signalCount: number;
@@ -65,6 +67,8 @@ export function summarizeThread(t: Thread): ThreadSummary {
     dismissReason: t.dismissReason,
     activeSinceDismissed: t.activeSinceDismissed,
     ownerUserId: t.ownerUserId,
+    replyExpectedBy: t.replyExpectedBy,
+    overdue: t.overdue,
     links: t.links,
     attributes: t.attributes,
     signalCount: t.signalIds.length,
@@ -105,6 +109,7 @@ export function listThreads(
       if (opts.dataSourceId && t.dataSourceId !== opts.dataSourceId) continue;
       if (filter === 'open' && t.dismissed) continue;
       if (filter === 'triage' && !isTriage(dir, p, t)) continue;
+      if (filter === 'overdue' && !t.overdue) continue;
       if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
       if (filter === 'mine') {
         const ds = dir.dataSource(t.dataSourceId);
@@ -118,7 +123,7 @@ export function listThreads(
 
 export type SignalView = Pick<
   SignalRecord,
-  'signalId' | 'direction' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse'
+  'signalId' | 'direction' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
 >;
 
 function signalView(s: SignalRecord): SignalView {
@@ -135,6 +140,7 @@ function signalView(s: SignalRecord): SignalView {
     at: s.at,
     threadedBy: s.threadedBy,
     needsResponse: s.needsResponse,
+    recorded: s.recorded,
   };
 }
 
@@ -151,6 +157,7 @@ export interface TimelineEntry {
   route?: ThreadLogEntry['route'];
   name?: string;
   value?: AttributeValue | null;
+  replyExpectedBy?: string | null;
 }
 
 /** 結んだ先の見え方。見えない先は id と経路だけ（中身はその先の可視性に従う） */
@@ -205,6 +212,7 @@ export function getThreadView(
       if (e.route !== undefined) entry.route = e.route;
       if (e.name !== undefined) entry.name = e.name;
       if (e.value !== undefined) entry.value = e.value;
+      if (e.kind === 'overdue' && e.replyExpectedBy !== undefined) entry.replyExpectedBy = e.replyExpectedBy;
       return entry;
     });
   return {

@@ -2,7 +2,6 @@
   "ingest": {
     "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
     "o01": { "thread": "$custThread", "needsResponse": null, "by": "anchor" },
-    "o02": { "thread": "new", "needsResponse": null, "by": "no_match" },
     "s02": { "thread": "$partnerThread", "needsResponse": true, "by": "anchor" },
     "o03": { "thread": "$custThread", "needsResponse": null, "by": "anchor" },
     "s03": { "thread": "$custThread", "needsResponse": true, "by": "anchor" },
@@ -20,10 +19,32 @@
       "after": "o01",
       "threads": { "$custThread": { "ball": { "kind": "party", "partyIds": ["p_takahashi"] }, "lastOutboundAt": "2026-10-16T09:20:00.000Z", "unansweredSince": null } }
     },
-    { "after": "o02", "threads": { "$partnerThread": { "ball": { "kind": "party", "partyIds": ["p_yamada"] }, "dataSourceId": "ds_suzuki_mail" } } },
+    {
+      "after": "o02",
+      "threads": {
+        "$partnerThread": {
+          "ball": { "kind": "party", "partyIds": ["p_yamada"] },
+          "dataSourceId": "ds_suzuki_mail",
+          "replyExpectedBy": "2026-10-17T03:00:00.000Z",
+          "links": { "$custThread": "sent" }
+        }
+      },
+      "views": [
+        { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": ["$partnerThread"], "mustNotContain": ["山田工務店 御中"] },
+        { "as": "u_suzuki", "thread": "$custThread", "access": "full", "mustContain": ["山田工務店 御中"] }
+      ]
+    },
+    {
+      "after": "c_due",
+      "threads": { "$partnerThread": { "overdue": true } },
+      "views": [
+        { "as": "u_suzuki", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] },
+        { "as": "u_sato", "threads": { "filter": "overdue" }, "expect": [] }
+      ]
+    },
     {
       "after": "s02",
-      "threads": { "$partnerThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-17T15:00:00.000Z" } },
+      "threads": { "$partnerThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-17T15:00:00.000Z", "overdue": false, "replyExpectedBy": null } },
       "views": [
         { "as": "u_suzuki", "threads": { "filter": "my_turn" }, "expect": ["$partnerThread"] },
         { "as": "u_suzuki", "thread": "$partnerThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_suzuki"], "by": "reader" } } },
@@ -42,14 +63,22 @@
         "signalCount": 4,
         "dismissed": false,
         "lastInboundAt": "2026-10-20T10:00:00.000Z",
-        "lastOutboundAt": "2026-10-17T16:00:00.000Z"
+        "lastOutboundAt": "2026-10-17T16:00:00.000Z",
+        "links": { "$partnerThread": "sent" }
       },
-      "$partnerThread": { "dataSourceId": "ds_suzuki_mail", "ball": { "kind": "none" }, "dismissed": true, "counterpartPartyIds": ["p_yamada"], "signalCount": 2 },
+      "$partnerThread": {
+        "dataSourceId": "ds_suzuki_mail",
+        "ball": { "kind": "none" },
+        "dismissed": true,
+        "counterpartPartyIds": ["p_yamada"],
+        "signalCount": 2,
+        "links": { "$custThread": "sent" }
+      },
       "$adThread": { "ball": { "kind": "none" }, "dismissed": false, "counterpartPartyIds": [], "signalCount": 1 },
       "$lightThread": { "ball": { "kind": "us" }, "counterpartPartyIds": ["p_takahashi"], "signalCount": 1 }
     },
     "threadCount": 4,
-    "eventCounts": { "SignalObserved": 8, "SignalThreaded": 8, "ThreadDismissed": 1, "ThreadReopened": 0 }
+    "eventCounts": { "SignalObserved": 7, "SignalThreaded": 8, "ThreadDismissed": 1, "ThreadReopened": 0, "OutboundRecorded": 1, "ThreadLinked": 1, "ReplyOverdue": 1 }
   },
   "visibility": [
     { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": ["雨漏り", "385,000"] },

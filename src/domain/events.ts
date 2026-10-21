@@ -70,7 +70,7 @@ export type ThreadChoice = z.infer<typeof ThreadChoice>;
  * - no_match: どの規則にも当たらず、候補もない → 新しいスレッド
  * - ai: 直近のスレッドから AI が話題の続きかを判断した
  * - human: 人の訂正（シグナルの移し替え）
- * - self: 個人のメモで本人が置き先を指定した
+ * - self: 本人が置き先を指定した（個人のメモ、送信の記録）
  */
 export const ThreadedBy = z.enum(['anchor', 'awaiting', 'no_match', 'ai', 'human', 'self']);
 export type ThreadedBy = z.infer<typeof ThreadedBy>;
@@ -136,6 +136,35 @@ export const ThreadAttributeSet = z.object({
   actorUserId: z.string(),
 });
 
+/**
+ * 送信の記録（0012）。スタンドがゲートウェイ経由で送った直後に記録する。本体は外に何も書かない。
+ * - merged: false なら送ったシグナルをここで作る（続く SignalThreaded で置き先が決まる）
+ * - merged: true なら、同じ sent_ref の観測された送信（outbound の SignalObserved）が先に届いていて、そのシグナルに記録を重ねる（H5）
+ * sent_ref はシグナルの messageId になり、スレッドのアンカーになる
+ */
+export const OutboundRecorded = z.object({
+  signalId: z.string(),
+  merged: z.boolean(),
+  dataSourceId: z.string(),
+  channel: Channel,
+  from: AddressRef,
+  to: z.array(AddressRef),
+  fromPartyId: z.string().nullable().default(null),
+  toPartyIds: z.array(z.string()).default([]),
+  subject: z.string().optional(),
+  body: z.string(),
+  anchors: Anchors.default({}),
+  sentRef: z.string(),
+  /** 送る元になったスレッド（どのデータソースでもよい）。あれば経路 sent で結ぶ */
+  sourceThreadId: z.string().nullable().default(null),
+  /** 返事期待の期限（UTC の ISO 8601）。なければ期限超過は出ない */
+  replyExpectedBy: z.string().nullable().default(null),
+  actorUserId: z.string(),
+});
+
+/** 返事期待の期限超過（Cron の見回り）。冪等: 同じ送信に 1 回だけ */
+export const ReplyOverdue = z.object({ threadId: z.string(), signalId: z.string(), replyExpectedBy: z.string() });
+
 export const EventPayloads = {
   SignalObserved,
   SignalThreaded,
@@ -144,6 +173,8 @@ export const EventPayloads = {
   ThreadClaimed,
   ThreadLinked,
   ThreadAttributeSet,
+  OutboundRecorded,
+  ReplyOverdue,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

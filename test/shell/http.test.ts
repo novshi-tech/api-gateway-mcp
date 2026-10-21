@@ -158,6 +158,28 @@ describe('HTTP API', () => {
     expect(unlinked.body.thread.links).toEqual([]);
   });
 
+  it('H4 record_sent: 送ったスレッドを返し、返事期待はオフセット付きでも UTC にそろえる。期限を過ぎると overdue に出る', async () => {
+    const { call, service, clock } = await app();
+    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const threadId = r1.status === 'threaded' ? r1.threadId : '';
+    const res = await call('POST', '/api/sent', 'u_alice', {
+      data_source: 'ds_support',
+      to: ['carol@example.com'],
+      body: '調査します',
+      sent_ref: '<u1@ubs.example>',
+      reply_to_thread_id: threadId,
+      reply_expected_by: '2026-10-16T21:00:00+09:00',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'party', partyIds: ['p_carol'] } });
+    expect((await call('POST', '/api/sent', 'u_eve', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's' })).status).toBe(404);
+    expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', body: 'b', sent_ref: 's' })).status).toBe(400);
+    expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's', reply_expected_by: '明日' })).status).toBe(400);
+    clock.set('2026-10-16T13:00:00.000Z');
+    expect(await service.tick()).toEqual({ ingested: 0, overdue: 1 });
+    expect((await call('GET', '/api/threads?filter=overdue', 'u_alice')).body.map((t: { id: string }) => t.id)).toEqual([threadId]);
+  });
+
   it('入力の検証エラーは 400', async () => {
     const { call } = await app();
     expect((await call('GET', '/api/threads?filter=weird', 'u_alice')).status).toBe(400);

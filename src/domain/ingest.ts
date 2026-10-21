@@ -30,12 +30,17 @@ export interface InboundSignal {
 
 export type SignalPayload = PayloadOf<'SignalObserved'>;
 
-export type Prepared = { kind: 'duplicate'; signalId: string } | { kind: 'signal'; payload: SignalPayload; dataSource: ServiceDataSource };
+export type Prepared =
+  | { kind: 'duplicate'; signalId: string }
+  | { kind: 'merged'; signalId: string; threadId: string | null }
+  | { kind: 'signal'; payload: SignalPayload; dataSource: ServiceDataSource };
 
 /**
  * 重複排除と向きの判定。
  * - source_ref がそのデータソースで既出なら弾く
  * - from がデータソースの送信元（こちら）なら outbound（観測された送信）、そうでなければ inbound
+ * - 観測された送信の messageId が、記録した送信の sent_ref と一致すれば統合する（記録が先に届いた順。H5）。
+ *   シグナルは 1 本のままで、イベントは出さない
  */
 export function prepareInbound(p: Projections, ctx: CoreContext, inbound: InboundSignal): Prepared {
   const ds = ctx.dir.dataSource(inbound.dataSourceId);
@@ -46,11 +51,15 @@ export function prepareInbound(p: Projections, ctx: CoreContext, inbound: Inboun
 
   const existing = p.index.sourceRefs[indexKey(ds.id, inbound.sourceRef)];
   if (existing) return { kind: 'duplicate', signalId: existing };
+  const outbound = ctx.dir.isSelfAddress(ds, inbound.from);
+  const mid = inbound.anchors?.messageId;
+  const recorded = outbound && mid ? p.signals[p.index.messageIds[indexKey(ds.id, mid)] ?? ''] : undefined;
+  if (recorded?.recorded) return { kind: 'merged', signalId: recorded.signalId, threadId: recorded.threadId };
 
   const payload: SignalPayload = {
     signalId: ctx.newId('sig'),
     dataSourceId: ds.id,
-    direction: ctx.dir.isSelfAddress(ds, inbound.from) ? 'outbound' : 'inbound',
+    direction: outbound ? 'outbound' : 'inbound',
     channel: inbound.channel,
     from: inbound.from,
     to: inbound.to,
@@ -269,7 +278,7 @@ export function planIngest(
   };
 }
 
-function defaultTitle(sig: Pick<SignalPayload, 'subject' | 'body'>): string {
+export function defaultTitle(sig: Pick<SignalPayload, 'subject' | 'body'>): string {
   return sig.subject?.trim() || sig.body.slice(0, 40);
 }
 

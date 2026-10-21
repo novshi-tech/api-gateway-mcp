@@ -24,10 +24,15 @@ export interface CommState {
   activeSinceDismissed: boolean;
   /** 持ち主（ThreadClaimed）。手放せば null */
   ownerUserId: string | null;
+  /** 最後の送信の返事期待（記録した送信だけが持つ）。受信が来れば消える */
+  replyExpectedBy: string | null;
+  replyExpectedSignalId: string | null;
+  /** 返事期待の期限を過ぎた（ReplyOverdue）。受信が来れば解消する */
+  overdue: boolean;
 }
 
 /** signal = データソースのシグナル、note = 個人のメモ（ボールを動かさない） */
-export type ThreadLogKind = 'signal' | 'note' | 'dismissed' | 'reopened' | 'claimed' | 'linked' | 'unlinked' | 'attribute';
+export type ThreadLogKind = 'signal' | 'note' | 'dismissed' | 'reopened' | 'claimed' | 'linked' | 'unlinked' | 'attribute' | 'overdue';
 
 /** スレッドに綴じたもの（シグナル・メモと、人とスタンドの操作）。通信状態の導出とタイムラインの入力 */
 export interface ThreadLogEntry {
@@ -38,6 +43,8 @@ export interface ThreadLogEntry {
   direction?: Direction;
   needsResponse?: boolean | null;
   toPartyIds?: string[];
+  /** signal（送信の記録）: 返事期待の期限 */
+  replyExpectedBy?: string | null;
   reason?: string;
   /** 操作した User（シグナル以外） */
   actorUserId?: string;
@@ -94,6 +101,8 @@ export interface SignalRecord {
   sourceRef: string;
   at: string;
   seq: number;
+  /** 送信の記録（OutboundRecorded）。観測だけのシグナルは null */
+  recorded: { actorUserId: string; at: string; replyExpectedBy: string | null; sourceThreadId: string | null } | null;
   /** 最新の SignalThreaded で置かれたスレッド */
   threadId: string | null;
   threadedBy: ThreadedBy | null;

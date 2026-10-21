@@ -31,6 +31,8 @@ export function renderTimeline(dir: Directory, p: Projections): string {
         return `${l.kind === 'linked' ? '結んだ' : '外した'} ${esc(p.threads[l.otherThreadId!]?.title ?? l.otherThreadId)} [${esc(l.route)}] ${esc(l.reason ?? '')}`;
       case 'attribute':
         return `属性 ${esc(l.name)} = ${esc(l.value === null ? '(外した)' : l.value)}`;
+      case 'overdue':
+        return `期限超過（${esc(l.replyExpectedBy)}）`;
       default:
         return '';
     }
@@ -42,7 +44,9 @@ export function renderTimeline(dir: Directory, p: Projections): string {
     }
     const s = p.signals[l.signalId!];
     if (l.kind === 'note') return `<li><time>${esc(l.at)}</time> <span class="k note">メモ</span> ${esc(s?.body.slice(0, 140))}</li>`;
-    const nr = s?.needsResponse === true ? ' · 求めている' : s?.needsResponse === false ? ' · 求めていない' : '';
+    const nr =
+      (s?.needsResponse === true ? ' · 求めている' : s?.needsResponse === false ? ' · 求めていない' : '') +
+      (s?.recorded ? ` · 記録 ${esc(userName(s.recorded.actorUserId))}${s.recorded.replyExpectedBy ? ` · 返事期待 ${esc(s.recorded.replyExpectedBy)}` : ''}` : '');
     return `<li><time>${esc(l.at)}</time> <span class="k ${esc(s?.direction)}">${s?.direction === 'inbound' ? '受信' : '送信'}</span> ${esc(s?.from.value)}: ${esc(s?.subject ?? '')} — ${esc(s?.body.slice(0, 140))} <small>[${esc(s?.threadedBy)}${nr}]</small></li>`;
   };
 
@@ -53,7 +57,7 @@ export function renderTimeline(dir: Directory, p: Projections): string {
     .map(
       (t) => `<section class="thread${t.dismissed ? ' dismissed' : ''}">
   <h2>${esc(t.title)} <small>${esc(t.id)} · ${esc(dsName(t.dataSourceId))}${t.dismissed ? ` · 片付け済み（${esc(t.dismissReason)}）` : ''}</small></h2>
-  <p class="comm">ボール: ${ball(t.ball)}${t.unansweredSince ? ` · 未応答 ${esc(t.unansweredSince)}〜` : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(p.threads[l.threadId]?.title ?? l.threadId)).join(', ')}` : ''}</p>
+  <p class="comm">ボール: ${ball(t.ball)}${t.unansweredSince ? ` · 未応答 ${esc(t.unansweredSince)}〜` : ''}${t.replyExpectedBy ? ` · 返事期待 ${esc(t.replyExpectedBy)}` : ''}${t.overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(p.threads[l.threadId]?.title ?? l.threadId)).join(', ')}` : ''}</p>
   <ol>${t.log.map(entry).join('')}</ol>
 </section>`,
     )

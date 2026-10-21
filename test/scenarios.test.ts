@@ -81,13 +81,15 @@ function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]):
   const visited = new Set([...[...ours].flatMap((id) => threadedOf(id).map((x) => x.payload.thread.threadId)), ...partners]);
   switch (e.type) {
     case 'SignalObserved':
-      return true; // シグナルの観測は置き先を決める前提（索引）なので全部残す
+    case 'OutboundRecorded':
+      return true; // シグナルの観測と記録は置き先を決める前提（索引）なので全部残す
     case 'SignalThreaded':
       return ours.has(e.payload.signalId) || (e.payload.thread.kind === 'new' && visited.has(e.payload.thread.threadId));
     case 'ThreadDismissed':
     case 'ThreadReopened':
     case 'ThreadClaimed':
     case 'ThreadAttributeSet':
+    case 'ReplyOverdue':
       return e.payload.threadId === threadId;
     case 'ThreadLinked':
       return e.payload.a === threadId || e.payload.b === threadId;
