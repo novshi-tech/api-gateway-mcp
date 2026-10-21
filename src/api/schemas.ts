@@ -2,16 +2,22 @@ import { z } from 'zod';
 import { AddressRef, Anchors, Channel, FileRef } from '../domain';
 
 // HTTP API の入力スキーマ。キーはツール定義に合わせて snake_case。
-// ステップ 3 までの分（スレッドの一覧・詳細・片付け・開き直し・シグナルの移し替え・メモ・持ち主・リンク・属性）。
-// ツール一覧の作り直しはステップ 5
+// ツールの一覧は計画 v2 の「スタンド接続」の表（ステップ 5）。スキルの API の表と合わせる
+
+/** オフセット付きの時刻を受け、UTC の ISO 8601 にそろえる（文字列で比べるため。v1 の H7 のバグ） */
+export const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
 
 export const ListThreadsQuery = z.object({
   filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'),
   tenant: z.string().optional(),
   data_source: z.string().optional(),
+  /** 前回見た時刻。それより後に動いたスレッドだけ */
+  since: Instant.optional(),
 });
 
-export const GetThreadQuery = z.object({ since: z.string().optional() });
+export const GetThreadQuery = z.object({ since: Instant.optional() });
+
+export const ListListsQuery = z.object({ tenant: z.string().optional() });
 
 export const AddNoteBody = z.object({
   /** 足す先の自分のメモのスレッド。省略すれば新しいスレッド（「この件」） */
@@ -31,9 +37,6 @@ export const ClaimBody = z
   .default({});
 
 export const LinkBody = z.object({ thread_id: z.string(), reason: z.string().optional() });
-
-/** オフセット付きの時刻を受け、UTC の ISO 8601 にそろえる（文字列で比べるため。v1 の H7 のバグ） */
-export const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
 
 export const RecordSentBody = z
   .object({

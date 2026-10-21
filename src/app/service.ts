@@ -14,6 +14,7 @@ import {
   getListView,
   getThreadView,
   linkThreads,
+  listLists,
   listThreads,
   moveSignal,
   notesDataSourceOf,
@@ -212,7 +213,7 @@ export class MurmurService {
     };
   }
 
-  async listThreads(userId: string, opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string } = {}) {
+  async listThreads(userId: string, opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string; since?: string } = {}) {
     const { viewer, dir } = await this.viewer(userId);
     const states = await Promise.all(viewer.memberships.map((m) => this.state(m.tenantId)));
     return listThreads(dir, viewer, states, opts);
@@ -313,6 +314,11 @@ export class MurmurService {
       return { events, result: threadId };
     });
     return this.getThread(userId, threadId);
+  }
+
+  async listLists(userId: string, opts: { tenantId?: string } = {}) {
+    const { viewer, dir } = await this.viewer(userId);
+    return listLists(dir, viewer, opts);
   }
 
   async getList(userId: string, listId: string) {

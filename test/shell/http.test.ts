@@ -114,6 +114,9 @@ describe('HTTP API', () => {
     expect((await call('POST', `/api/signals/${r2.signalId}/move`, 'u_eve', { thread_id: threadId, reason: 'x' })).status).toBe(404);
 
     expect((await call('GET', '/api/lists/l_support', 'u_alice')).body.dataSource.name).toBe('support@');
+    const lists = (await call('GET', '/api/lists', 'u_alice')).body as { id: string }[];
+    expect(lists.map((l) => l.id)).toEqual(expect.arrayContaining(['l_support', 'l_alice', 'l_notes_alice']));
+    expect(((await call('GET', '/api/lists', 'u_bob')).body as { id: string }[]).map((l) => l.id)).not.toContain('l_alice');
     expect((await call('GET', '/api/lists/l_alice', 'u_bob')).status).toBe(404);
   });
 
@@ -153,6 +156,14 @@ describe('HTTP API', () => {
     expect((await call('POST', `/api/threads/${noteId}/attributes`, 'u_alice', { name: 'status', value: 'later' })).status).toBe(400);
     const since = await call('GET', `/api/threads/${noteId}?since=2026-10-16T09:30:00.000Z`, 'u_alice');
     expect(since.body.timeline.every((e: { at: string }) => e.at > '2026-10-16T09:30:00.000Z')).toBe(true);
+
+    // list_threads の since: メモのスレッドは、結んだ先が動けば差分に入る（オフセット付きの時刻も受ける）
+    clock.set('2026-10-16T11:00:00.000Z');
+    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    const changed = await call('GET', '/api/threads?filter=mine&since=2026-10-16T19:30:00%2B09:00', 'u_alice');
+    expect(changed.body.map((t: { id: string }) => t.id)).toEqual([noteId]);
+    expect((await call('GET', '/api/threads?filter=mine&since=2026-10-16T12:00:00Z', 'u_alice')).body).toEqual([]);
+    expect((await call('GET', '/api/threads?since=yesterday', 'u_alice')).status).toBe(400);
 
     const unlinked = await call('POST', `/api/threads/${noteId}/unlink`, 'u_alice', { thread_id: threadId });
     expect(unlinked.body.thread.links).toEqual([]);
@@ -208,5 +219,36 @@ describe('HTTP API', () => {
     expect(html).toContain('雨漏り');
     expect(html).not.toContain('<script>alert');
     expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('管理画面はトークンを知っている人にだけ、リスト一覧 → スレッドの一覧とリンク → 詳細を返す', async () => {
+    const { http, service, call } = await app();
+    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', body: '<img src=x onerror=alert(1)>', anchors: { messageId: '<m1>' } }));
+    const threadId = r1.status === 'threaded' ? r1.threadId : '';
+    const note = await call('POST', '/api/notes', 'u_alice', { body: 'Carol さんの件' });
+    await call('POST', `/api/threads/${note.body.thread.id}/links`, 'u_alice', { thread_id: threadId });
+
+    for (const path of ['/admin', '/admin/lists/l_support', `/admin/threads/${threadId}`]) {
+      expect((await http.request(path)).status).toBe(404);
+      expect((await http.request(`${path}?token=bad`)).status).toBe(404);
+    }
+    const index = await (await http.request('/admin?token=tok')).text();
+    expect(index).toContain('support@');
+    expect(index).toContain('/admin/lists/l_support?token=tok');
+
+    const list = await (await http.request('/admin/lists/l_support?token=tok')).text();
+    expect(list).toContain('雨漏り');
+    expect(list).toContain('Carol さんの件');
+    expect(list).toContain(`/admin/threads/${threadId}?token=tok`);
+    expect((await http.request('/admin/lists/l_nope?token=tok')).status).toBe(404);
+
+    const detail = await (await http.request(`/admin/threads/${threadId}?token=tok`)).text();
+    expect(detail).toContain('&lt;img');
+    expect(detail).not.toContain('<img src=x');
+    expect(detail).toContain('Carol さんの件');
+    const noteDetail = await (await http.request(`/admin/threads/${note.body.thread.id}?token=tok`)).text();
+    // メモのスレッドのタイムラインに、結んだ先の受信が並ぶ
+    expect(noteDetail).toContain('&lt;img');
+    expect((await http.request('/admin/threads/thr_nope?token=tok')).status).toBe(404);
   });
 });

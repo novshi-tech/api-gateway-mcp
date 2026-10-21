@@ -30,7 +30,8 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
    ```
 
 3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
-4. スタンド用スキルは nvt-api-gateway-skills のプラグイン `nvt-api-gateway`（0.2.0 以降）に入っている。api-gateway プラグインと一緒にインストールする
+4. スタンド用スキルは nvt-api-gateway-skills のプラグイン `nvt-api-gateway` に入っている。api-gateway プラグインと一緒にインストールする。
+   v2（スレッドとリンク）の版の SKILL.md は `docs/stand/skill-murmur.md`。スキルのリポの `plugins/nvt-api-gateway/skills/murmur/SKILL.md` をこれで置き換える
 
 ## 本体の準備
 
@@ -42,8 +43,8 @@ DATABASE_URL=postgres://... pnpm db:migrate
 wrangler secret put DATABASE_URL --env dev
 wrangler secret put ANTHROPIC_API_KEY --env dev
 wrangler secret put WEBHOOK_SECRET --env dev
-wrangler secret put TIMELINE_TOKEN --env dev   # timeline.html を見る人だけに渡す
-pnpm deploy:dev   # dev だけ workers.dev を開けている（Webhook と timeline.html 用）
+wrangler secret put TIMELINE_TOKEN --env dev   # 管理画面（/admin・timeline.html）を見る人だけに渡す
+pnpm deploy:dev   # dev だけ workers.dev を開けている（Webhook と管理画面用）
 ```
 
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
@@ -55,17 +56,22 @@ WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 
 1. Cowork の設定で API ゲートウェイの MCP コネクタを有効にする（既存のもの。追加の MCP は不要）
 2. プラグイン `api-gateway` と `nvt-api-gateway` をインストールし、スキル `murmur` を有効にする
-3. 「自分のタスクを見せて」で `list_my_tasks` が呼ばれることを確認する
+3. 「自分の番のものを見せて」で `GET /threads?filter=my_turn`（list_threads）が呼ばれることを確認する
 
 ## Claude Code
 
 1. `claude mcp add` でゲートウェイの MCP を追加する（既に使っていればそのまま）
 2. マーケットプレイス `novshi-tech/api-gateway-mcp` と `novshi-tech/nvt-api-gateway-skills` を追加し、`api-gateway` と `nvt-api-gateway` のプラグインをインストールする
-3. 同じく `list_my_tasks` で確認する
+3. 同じく list_threads で確認する
 
 ## H7（スタンド主導の完走）の回し方
 
 1. `fixtures/absence` と `fixtures/complaint` の seed を投入し、`signals.jsonl` の受信だけを Webhook で時刻順に流す
-2. ユーザーは Claude に指示（「この欠勤の代わりを探して」「承認して」）だけを出し、属性の設定・派生の提案はスタンドに任せる
+2. ユーザーは Claude に指示（「この欠勤の代わりを探して」「送って」）と送信の確認だけを出し、持ち主・メモ・リンク・属性・送信の記録はスタンドに任せる
 3. 終わったら、実際に呼ばれたツールと引数を `signals.jsonl` の action 行に、確かめた結果を `expected.json` に固め、
    `scenario.json` の `status` を `stand-recorded` にする
+
+## 管理画面（参照専用）
+
+`https://murmur-dev.nose-0d2.workers.dev/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
+書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。テナントの全スレッドを 1 枚で見るときは `/timeline.html?tenant=<id>&token=...`

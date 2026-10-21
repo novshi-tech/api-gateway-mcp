@@ -18,6 +18,8 @@ import { canReadDataSource, membership, type Viewer } from './viewer';
  * - overdue: 返事期待の期限を過ぎたもの
  * - triage: 仕分け待ち（こちらで、誰の番かが決まらず、片付けていない）
  * - all: 全部
+ *
+ * since を渡せば、それより後に動いたものだけ（スレッド自身か、見えるリンク先の updatedAt。メモのスレッドの導出したボールはリンク先で変わるため）
  */
 export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'overdue' | 'triage' | 'all';
 
@@ -96,7 +98,7 @@ export function listThreads(
   dir: Directory,
   viewer: Viewer,
   projections: readonly Projections[],
-  opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string } = {},
+  opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string; since?: string } = {},
 ): ThreadItem[] {
   const filter = opts.filter ?? 'open';
   const out: ThreadItem[] = [];
@@ -115,10 +117,19 @@ export function listThreads(
         const ds = dir.dataSource(t.dataSourceId);
         if (ds?.kind !== 'notes' || ds.ownerPartyId !== m.partyId) continue;
       }
+      if (opts.since !== undefined && !movedSince(viewer, p, t, opts.since)) continue;
       out.push(threadItem(dir, viewer, p, t));
     }
   }
   return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1));
+}
+
+function movedSince(viewer: Viewer, p: Projections, t: Thread, since: string): boolean {
+  if (t.updatedAt > since) return true;
+  return t.links.some((l) => {
+    const u = p.threads[l.threadId];
+    return !!u && canReadDataSource(viewer, p.tenantId, u.dataSourceId) && u.updatedAt > since;
+  });
 }
 
 export type SignalView = Pick<
@@ -234,6 +245,14 @@ export interface ListView {
   dataSource: { id: string; kind: DataSource['kind']; name: string; description: string; channel: string };
   readers: { partyId: string; name: string }[];
   attributeDefs: AttributeDef[];
+}
+
+/** 見えるリストの一覧（list_lists）。テナント横断 */
+export function listLists(dir: Directory, viewer: Viewer, opts: { tenantId?: string } = {}): ListView[] {
+  return viewer.memberships
+    .filter((m) => !opts.tenantId || m.tenantId === opts.tenantId)
+    .flatMap((m) => m.listIds.map((id) => getListView(dir, viewer, id)))
+    .filter((v): v is ListView => v !== null);
 }
 
 export function getListView(dir: Directory, viewer: Viewer, listId: string): ListView | null {

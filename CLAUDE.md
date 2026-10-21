@@ -49,7 +49,7 @@ src/
   connectors/    Connector インタフェース（取り込みだけ）+ dummy/
   api/           HTTP API の入力スキーマ
   auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
-  http/          Hono ルート、timeline.html
+  http/          Hono ルート、参照専用の管理画面（admin.ts: /admin・timeline.html）
   index.ts       Worker の入口（fetch / scheduled）と配線
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/
@@ -76,5 +76,5 @@ pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
 ## 注意
 
 - 本体は上流サービスのトークンを持たず、外へは何も書かない。取り込みはゲートウェイ経由（プロトタイプはダミーコネクタのみ）
-- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と `/timeline.html` だけ
-- スタンド（Cowork / Claude Code）用のスキルは novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`、接続手順は `docs/stand/connect.md`。HTTP API を変えたらスキルの API の表も直す
+- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
+- スタンド（Cowork / Claude Code）用のスキルは novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`（v2 の版の下書きは `docs/stand/skill-murmur.md`）、接続手順は `docs/stand/connect.md`。HTTP API を変えたらスキルの API の表も直す

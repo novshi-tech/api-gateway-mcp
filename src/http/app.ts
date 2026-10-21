@@ -9,6 +9,7 @@ import {
   GetThreadQuery,
   InboundSignalBody,
   LinkBody,
+  ListListsQuery,
   ListThreadsQuery,
   MoveSignalBody,
   RecordSentBody,
@@ -16,7 +17,7 @@ import {
   SetAttributeBody,
 } from '../api/schemas';
 import { bearerToken } from '../auth/claims';
-import { renderTimeline } from './timeline';
+import { adminHref, renderAdminIndex, renderAdminList, renderAdminThread, renderTimeline } from './admin';
 
 export interface HttpOptions {
   /** リクエストごとにサービスを組み立てる（Worker では DB 接続をリクエスト単位で張る） */
@@ -74,7 +75,7 @@ export function createApp(opts: HttpOptions) {
 
   api.get('/threads', async (c) => {
     const q = ListThreadsQuery.parse(c.req.query());
-    return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, tenantId: q.tenant, dataSourceId: q.data_source }));
+    return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, tenantId: q.tenant, dataSourceId: q.data_source, since: q.since }));
   });
 
   api.get('/threads/:id', async (c) => {
@@ -152,11 +153,16 @@ export function createApp(opts: HttpOptions) {
     );
   });
 
+  api.get('/lists', async (c) => {
+    const q = ListListsQuery.parse(c.req.query());
+    return c.json(await c.var.service.listLists(c.var.userId, { tenantId: q.tenant }));
+  });
+
   api.get('/lists/:id', async (c) => c.json(await c.var.service.getList(c.var.userId, c.req.param('id'))));
 
   app.route('/api', api);
 
-  // ---- 公開ルート: Webhook と timeline.html だけ ----
+  // ---- 公開ルート: Webhook と、TIMELINE_TOKEN で守る参照専用の画面（timeline.html・/admin）だけ ----
 
   app.post('/webhooks/dummy/:tenantId', async (c) => {
     const raw = await c.req.text();
@@ -168,13 +174,43 @@ export function createApp(opts: HttpOptions) {
     return c.json(results);
   });
 
+  // 参照専用の画面。全データソースが見えるので TIMELINE_TOKEN を知っている人だけ（知らなければ 404）
+  const operatorOnly = (c: Context) => !!opts.timelineToken && c.req.query('token') === opts.timelineToken;
+
   app.get('/timeline.html', async (c) => {
-    // 読み取り専用の確認用ページ。全データソースが見えるので TIMELINE_TOKEN を知っている人だけ
-    if (!opts.timelineToken || c.req.query('token') !== opts.timelineToken) return c.text('not found', 404);
+    if (!operatorOnly(c)) return c.text('not found', 404);
     const tenantId = c.req.query('tenant') ?? '';
     const service = c.var.service;
     const [p, dir] = await Promise.all([service.state(tenantId), service.directory()]);
     return c.html(renderTimeline(dir, p));
+  });
+
+  app.get('/admin', async (c) => {
+    if (!operatorOnly(c)) return c.text('not found', 404);
+    const service = c.var.service;
+    const dir = await service.directory();
+    const states = await Promise.all(dir.tenantIds().map((id) => service.state(id)));
+    return c.html(renderAdminIndex(dir, states, adminHref(opts.timelineToken!)));
+  });
+
+  app.get('/admin/lists/:id', async (c) => {
+    if (!operatorOnly(c)) return c.text('not found', 404);
+    const service = c.var.service;
+    const dir = await service.directory();
+    const list = dir.list(c.req.param('id'));
+    const html = list ? renderAdminList(dir, await service.state(list.tenantId), list.id, adminHref(opts.timelineToken!)) : null;
+    return html ? c.html(html) : c.text('not found', 404);
+  });
+
+  app.get('/admin/threads/:id', async (c) => {
+    if (!operatorOnly(c)) return c.text('not found', 404);
+    const service = c.var.service;
+    const dir = await service.directory();
+    for (const tenantId of dir.tenantIds()) {
+      const html = renderAdminThread(dir, await service.state(tenantId), c.req.param('id'), adminHref(opts.timelineToken!));
+      if (html) return c.html(html);
+    }
+    return c.text('not found', 404);
   });
 
   return app;
