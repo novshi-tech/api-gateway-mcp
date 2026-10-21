@@ -75,3 +75,5 @@ WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 
 `https://murmur-dev.nose-0d2.workers.dev/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
 書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。テナントの全スレッドを 1 枚で見るときは `/timeline.html?tenant=<id>&token=...`
+
+H7 で absence をスタンド主導で回す手順は `docs/stand/h7-absence.md`。
