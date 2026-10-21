@@ -6,13 +6,13 @@ import { canReadDataSource, type Viewer } from './viewer';
 // fold には持ち込まない（fold は 1 段）。Murmur は候補を出すだけで、自分ではリンクを張らない。
 
 /**
- * 誰の番か。スレッドのボールに、構造（読者が 1 人のデータソース・宛先）を合わせたもの。
- * - user: 特定のユーザーの番（by: owner = 持ち主、reader = 読者が 1 人、addressed = 宛先・メンション）
+ * 誰の番か。スレッドのボールに、構造（担当者の写し・読者が 1 人のデータソース・宛先）を合わせたもの。
+ * - user: 特定のユーザーの番（by: owner = 持ち主、assignee = ソースの担当者、reader = 読者が 1 人、addressed = 宛先・メンション）
  * - triage: こちら（組織）で、誰の番かが決まらない（仕分け待ち）
  * - party / none: ボールのまま
  */
 export type Turn =
-  | { kind: 'user'; userIds: string[]; by: 'owner' | 'reader' | 'addressed' }
+  | { kind: 'user'; userIds: string[]; by: 'owner' | 'assignee' | 'reader' | 'addressed' }
   | { kind: 'triage' }
   | { kind: 'party'; partyIds: string[] }
   | { kind: 'none' };
@@ -20,6 +20,8 @@ export type Turn =
 export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   const ball = t.ball;
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
+  const assignee = assigneeTurn(dir, t);
+  if (assignee) return assignee;
   if (ball.kind === 'party') return { kind: 'party', partyIds: ball.partyIds };
   if (ball.kind === 'none') return { kind: 'none' };
 
@@ -35,6 +37,21 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   }
   if (addressed.size > 0) return { kind: 'user', userIds: [...addressed].sort(), by: 'addressed' };
   return { kind: 'triage' };
+}
+
+/**
+ * 状態を持つデータソースの担当者（写しの assignee。0010 の黒子）。ソースの状態が正なので、持ち主がいなければ
+ * シグナルのボールより先に効く。担当者が読者のユーザーならその人の番、そうでなければその相手。完了・片付けのスレッドには効かない
+ */
+function assigneeTurn(dir: Directory, t: Thread): Turn | null {
+  if (t.dismissed || t.closedAtSource) return null;
+  const v = t.attributes.assignee;
+  if (typeof v !== 'string' || !dir.attributeDefs(t.dataSourceId).some((d) => d.name === 'assignee' && d.type === 'party')) return null;
+  const party = dir.party(v);
+  if (!party) return null;
+  const list = dir.listOfDataSource(t.dataSourceId);
+  const reader = party.userId !== undefined && list !== undefined && dir.readersOfList(list.id).some((r) => r.id === party.id);
+  return reader ? { kind: 'user', userIds: [party.userId!], by: 'assignee' } : { kind: 'party', partyIds: [party.id] };
 }
 
 export function isMyTurn(turn: Turn, viewer: Viewer): boolean {

@@ -39,6 +39,7 @@ export interface ThreadSummary {
   ownerUserId: string | null;
   replyExpectedBy: string | null;
   overdue: boolean;
+  closedAtSource: boolean;
   links: ThreadLink[];
   attributes: Record<string, AttributeValue>;
   signalCount: number;
@@ -71,6 +72,7 @@ export function summarizeThread(t: Thread): ThreadSummary {
     ownerUserId: t.ownerUserId,
     replyExpectedBy: t.replyExpectedBy,
     overdue: t.overdue,
+    closedAtSource: t.closedAtSource,
     links: t.links,
     attributes: t.attributes,
     signalCount: t.signalIds.length,
@@ -109,7 +111,7 @@ export function listThreads(
     for (const t of Object.values(p.threads)) {
       if (!m.dataSourceIds.includes(t.dataSourceId)) continue;
       if (opts.dataSourceId && t.dataSourceId !== opts.dataSourceId) continue;
-      if (filter === 'open' && t.dismissed) continue;
+      if (filter === 'open' && (t.dismissed || t.closedAtSource)) continue;
       if (filter === 'triage' && !isTriage(dir, p, t)) continue;
       if (filter === 'overdue' && !t.overdue) continue;
       if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
@@ -168,6 +170,7 @@ export interface TimelineEntry {
   route?: ThreadLogEntry['route'];
   name?: string;
   value?: AttributeValue | null;
+  fields?: Record<string, AttributeValue | null>;
   replyExpectedBy?: string | null;
 }
 
@@ -223,6 +226,7 @@ export function getThreadView(
       if (e.route !== undefined) entry.route = e.route;
       if (e.name !== undefined) entry.name = e.name;
       if (e.value !== undefined) entry.value = e.value;
+      if (e.fields !== undefined) entry.fields = e.fields;
       if (e.kind === 'overdue' && e.replyExpectedBy !== undefined) entry.replyExpectedBy = e.replyExpectedBy;
       return entry;
     });

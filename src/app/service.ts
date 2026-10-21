@@ -10,6 +10,8 @@ import {
   dismissThread,
   emptyProjections,
   finalizeIngest,
+  isMirror,
+  planMirror,
   fold,
   getListView,
   getThreadView,
@@ -26,6 +28,9 @@ import {
   unlinkThreads,
   type CoreContext,
   type DraftEvent,
+  type AttributeValue,
+  type InboundItem,
+  type InboundMirror,
   type InboundSignal,
   type IngestOutcome,
   type IngestPolicy,
@@ -62,6 +67,12 @@ export type IngestResult =
   | { status: 'duplicate'; signalId: string }
   | { status: 'merged'; signalId: string; threadId: string | null }
   | ({ status: 'threaded'; signalId: string } & IngestOutcome);
+
+/** 状態の写しの結果。no_thread はまだ課題のスレッドがない（写さない） */
+export type MirrorResult =
+  | { status: 'mirrored'; threadId: string; fields: Record<string, AttributeValue | null> }
+  | { status: 'unchanged'; threadId: string }
+  | { status: 'no_thread'; threadKey: string };
 
 const MAX_RETRIES = 3;
 
@@ -158,18 +169,33 @@ export class MurmurService {
     });
   }
 
+  /** 状態の写し（Jira の課題の状態など）。変わった属性だけを ThreadMirrored で写す */
+  async mirror(tenantId: string, inbound: InboundMirror): Promise<MirrorResult> {
+    return this.run<MirrorResult>(tenantId, (p, ctx) => {
+      const plan = planMirror(p, ctx, inbound);
+      if (plan.kind === 'no_thread') return { events: [], result: { status: 'no_thread', threadKey: plan.threadKey } };
+      if (plan.kind === 'unchanged') return { events: [], result: { status: 'unchanged', threadId: plan.threadId } };
+      return { events: plan.events, result: { status: 'mirrored', threadId: plan.threadId, fields: plan.fields } };
+    });
+  }
+
+  /** コネクタ・Webhook から来た 1 件（シグナルか状態の写し） */
+  async ingestItem(tenantId: string, item: InboundItem): Promise<IngestResult | MirrorResult> {
+    return isMirror(item) ? this.mirror(tenantId, item) : this.ingest(tenantId, item);
+  }
+
   // ---- 定期処理（Cron） ----
 
   /** 各データソースから、そのチャネルのコネクタで取り込む */
-  async pollConnectors(): Promise<IngestResult[]> {
+  async pollConnectors(): Promise<(IngestResult | MirrorResult)[]> {
     const dir = await this.directory();
-    const results: IngestResult[] = [];
+    const results: (IngestResult | MirrorResult)[] = [];
     for (const ds of dir.seed.dataSources) {
       if (ds.kind !== 'service') continue;
       const connector = this.deps.connectors[ds.channel];
       if (!connector) continue;
-      const { signals } = await connector.pull(ds, null);
-      for (const s of signals) results.push(await this.ingest(ds.tenantId, s));
+      const { items } = await connector.pull(ds, null);
+      for (const item of items) results.push(await this.ingestItem(ds.tenantId, item));
     }
     return results;
   }

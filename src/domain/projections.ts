@@ -29,10 +29,12 @@ export interface CommState {
   replyExpectedSignalId: string | null;
   /** 返事期待の期限を過ぎた（ReplyOverdue）。受信が来れば解消する */
   overdue: boolean;
+  /** ソースの側で完了している（写しの done）。片付けと同じくボールは「なし」 */
+  closedAtSource: boolean;
 }
 
-/** signal = データソースのシグナル、note = 個人のメモ（ボールを動かさない） */
-export type ThreadLogKind = 'signal' | 'note' | 'dismissed' | 'reopened' | 'claimed' | 'linked' | 'unlinked' | 'attribute' | 'overdue';
+/** signal = データソースのシグナル、note = 個人のメモ（ボールを動かさない）、mirrored = 状態の写し */
+export type ThreadLogKind = 'signal' | 'note' | 'dismissed' | 'reopened' | 'claimed' | 'linked' | 'unlinked' | 'attribute' | 'mirrored' | 'overdue';
 
 /** スレッドに綴じたもの（シグナル・メモと、人とスタンドの操作）。通信状態の導出とタイムラインの入力 */
 export interface ThreadLogEntry {
@@ -56,6 +58,8 @@ export interface ThreadLogEntry {
   /** attribute: 名前と値（null は外した） */
   name?: string;
   value?: AttributeValue | null;
+  /** mirrored: 変わった写しの属性 */
+  fields?: Record<string, AttributeValue | null>;
 }
 
 /** 他のスレッドへの辺（無向）。両端のスレッドに同じものが載る */
@@ -79,7 +83,7 @@ export interface Thread extends CommState {
   log: ThreadLogEntry[];
   /** 結んだスレッド（threadId 順） */
   links: ThreadLink[];
-  /** 本人が付けた属性（ThreadAttributeSet）。ソースの写しはステップ 7 */
+  /** 属性。外のサービスのスレッドはソースの写し（ThreadMirrored）、個人のメモのスレッドは本人が付ける（ThreadAttributeSet） */
   attributes: Record<string, AttributeValue>;
   createdAt: string;
   updatedAt: string;

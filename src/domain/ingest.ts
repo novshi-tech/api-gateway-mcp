@@ -98,6 +98,20 @@ export type Threading =
   | { kind: 'new'; by: 'anchor' | 'no_match'; reason: string }
   | { kind: 'choose'; candidates: Candidate[] };
 
+/**
+ * ソースの区切り（課題キーなど）のスレッド。同じデータソースで、その threadKey を持つシグナルのスレッド。
+ * なければ、sent_ref がそのキーの記録した送信（起票）のスレッド
+ */
+export function threadOfSourceKey(p: Projections, dataSourceId: string, key: string, exceptSignalId?: string): string | null {
+  const keyed = Object.values(p.signals)
+    .filter((s) => s.dataSourceId === dataSourceId && s.threadId !== null && s.signalId !== exceptSignalId && s.anchors.threadKey === key)
+    .sort((x, y) => y.seq - x.seq)[0];
+  if (keyed) return keyed.threadId;
+  const sid = p.index.messageIds[indexKey(dataSourceId, key)];
+  const s = sid && sid !== exceptSignalId ? p.signals[sid] : undefined;
+  return s?.threadId ?? null;
+}
+
 /** 1. アンカー。同じデータソースの中だけを見る。ソースの区切り（threadKey）は一致しなくても「新しい」に決まる */
 export function resolveAnchors(p: Projections, sig: SignalPayload): Threading | null {
   const a = sig.anchors;
@@ -112,9 +126,9 @@ export function resolveAnchors(p: Projections, sig: SignalPayload): Threading | 
   };
 
   if (a.threadKey) {
-    const s = latest(threaded.filter((x) => x.anchors.threadKey === a.threadKey));
-    return s
-      ? { kind: 'existing', threadId: s.threadId!, by: 'anchor', reason: `ソースの区切り ${a.threadKey}` }
+    const threadId = threadOfSourceKey(p, sig.dataSourceId, a.threadKey, sig.signalId);
+    return threadId
+      ? { kind: 'existing', threadId, by: 'anchor', reason: `ソースの区切り ${a.threadKey}` }
       : { kind: 'new', by: 'anchor', reason: `ソースの区切り ${a.threadKey} の最初のシグナル` };
   }
   if (a.inReplyTo) {

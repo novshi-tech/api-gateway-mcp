@@ -229,6 +229,28 @@ describe('fold', () => {
     expect(p.signals.o1!.recorded).toMatchObject({ replyExpectedBy: T2 });
     expect(() => fold([...log.events, { ...recorded('s1', true, T2), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/cannot merge/);
   });
+
+  it('H9 ThreadMirrored: 変わった属性を写し（null は空）、done でボールは「なし」・返事期待の超過も消える。done が外れたら綴じた分から戻る', () => {
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    const mirrored = (fields: Record<string, string | boolean | null>) =>
+      draft('ThreadMirrored', { threadId: 't1', dataSourceId: 'ds_support', threadKey: 'UBS-1', fields, sourceRef: 'jira:UBS-1:x' });
+    log.push([mirrored({ status: '進行中', assignee: 'p_alice', done: false })], T1);
+    let t = log.state().threads.t1!;
+    expect(t).toMatchObject({ attributes: { status: '進行中', assignee: 'p_alice', done: false }, ball: { kind: 'us' }, closedAtSource: false });
+    expect(t.log.at(-1)).toMatchObject({ kind: 'mirrored', fields: { status: '進行中', assignee: 'p_alice', done: false } });
+    log.push([recorded('o1', false, T2), into('o1', 't1', null, 'human')], T1);
+    log.push([draft('ReplyOverdue', { threadId: 't1', signalId: 'o1', replyExpectedBy: T2 })], '2026-10-16T12:00:00.000Z');
+    expect(log.state().threads.t1!.overdue).toBe(true);
+    log.push([mirrored({ status: '完了', assignee: null, done: true })], '2026-10-16T13:00:00.000Z');
+    t = log.state().threads.t1!;
+    expect(t).toMatchObject({ attributes: { status: '完了', done: true }, ball: { kind: 'none' }, closedAtSource: true, overdue: false, dismissed: false });
+    log.push([mirrored({ done: false })], '2026-10-16T14:00:00.000Z');
+    expect(log.state().threads.t1).toMatchObject({ closedAtSource: false, ball: { kind: 'party', partyIds: ['p_carol'] }, overdue: true });
+    expect(() => fold([...log.events, { ...mirrored({ done: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(
+      /mirror of ds_line/,
+    );
+  });
 });
 
 function recorded(signalId: string, merged: boolean, replyExpectedBy: string | null) {

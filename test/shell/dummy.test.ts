@@ -24,8 +24,8 @@ describe.each([
     await backend.enqueue('ubs', sig('1'));
     await backend.enqueue('ubs', sig('2', 'ds_alice'));
     await backend.enqueue('ubs', sig('3'));
-    expect((await c.pull(dir.dataSource('ds_support')!, null)).signals.map((s) => s.sourceRef)).toEqual(['1', '3']);
-    expect((await c.pull(dir.dataSource('ds_support')!, null)).signals).toEqual([]);
-    expect((await c.pull(dir.dataSource('ds_alice')!, null)).signals.map((s) => s.sourceRef)).toEqual(['2']);
+    expect((await c.pull(dir.dataSource('ds_support')!, null)).items.map((s) => ('sourceRef' in s ? s.sourceRef : ''))).toEqual(['1', '3']);
+    expect((await c.pull(dir.dataSource('ds_support')!, null)).items).toEqual([]);
+    expect((await c.pull(dir.dataSource('ds_alice')!, null)).items.map((s) => ('sourceRef' in s ? s.sourceRef : ''))).toEqual(['2']);
   });
 });

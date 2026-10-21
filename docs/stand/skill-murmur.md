@@ -33,6 +33,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 - **リンクは候補を見て、ユーザーと決めてから張る。** `get_thread` の `linkCandidates` はアンカー(課題キー・PR・メッセージ ID)が一致したものにすぎない。同じ件でなければ結ばない
 - メモ・属性・片付け・開き直しは本人の側の状態。結んだ先が動いても(`linkedActiveSinceDismissed`)、閉じたメモを勝手に開き直さない。ユーザーに知らせて決めてもらう
 - 属性は、リストの属性定義(`get_list` の `attributeDefs`)にあるものだけを使う。`description` を読んで意味を合わせる
+- **Jira など状態を持つデータソースのスレッドの属性(ステータス・担当者・優先度・期日・完了)はソースの写し。** Murmur では書けない(`set_attribute` は `invalid`)。変えるときは Jira の側で(jira スキルなど)変えれば、写しとして戻ってくる。`set_attribute` で書けるのは個人のメモのスレッドの属性だけ
+- 状態を持つデータソースのスレッドは、担当者(`attributes.assignee`)が読者のユーザーならその人の番(`turn.by` が `assignee`)。完了(`closedAtSource`)ならボールは「なし」で、`filter=open` にも出ない
 - ボール(`ball`)・誰の番(`turn`)・返事期待(`replyExpectedBy`)・期限超過(`overdue`)はイベントから自動で決まる。属性で書き換えない。ボールを人に寄せたいときは `claim` で持つ
 
 ## API
@@ -42,13 +44,13 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 | me | `GET /me` | | User と、各テナントの Party・読者になっているリスト(データソース) |
 | list_lists | `GET /lists` | `-q tenant=...`(省略可) | 見えるリストの一覧(データソース・読者・属性定義) |
 | get_list | `GET /lists/{list_id}` | | データソース・読者・属性定義 |
-| list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q tenant=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(テナント横断、更新の新しい順)。各スレッドに `ball`・`turn`・`ownerUserId`・`links`・`attributes`・`derivedBall`・`linkCandidates`・`overdue` など |
+| list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q tenant=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(テナント横断、更新の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `assignee` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
 | get_thread | `GET /threads/{thread_id}` | `-q since=<ISO 8601>`(省略可。タイムラインをそれより後に絞る) | `thread`(一覧と同じ項目)、`dataSource`、`linked`(結んだ先。見えない先は id と経路だけ)、`timeline`(このスレッドのシグナル・メモ・操作と、結んだ先のシグナルを時刻順に) |
 | add_note | `POST /notes` | `{"body", "thread_id"?, "title"?, "tenant"?}`。`thread_id` を渡せば既存のメモのスレッドに足し、渡さなければ新しいスレッド(「この件」)を作る。件名は `title`、なければ本文の 1 行目 | メモのスレッド(`get_thread` と同じ) |
 | claim_thread | `POST /threads/{thread_id}/claim` | `{"user_id"?, "reason"?}`。省略で自分が持つ、`null` で手放す、ほかの読者の User ID で引き継ぐ | `get_thread` と同じ |
 | link_threads | `POST /threads/{thread_id}/links` | `{"thread_id", "reason"?}`(結ぶ相手) | `get_thread` と同じ。候補から張れば経路 `anchor`、それ以外は `manual` |
 | unlink_threads | `POST /threads/{thread_id}/unlink` | `{"thread_id", "reason"?}` | `get_thread` と同じ |
-| set_attribute | `POST /threads/{thread_id}/attributes` | `{"name", "value"}`(`null` で外す) | `get_thread` と同じ |
+| set_attribute | `POST /threads/{thread_id}/attributes` | `{"name", "value"}`(`null` で外す)。個人のメモのスレッドだけ(外のサービスの属性は写しなので書けない) | `get_thread` と同じ |
 | dismiss_thread | `POST /threads/{thread_id}/dismiss` | `{"reason"}`(必須)。仕分け待ちから片付ける・メモのスレッドを閉じる | `get_thread` と同じ |
 | reopen_thread | `POST /threads/{thread_id}/reopen` | `{"reason"?}` | `get_thread` と同じ |
 | move_signal | `POST /signals/{signal_id}/move` | `{"thread_id"}` か `{"new_thread_title"}` のどちらか、`"needs_response"?`(受信だけ)、`"reason"`(必須) | 移した先のスレッド(`get_thread` と同じ) |
@@ -79,6 +81,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 - `source_thread_id`: 送る元になったスレッド(どのデータソースでもよい。メモのスレッドや、LINE の欠勤のスレッドから打診を送るときなど)。送ったスレッドと経路 `sent` で結ばれる
 - `reply_expected_by`: 返事期待の期限(ISO 8601、オフセット付きでよい)。過ぎると `overdue` になり、返事が来れば消える
 - ボールは相手へ移る。返事は同じデータソースに戻り、送ったスレッドに入る
+- **Jira の起票**: `sent_ref` に課題キー、`anchors.thread_key` にも同じ課題キーを入れる。`to_party_ids` は担当者、`source_thread_id` に起票の元になったスレッド(LINE・メール・Slack など)。課題のスレッドができて元のスレッドと経路 `sent` で結ばれ、課題の状態(写し)とコメントはそのスレッドに入る
+- **Jira のコメント**: `sent_ref` にコメント ID、`anchors.thread_key` に課題キー、`reply_to_thread_id` に課題のスレッド
 
 ## よくある流れ
 
@@ -89,3 +93,4 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 5. 「メモの件、どうなった？」: `GET /threads/{メモのid}`。`derivedBall` が結んだ先から見たボール(`my_turn` / `waiting`)、`timeline` に結んだ先の受信も並ぶ
 6. 「もう対応不要」: 仕分け待ちなら `POST /threads/{id}/dismiss`、件が片付いたらメモのスレッドも `dismiss`。また動いたら `reopen`
 7. 「振り分けが違う」: `POST /signals/{signal_id}/move`(既存のスレッドか新しいスレッドへ)。違うスレッドと結んだら `unlink`
+8. 「これ課題にして」: 起票の内容(要約・説明・担当者)をユーザーに確認 → jira スキルで起票 → **すぐ `POST /sent`**(`sent_ref` と `anchors.thread_key` に課題キー、`source_thread_id` に元のスレッド)。ステータスや担当者を変えたいときは jira スキルで Jira を直接変える

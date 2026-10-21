@@ -128,12 +128,27 @@ export const ThreadLinked = z.object({
 export const AttributeValue = z.union([z.string(), z.number(), z.boolean()]);
 export type AttributeValue = z.infer<typeof AttributeValue>;
 
-/** 本人が付ける属性の値（定義は AttributeDef）。value が null なら外す。ソースの写しの属性はこちらでは触らない */
+/** 本人が付ける属性の値（定義は AttributeDef）。value が null なら外す。ソースの写しの属性はこちらでは触らない（ThreadMirrored） */
 export const ThreadAttributeSet = z.object({
   threadId: z.string(),
   name: z.string(),
   value: AttributeValue.nullable(),
   actorUserId: z.string(),
+});
+
+/**
+ * 状態の写し（0010・0014）。状態を持つデータソース（Jira の課題など）の状態を、スレッドの属性に片方向で写す。
+ * fields は変わった属性だけ（null は空になった）。名前はデータソースの AttributeDef。Murmur が読むのは
+ * `done`（boolean。完了ならボールは「なし」）と `assignee`（party。誰の番か）だけで、ほかは見せるだけ
+ */
+export const ThreadMirrored = z.object({
+  threadId: z.string(),
+  dataSourceId: z.string(),
+  /** ソースの区切り（課題キー） */
+  threadKey: z.string(),
+  fields: z.record(z.string(), AttributeValue.nullable()),
+  /** ソースの更新の識別子（監査用） */
+  sourceRef: z.string(),
 });
 
 /**
@@ -173,6 +188,7 @@ export const EventPayloads = {
   ThreadClaimed,
   ThreadLinked,
   ThreadAttributeSet,
+  ThreadMirrored,
   OutboundRecorded,
   ReplyOverdue,
 } as const;

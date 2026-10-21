@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import type { InboundSignal } from '../../domain';
+import type { InboundItem } from '../../domain';
 import type { Db } from '../../store/drizzle';
 import { dummyQueue } from '../../store/schema';
 import type { DummyBackend } from './connector';
@@ -8,8 +8,8 @@ import type { DummyBackend } from './connector';
 export class PgDummyBackend implements DummyBackend {
   constructor(private readonly db: Db) {}
 
-  async enqueue(tenantId: string, signal: InboundSignal) {
-    await this.db.insert(dummyQueue).values({ tenantId, dataSourceId: signal.dataSourceId, message: signal });
+  async enqueue(tenantId: string, item: InboundItem) {
+    await this.db.insert(dummyQueue).values({ tenantId, dataSourceId: item.dataSourceId, message: item });
   }
 
   async take(dataSourceId: string) {
@@ -21,6 +21,6 @@ export class PgDummyBackend implements DummyBackend {
     if (rows.length > 0) {
       await this.db.update(dummyQueue).set({ consumed: true }).where(inArray(dummyQueue.id, rows.map((r) => r.id)));
     }
-    return rows.map((r) => r.message as InboundSignal);
+    return rows.map((r) => r.message as InboundItem);
   }
 }

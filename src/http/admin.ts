@@ -1,4 +1,4 @@
-import { getThreadView, sortLog, turnOf, type Directory, type Projections, type Thread, type Turn, type Viewer } from '../domain';
+import { getThreadView, sortLog, turnOf, type AttributeValue, type Directory, type Projections, type Thread, type Turn, type Viewer } from '../domain';
 
 // 参照専用の管理画面（ステップ 5）とタイムライン。どれも純関数（マスタ・投影 → HTML 文字列）。
 // 運用者向けで、TIMELINE_TOKEN を知っている人には全データソースが見える。スタンドの可視性（H3）とは別の入口
@@ -22,6 +22,13 @@ function names(dir: Directory, p: Projections) {
   };
 }
 
+/** 属性の値。party 型は名前で出す */
+function attrValue(dir: Directory, dataSourceId: string, name: string, v: AttributeValue | null): string {
+  if (v === null) return '(空)';
+  const def = dir.attributeDefs(dataSourceId).find((d) => d.name === name);
+  return def?.type === 'party' && typeof v === 'string' ? (dir.party(v)?.name ?? v) : String(v);
+}
+
 function ballLabel(dir: Directory, p: Projections, b: Thread['ball']): string {
   const n = names(dir, p);
   return b.kind === 'us'
@@ -35,7 +42,7 @@ function ballLabel(dir: Directory, p: Projections, b: Thread['ball']): string {
 
 function turnLabel(dir: Directory, p: Projections, t: Turn): string {
   const n = names(dir, p);
-  const by = { owner: '持ち主', reader: '読者が 1 人', addressed: '宛先' } as const;
+  const by = { owner: '持ち主', assignee: '担当者', reader: '読者が 1 人', addressed: '宛先' } as const;
   switch (t.kind) {
     case 'user':
       return `${t.userIds.map((id) => esc(n.user(id))).join(', ')}（${by[t.by]}）`;
@@ -51,13 +58,14 @@ function turnLabel(dir: Directory, p: Projections, t: Turn): string {
 function flags(t: Thread): string {
   const out: string[] = [];
   if (t.dismissed) out.push(`片付け済み（${esc(t.dismissReason)}）`);
+  if (t.closedAtSource) out.push('ソースで完了');
   if (t.overdue) out.push('<b>期限超過</b>');
   else if (t.replyExpectedBy) out.push(`返事期待 ${esc(t.replyExpectedBy)}`);
   if (t.activeSinceDismissed) out.push('<b>片付けたあとに動きあり</b>');
   return out.join(' · ');
 }
 
-function logEntry(dir: Directory, p: Projections, l: Thread['log'][number], from?: { threadId: string; href?: Href }): string {
+function logEntry(dir: Directory, p: Projections, t: Thread, l: Thread['log'][number], from?: { threadId: string; href?: Href }): string {
   const n = names(dir, p);
   const origin = from ? ` <small>← ${from.href ? `<a href="${esc(from.href(`/admin/threads/${from.threadId}`))}">${esc(n.thread(from.threadId))}</a>` : esc(n.thread(from.threadId))}</small>` : '';
   const head = (kind: string, cls: string) => `<li><time>${esc(l.at)}</time> <span class="k ${esc(cls)}">${kind}</span> `;
@@ -73,6 +81,10 @@ function logEntry(dir: Directory, p: Projections, l: Thread['log'][number], from
       return `${head(l.kind === 'linked' ? '結んだ' : '外した', l.kind)}${esc(n.thread(l.otherThreadId!))} [${esc(l.route)}] ${esc(l.reason ?? '')}</li>`;
     case 'attribute':
       return `${head('属性', l.kind)}${esc(l.name)} = ${esc(l.value === null ? '(外した)' : l.value)}</li>`;
+    case 'mirrored':
+      return `${head('写し', l.kind)}${Object.entries(l.fields ?? {})
+        .map(([k, v]) => `${esc(k)} = ${esc(attrValue(dir, t.dataSourceId, k, v))}`)
+        .join(' · ')}</li>`;
     case 'overdue':
       return `${head('期限超過', l.kind)}${esc(l.replyExpectedBy)}</li>`;
     case 'note': {
@@ -159,7 +171,7 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
       (t) => `<tr class="${t.dismissed ? 'dismissed' : ''}"><td><a href="${esc(href(`/admin/threads/${t.id}`))}">${esc(t.title)}</a><br><small>${esc(t.id)} · ${t.signalIds.length} 件</small></td>
 <td>${turnLabel(dir, p, turnOf(dir, p, t))}<br><small>ボール: ${ballLabel(dir, p, t.ball)}</small></td>
 <td>${t.links.map((l) => `<a href="${esc(href(`/admin/threads/${l.threadId}`))}">${esc(n.thread(l.threadId))}</a> <small>[${esc(l.route)}] ${esc(n.ds(p.threads[l.threadId]?.dataSourceId ?? ''))}</small>`).join('<br>')}</td>
-<td>${Object.entries(t.attributes).map(([k, v]) => `${esc(k)}=${esc(v)}`).join('<br>')}</td>
+<td>${Object.entries(t.attributes).map(([k, v]) => `${esc(k)}=${esc(attrValue(dir, t.dataSourceId, k, v))}`).join('<br>')}</td>
 <td>${flags(t)}</td><td><time>${esc(t.updatedAt)}</time></td></tr>`,
     )
     .join('\n');
@@ -189,7 +201,7 @@ export function renderAdminThread(dir: Directory, p: Projections, threadId: stri
     .map((c) => `<li>${threadLink(c.threadId)} <small>${esc(n.ds(c.dataSourceId))} · 一致: ${c.keys.map(esc).join(', ')}</small></li>`)
     .join('');
   const attrs = Object.entries(t.attributes)
-    .map(([k, v]) => `<li>${esc(k)} = ${esc(v)}</li>`)
+    .map(([k, v]) => `<li>${esc(k)} = ${esc(attrValue(dir, t.dataSourceId, k, v))}</li>`)
     .join('');
   // getThreadView の timeline と同じ並び（このスレッドのログ + 結んだ先のシグナルとメモ）を、ログのまま描く
   const entries = [...t.log.map((l) => ({ ...l, threadId: t.id }))];
@@ -197,7 +209,7 @@ export function renderAdminThread(dir: Directory, p: Projections, threadId: stri
     for (const e of p.threads[l.threadId]?.log ?? []) if (e.kind === 'signal' || e.kind === 'note') entries.push({ ...e, threadId: l.threadId });
   }
   const timeline = sortLog(entries)
-    .map((e) => logEntry(dir, p, e, e.threadId === t.id ? undefined : { threadId: e.threadId, href }))
+    .map((e) => logEntry(dir, p, t, e, e.threadId === t.id ? undefined : { threadId: e.threadId, href }))
     .join('');
   return page(
     `${t.title} — Murmur 管理`,
@@ -223,7 +235,7 @@ export function renderTimeline(dir: Directory, p: Projections): string {
       (t) => `<section class="thread${t.dismissed ? ' dismissed' : ''}">
   <h2>${esc(t.title)} <small>${esc(t.id)} · ${esc(n.ds(t.dataSourceId))}${t.dismissed ? ` · 片付け済み（${esc(t.dismissReason)}）` : ''}</small></h2>
   <p class="comm">ボール: ${ballLabel(dir, p, t.ball)}${t.unansweredSince ? ` · 未応答 ${esc(t.unansweredSince)}〜` : ''}${t.replyExpectedBy ? ` · 返事期待 ${esc(t.replyExpectedBy)}` : ''}${t.overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(n.thread(l.threadId))).join(', ')}` : ''}</p>
-  <ol>${t.log.map((l) => logEntry(dir, p, l)).join('')}</ol>
+  <ol>${t.log.map((l) => logEntry(dir, p, t, l)).join('')}</ol>
 </section>`,
     )
     .join('\n');

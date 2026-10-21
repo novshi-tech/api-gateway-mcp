@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { MurmurService, type IngestResult } from '../../src/app/service';
+import { MurmurService, type IngestResult, type MirrorResult } from '../../src/app/service';
 import { DummyConnector, MemoryDummyBackend } from '../../src/connectors/dummy/connector';
 import type { Connectors } from '../../src/connectors/types';
 import {
@@ -25,7 +25,7 @@ import { AiDecider, type Decider } from '../../src/ingest/deciders';
 import { RecordReplayLlm, type LlmClient } from '../../src/ingest/llm';
 import { memoryRepo } from '../../src/store/memory';
 import type { Repo } from '../../src/store/types';
-import { InboundSignalBody } from '../../src/api/schemas';
+import { InboundMirrorBody, InboundSignalBody } from '../../src/api/schemas';
 import { counterIds, ManualClock } from './clock';
 import { FsRecordingStore } from './recordings';
 
@@ -82,6 +82,13 @@ export const Step = z.union([
     bind: Bind.optional(),
     note: z.string().optional(),
   }),
+  /** 状態の写し（ダミーの Jira の課題の更新）。kind は省いてよい */
+  z.object({
+    id: z.string(),
+    at: z.string(),
+    mirror: z.record(z.string(), z.unknown()),
+    note: z.string().optional(),
+  }),
   z.object({ id: z.string(), at: z.string(), cron: z.literal(true), note: z.string().optional() }),
 ]);
 export type Step = z.infer<typeof Step>;
@@ -116,6 +123,7 @@ const ThreadExpectation = z
     ownerUserId: z.string().nullable(),
     replyExpectedBy: z.string().nullable(),
     overdue: z.boolean(),
+    closedAtSource: z.boolean(),
     attributes: z.record(z.string(), z.unknown()),
     /** 結んだスレッド（"$<束縛名>"）と経路 */
     links: z.record(z.string(), z.enum(['sent', 'anchor', 'manual'])),
@@ -215,8 +223,9 @@ export type DeciderMode = { kind: 'hint' } | { kind: 'ai'; mode: 'replay' | 'rec
 export interface StepRecord {
   step: Step;
   ingest?: IngestResult;
+  mirror?: MirrorResult;
   response?: { status: number; body: unknown };
-  cron?: { ingested: IngestResult[]; overdue: number };
+  cron?: { ingested: (IngestResult | MirrorResult)[]; overdue: number };
   /** AI 判断の confidence（AI を呼んだときだけ） */
   confidence?: number;
 }
@@ -344,6 +353,8 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
         if (typeof v !== 'string') throw new Error(`step ${step.id}: ${path} が文字列でない`);
         bindings[alias] = v;
       }
+    } else if ('mirror' in step) {
+      rec.mirror = await service.mirror(tenant, InboundMirrorBody.parse({ kind: 'mirror', ...(subst(step.mirror) as object) }));
     } else {
       hint.current = { stepId: step.id };
       rec.cron = { ingested: await service.pollConnectors(), overdue: await service.checkOverdue() };

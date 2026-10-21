@@ -209,6 +209,18 @@ describe('HTTP API', () => {
     expect(Object.keys((await service.state('ubs')).threads)).toHaveLength(1);
   });
 
+  it('H9 Webhook は状態の写しも受け、シグナルと同じ順に処理する（課題のスレッドがまだなければ写さない）', async () => {
+    const { http } = await app();
+    const mirror = (threadKey: string) => ({ kind: 'mirror', dataSourceId: 'ds_support', channel: 'email', threadKey, fields: {}, sourceRef: `m-${threadKey}` });
+    const body = JSON.stringify([mirror('K-1'), email({ from: 'carol@example.com', sourceRef: 'w1', anchors: { threadKey: 'K-1' } }), mirror('K-1')]);
+    const res = await http.request('/webhooks/dummy/ubs', { method: 'POST', body, headers: { 'x-murmur-signature': await signWebhook(body, 'whsec') } });
+    expect(res.status).toBe(200);
+    const [before, sig, after] = (await res.json()) as { status: string; threadId?: string }[];
+    expect(before).toEqual({ status: 'no_thread', threadKey: 'K-1' });
+    expect(sig).toMatchObject({ status: 'threaded', newThread: true, by: 'anchor' });
+    expect(after).toEqual({ status: 'unchanged', threadId: sig!.threadId });
+  });
+
   it('timeline.html はトークンを知っている人にだけ、エスケープして返す', async () => {
     const { http, service } = await app();
     await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', body: '<script>alert(1)</script>' }));

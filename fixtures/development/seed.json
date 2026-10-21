@@ -23,6 +23,8 @@
     { "id": "a_mori_slack", "tenantId": "nvt", "channel": "slack", "value": "T_CLIENT/U_MORI", "partyId": "p_mori" },
     { "id": "a_jira_site", "tenantId": "nvt", "channel": "jira", "value": "nvt.atlassian.net", "partyId": "p_nvt" },
     { "id": "a_jira_bot", "tenantId": "nvt", "channel": "jira", "value": "jira-automation@nvt.atlassian.net", "partyId": "p_jira" },
+    { "id": "a_nose_jira", "tenantId": "nvt", "channel": "jira", "value": "acct-nose", "partyId": "p_nose" },
+    { "id": "a_kato_jira", "tenantId": "nvt", "channel": "jira", "value": "acct-kato", "partyId": "p_kato" },
     { "id": "a_bb_ws", "tenantId": "nvt", "channel": "bitbucket", "value": "bitbucket.org/nvt", "partyId": "p_nvt" },
     { "id": "a_bb_bot", "tenantId": "nvt", "channel": "bitbucket", "value": "bitbucket-notifications@bitbucket.org", "partyId": "p_bitbucket" }
   ],
@@ -33,7 +35,7 @@
   ],
   "dataSources": [
     { "kind": "service", "id": "ds_slack_client", "tenantId": "nvt", "channel": "slack", "name": "Slack 共有チャンネル #client-mori", "description": "クライアント PM（森さん）との共有チャンネル。能勢の資格情報で取り込む", "credentialRefId": "c_nose_slack", "selfAddressIds": ["a_nose_slack"], "group": true },
-    { "kind": "service", "id": "ds_jira", "tenantId": "nvt", "channel": "jira", "name": "Jira プロジェクト NVT", "description": "開発の課題。1 課題 1 スレッド", "credentialRefId": "c_jira", "selfAddressIds": ["a_jira_site"] },
+    { "kind": "service", "id": "ds_jira", "tenantId": "nvt", "channel": "jira", "name": "Jira プロジェクト NVT", "description": "開発の課題。1 課題 1 スレッド", "credentialRefId": "c_jira", "selfAddressIds": ["a_jira_site", "a_nose_jira", "a_kato_jira"] },
     { "kind": "service", "id": "ds_bitbucket", "tenantId": "nvt", "channel": "bitbucket", "name": "Bitbucket nvt/web", "description": "プルリクエストとパイプラインの通知", "credentialRefId": "c_bb", "selfAddressIds": ["a_bb_ws"] },
     { "kind": "notes", "id": "ds_notes_nose", "tenantId": "nvt", "name": "能勢のメモ", "ownerPartyId": "p_nose" },
     { "kind": "notes", "id": "ds_notes_kato", "tenantId": "nvt", "name": "加藤のメモ", "ownerPartyId": "p_kato" },
@@ -57,5 +59,11 @@
     { "listId": "l_notes_kato", "partyId": "p_kato" },
     { "listId": "l_notes_ubs_only", "partyId": "p_ubs_only" }
   ],
-  "attributeDefs": []
+  "attributeDefs": [
+    { "dataSourceId": "ds_jira", "name": "status", "type": "string", "description": "課題のステータス（Jira の写し）" },
+    { "dataSourceId": "ds_jira", "name": "assignee", "type": "party", "description": "担当者（Jira の写し）。読者のユーザーならその人の番" },
+    { "dataSourceId": "ds_jira", "name": "priority", "type": "string", "description": "優先度（Jira の写し）" },
+    { "dataSourceId": "ds_jira", "name": "due", "type": "date", "description": "期日（Jira の写し）" },
+    { "dataSourceId": "ds_jira", "name": "done", "type": "boolean", "description": "完了しているか（Jira の写し）。完了ならボールは「なし」" }
+  ]
 }

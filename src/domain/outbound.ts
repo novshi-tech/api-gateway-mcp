@@ -4,7 +4,7 @@ import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoice, type ThreadedBy } from './events';
 import { defaultTitle, resolveAnchors, type SignalPayload } from './ingest';
 import { indexKey, type Projections } from './projections';
-import { canReadDataSource, type Viewer } from './viewer';
+import { canReadDataSource, membership, type Viewer } from './viewer';
 
 // 送信の記録（0012）と期限の見回り。本体は外に何も書かない。送信・起票・コメントはスタンドがゲートウェイ経由で行い、
 // 送った直後に record_sent で事実だけを記録する。
@@ -59,7 +59,11 @@ export function recordSent(
   }
   if (to.length === 0) throw new DomainError('invalid', 'to or to_party_ids is required');
   const toPartyIds = [...new Set(to.map((a) => ctx.dir.partyIdOfAddress(p.tenantId, a, ctx.now)).filter((x): x is string => x !== null))];
-  const fromAddress = ctx.dir.address(ds.selfAddressIds[0]!)!;
+  // 送った人のアドレスがデータソースの送信元にあればそれ（Jira のアカウントなど）、なければデータソースの代表
+  const m = membership(viewer, p.tenantId);
+  const fromAddress =
+    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && m !== undefined && a.partyId === m.partyId) ??
+    ctx.dir.address(ds.selfAddressIds[0]!)!;
   const from: AddressRef = { channel: ds.channel, value: fromAddress.value };
 
   const replyTo = input.replyToThreadId !== undefined ? visibleThreadOrThrow(p, viewer, input.replyToThreadId) : undefined;
@@ -141,7 +145,7 @@ export function recordSent(
 /** 期限の見回り（Cron）。返事期待の期限を過ぎ、まだ超過になっていないスレッドに ReplyOverdue を出す。冪等 */
 export function planOverdue(p: Projections, now: string): DraftEvent[] {
   return Object.values(p.threads)
-    .filter((t) => !t.dismissed && !t.overdue && t.replyExpectedBy !== null && t.replyExpectedSignalId !== null && t.replyExpectedBy < now)
+    .filter((t) => !t.dismissed && !t.closedAtSource && !t.overdue && t.replyExpectedBy !== null && t.replyExpectedSignalId !== null && t.replyExpectedBy < now)
     .sort((a, b) => (a.id < b.id ? -1 : 1))
     .map((t) => draft('ReplyOverdue', { threadId: t.id, signalId: t.replyExpectedSignalId!, replyExpectedBy: t.replyExpectedBy! }));
 }

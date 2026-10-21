@@ -89,6 +89,7 @@ function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]):
     case 'ThreadReopened':
     case 'ThreadClaimed':
     case 'ThreadAttributeSet':
+    case 'ThreadMirrored':
     case 'ReplyOverdue':
       return e.payload.threadId === threadId;
     case 'ThreadLinked':

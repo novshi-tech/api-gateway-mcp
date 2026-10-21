@@ -1,11 +1,11 @@
-import type { Channel, DataSource, InboundSignal } from '../../domain';
+import type { Channel, DataSource, InboundItem } from '../../domain';
 import type { Connector, Cursor } from '../types';
 
 /** ダミー上流の受信キュー。メモリ版と DB 版がある */
 export interface DummyBackend {
-  enqueue(tenantId: string, signal: InboundSignal): Promise<void>;
-  /** データソースの未取得のシグナルを取り出す */
-  take(dataSourceId: string): Promise<InboundSignal[]>;
+  enqueue(tenantId: string, item: InboundItem): Promise<void>;
+  /** データソースの未取得のシグナル・写しを、積んだ順に取り出す */
+  take(dataSourceId: string): Promise<InboundItem[]>;
 }
 
 /** ダミーコネクタ。pull はキューから返すだけ */
@@ -16,24 +16,24 @@ export class DummyConnector implements Connector {
   ) {}
 
   async pull(source: DataSource, _cursor: Cursor) {
-    const signals = await this.backend.take(source.id);
-    return { signals, cursor: null };
+    const items = await this.backend.take(source.id);
+    return { items, cursor: null };
   }
 }
 
 export class MemoryDummyBackend implements DummyBackend {
-  readonly queue: { tenantId: string; signal: InboundSignal }[] = [];
+  readonly queue: { tenantId: string; item: InboundItem }[] = [];
 
-  async enqueue(tenantId: string, signal: InboundSignal) {
-    this.queue.push({ tenantId, signal });
+  async enqueue(tenantId: string, item: InboundItem) {
+    this.queue.push({ tenantId, item });
   }
 
   async take(dataSourceId: string) {
-    const taken: InboundSignal[] = [];
+    const taken: InboundItem[] = [];
     for (let i = 0; i < this.queue.length; ) {
-      const item = this.queue[i]!;
-      if (item.signal.dataSourceId === dataSourceId) {
-        taken.push(item.signal);
+      const q = this.queue[i]!;
+      if (q.item.dataSourceId === dataSourceId) {
+        taken.push(q.item);
         this.queue.splice(i, 1);
       } else i++;
     }

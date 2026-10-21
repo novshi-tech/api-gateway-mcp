@@ -57,6 +57,18 @@ function apply(s: Projections, e: DomainEvent): void {
       recompute(s, t, e.at);
       return;
     }
+    case 'ThreadMirrored': {
+      const p = e.payload;
+      const t = mustThread(s, p.threadId);
+      if (t.dataSourceId !== p.dataSourceId) throw new FoldError(`mirror of ${p.dataSourceId} cannot go into thread ${t.id} (${t.dataSourceId})`);
+      for (const [name, value] of Object.entries(p.fields)) {
+        if (value === null) delete t.attributes[name];
+        else t.attributes[name] = value;
+      }
+      t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
+      recompute(s, t, e.at);
+      return;
+    }
     case 'ThreadAttributeSet': {
       const p = e.payload;
       const t = mustThread(s, p.threadId);

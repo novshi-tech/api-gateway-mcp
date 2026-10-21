@@ -7,7 +7,7 @@ import {
   ClaimBody,
   DismissBody,
   GetThreadQuery,
-  InboundSignalBody,
+  InboundItemBody,
   LinkBody,
   ListListsQuery,
   ListThreadsQuery,
@@ -168,9 +168,9 @@ export function createApp(opts: HttpOptions) {
     const raw = await c.req.text();
     const sig = c.req.header('x-murmur-signature') ?? '';
     if (!(await opts.webhookVerify(raw, sig))) return c.json({ error: 'bad signature' }, 401);
-    const parsed = InboundSignalBody.array().parse(JSON.parse(raw));
+    const parsed = InboundItemBody.array().parse(JSON.parse(raw));
     const results = [];
-    for (const s of parsed) results.push(await c.var.service.ingest(c.req.param('tenantId'), s));
+    for (const item of parsed) results.push(await c.var.service.ingestItem(c.req.param('tenantId'), item));
     return c.json(results);
   });
 

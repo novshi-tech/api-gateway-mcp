@@ -223,7 +223,10 @@ export function unlinkThreads(
 
 // ---- 本人が付ける属性（ThreadAttributeSet） ----
 
-/** 定義（AttributeDef）はスレッドのデータソースに付く。型を確かめる。value が null なら外す */
+/**
+ * 定義（AttributeDef）はスレッドのデータソースに付く。型を確かめる。value が null なら外す。
+ * 外のサービスのスレッドの属性はソースの写し（ThreadMirrored）なので、Murmur の側では書き換えない（0010・0014）
+ */
 export function setAttribute(
   p: Projections,
   viewer: Viewer,
@@ -231,6 +234,10 @@ export function setAttribute(
   input: { threadId: string; name: string; value: unknown },
 ): DraftEvent[] {
   const t = visibleThreadOrThrow(p, viewer, input.threadId);
+  const ds = dir.dataSource(t.dataSourceId);
+  if (ds?.kind === 'service') {
+    throw new DomainError('invalid', `attributes of thread ${t.id} are mirrored from ${ds.name}; change them at the source`);
+  }
   const def = dir.attributeDefs(t.dataSourceId).find((d) => d.name === input.name);
   if (!def) throw new DomainError('invalid', `attribute ${input.name} is not defined for data source ${t.dataSourceId}`);
   const value = input.value === null ? null : checkAttribute(dir, p.tenantId, def, input.value);
@@ -238,7 +245,7 @@ export function setAttribute(
   return [draft('ThreadAttributeSet', { threadId: t.id, name: def.name, value, actorUserId: viewer.userId })];
 }
 
-function checkAttribute(dir: Directory, tenantId: string, def: AttributeDef, raw: unknown): AttributeValue {
+export function checkAttribute(dir: Directory, tenantId: string, def: AttributeDef, raw: unknown): AttributeValue {
   const bad = (why: string) => new DomainError('invalid', `attribute ${def.name} (${def.type}): ${why}`);
   const parsed = AttributeValue.safeParse(raw);
   if (!parsed.success) throw bad('value must be a string, number or boolean');

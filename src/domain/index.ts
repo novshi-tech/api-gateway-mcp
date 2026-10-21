@@ -11,6 +11,7 @@ export * from './context';
 export * from './commands';
 export * from './ingest';
 export * from './outbound';
+export * from './mirror';
 export * from './turn';
 export * from './visibility';
 export * from './canonical';

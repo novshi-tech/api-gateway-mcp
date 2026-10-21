@@ -26,6 +26,9 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 {"id":"o01","at":"...","action":{"tool":"record_sent","as":"u_sato","input":{"data_source":"ds_support","to":["ops@clean-toto.example"],"body":"...","sent_ref":"<u1@ubs.example>","source_thread_id":"$comp","reply_expected_by":"2026-10-16T22:00:00+09:00"}},"echo":true,"bind":{"partner":"thread.id"}}
 // Cron（取り込みのポーリングと期限の見回り）
 {"id":"c01","at":"...","cron":true}
+// 状態の写し（ダミーの Jira の課題の更新。ステップ 7）。fields は変わった属性（名前は seed の attributeDefs、party 型はそのチャネルのアドレス）。
+// 課題キー（threadKey）のスレッドに写す。スレッドはシグナル（課題の作成・起票の記録）で作られ、ID を使わないので AI の記録のキーは変わらない
+{"id":"m01","at":"...","mirror":{"dataSourceId":"ds_jira","channel":"jira","threadKey":"NVT-42","fields":{"status":"進行中","assignee":"acct-kato","done":false},"sourceRef":"jira:NVT-42:u1"}}
 ```
 
 - `"$name"` は束縛した値に置き換わる（本文に `$` から始まる文字列を書くと失敗する）
@@ -51,7 +54,7 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 | シナリオ | 状態 | 備考 |
 | --- | --- | --- |
 | repair-estimate（修繕見積） | desk-checked | 組織のメールボックスと個人のメールボックス。同じ相手の別件を AI が区切る。個人のメールボックスは読者 1 人なので本人の「自分の番」。鈴木の見積依頼を記録して問い合わせと結び、期限超過 → 見積で解消 |
-| development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey）。NVT-42 と NVT-50 に触れた Slack の結び候補から、NVT-42 だけを結ぶ |
+| development（開発） | desk-checked | Slack の共有チャンネル（グループ）、Jira・Bitbucket はソースの区切り（threadKey）。NVT-42 と NVT-50 に触れた Slack の結び候補から、NVT-42 だけを結ぶ。Jira の状態の写し（担当者で誰の番、完了でボールなし）、能勢が回帰テストの課題を起票して記録し Slack と結ぶ、Jira のコメントの両方向（直接・スタンド経由。H5）（H9） |
 | absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。木村が持ち、打診を送って記録して欠勤のスレッドと結ぶ（メモなし）。スタンド主導で回して置き換える（H7） |
 | complaint（クレーム） | draft | 佐藤が持ち、協力会社への依頼を記録（期限超過 → 解消）、お詫びは観測が先で記録があと。メモのスレッドで結んで優先度を付け、閉じる。片付けたスレッドへの返信で別件が届き（閉じた件に結ばれた先が動く）、シグナルを移し替える。同上 |
 

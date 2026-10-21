@@ -191,7 +191,8 @@ describe('属性（set_attribute）', () => {
     expect(setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'status', value: 'todo' })).toEqual([]);
     expect(() => setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'status', value: 'later' })).toThrow(/not one of/);
     expect(() => setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'nope', value: 'x' })).toThrow(/not defined/);
-    expect(() => setAttribute(log.state(), alice, dir, { threadId, name: 'status', value: 'todo' })).toThrow(/not defined/);
+    // 外のサービスのスレッドの属性はソースの写し（H9）。Murmur の側では書けない
+    expect(() => setAttribute(log.state(), alice, dir, { threadId, name: 'status', value: 'todo' })).toThrow(/mirrored/);
     expect(setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'status', value: null })).toHaveLength(1);
   });
 });
