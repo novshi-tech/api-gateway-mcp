@@ -59,5 +59,5 @@
     },
     "maxTokens": 2048
   },
-  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"ログイン画面の500エラー（リリース後）\",\"needs_response\":true,\"reason\":\"mode が new のため新規スレッドとして扱う。クライアントPMの森さんから、昨日のリリース後にログイン画面で500エラーが出ているとの報告があり、「至急見てもらえますか」と調査・対応を明確に求めているため、needs_response は true。\",\"confidence\":0.97}"
+  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"ログイン画面の500エラー（昨日のリリース後）\",\"needs_response\":true,\"reason\":\"mode が new のためスレッドは新規作成。クライアントPMの森さんが、昨日のリリース後からログイン画面で500エラーが出ていると報告し、「至急見てもらえますか」と調査・対応を明確に依頼している。direction が received で返事や対応を求めているため needs_response は true。\",\"confidence\":0.97}"
 }

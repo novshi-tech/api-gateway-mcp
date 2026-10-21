@@ -59,5 +59,5 @@
     },
     "maxTokens": 2048
   },
-  "response": "{\"thread\":null,\"thread_id\":null,\"title\":null,\"needs_response\":true,\"reason\":\"山田工務店から雨漏りの現地調査結果と見積書(税込350,000円)が届いた。「ご検討のほどよろしくお願いいたします」とあり、鈴木側に見積の承諾可否など検討・回答を求めているため、返事・対応が必要と判断した。\",\"confidence\":0.8}"
+  "response": "{\"thread\":null,\"thread_id\":null,\"title\":null,\"needs_response\":true,\"reason\":\"山田工務店が、鈴木さんの依頼に対して現地確認の結果と見積書（税込350,000円）を送ってきている。文面は「ご検討のほどよろしくお願いいたします」で、見積を検討して承諾か否かを返答することが求められている。単なる通知ではなく、こちらの判断と返事が必要なため true とした。\",\"confidence\":0.8}"
 }

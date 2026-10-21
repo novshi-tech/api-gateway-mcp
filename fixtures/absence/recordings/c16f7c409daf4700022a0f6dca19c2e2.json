@@ -59,5 +59,5 @@
     },
     "maxTokens": 2048
   },
-  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"佐々木さん 遅刻の連絡(電車遅延10分)\",\"needs_response\":false,\"reason\":\"mode が new のため新規スレッドとして扱う。清掃スタッフの佐々木さんが電車遅延で10分ほど遅れると知らせる勤怠の連絡で、返事・回答・確認・対応を明示的には求めていない。一方的な状況報告にあたるため needs_response は false とした。\",\"confidence\":0.72}"
+  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"佐々木さん 10分遅刻の連絡\",\"needs_response\":false,\"reason\":\"清掃スタッフから電車遅延により10分ほど遅れるという勤怠の連絡。mode が new のため新規スレッドを作成。遅刻の報告であり、返事・回答・対応・確認を明示的に求めておらず、一方的な通知に近いため needs_response は false と判断した。\",\"confidence\":0.7}"
 }
