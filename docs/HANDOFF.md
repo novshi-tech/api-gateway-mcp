@@ -93,10 +93,11 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 次のセッションでやること
 
-1. **H6 の記録を取る**: `ANTHROPIC_API_KEY=... pnpm scenario verify all --ai record`（キーは `dev.env` にない。直樹に環境変数で渡してもらう）。記録をコミットすると `pnpm test` の H6 の再生テストが動く。
-   目標は全体 90%・AI の区切り 80%。AI の区切りのラベルは 5 件しかない（repair-estimate s05、development s07、absence o02・s04・s06）ので、外れの中身を見る。
-   「求めているか」は受信 24 件。迷いそうなラベル: development s02（スクリーンショットの追加。補足は依頼の一部として true）・s04（PR の作成とレビュアー指定。true）、repair-estimate s02（見積の送付。true）、absence s03（遅刻の連絡。true で、木村が片付ける）・s05（回復の連絡。false）。
-   外れが多ければプロンプト（`INGEST_SYSTEM_PROMPT`）かラベルを見直し、`--ai rerecord` で取り直す
+1. （済み、2026-10-21）**H6 の記録**: 直樹が手元で `--ai record`（claude-sonnet-5-5）を流してコミットした（47c43f1）。全体 32/35 = 91.4%、AI の区切り 5/5、構造の区切り 29/29、求めているか 20/24。
+   `pnpm test` の H6 の再生テストは緑（139 件すべて緑）。`pnpm scenario verify all --ai replay` は下の 3 件で終了コード 1（CI はヒント実行なので影響なし）。
+   外れた 3 件はどれも Claude 自身は「求めていない」と答え、confidence が閾値 0.8 未満で「求めている」に倒れたもの: development s07（パイプライン成功、0.70）・absence s05（回復の連絡、0.70）・complaint s02（協力会社の作業報告、0.72）。
+   逆に absence s03（遅刻の連絡、ラベルは true）は Claude が false（0.72）と答え、閾値で true に倒れて当たった。閾値なしの生の判断なら求めているかは 23/24。
+   **閾値をどうするかは直樹の判断待ち**（下の「直樹に判断してもらうこと」）
 2. （済み、2026-10-20）main に入れて CI（run #29）で murmur-dev にデプロイした。直樹が dev の DB に `pnpm db:migrate`（0001・0002）と `pnpm seed absence --user u_kimura=<直樹のゲートウェイの User ID>` を流した。
    CI はマイグレーションも seed も走らせない（secrets は `CLOUDFLARE_API_TOKEN` だけ）。スキーマを変えたら、デプロイの前後で手で `pnpm db:migrate` を当てる（CD には入れない、直樹）。
    wrangler の vars は `IGNORE_CONFIDENCE_THRESHOLD` から `NO_RESPONSE_CONFIDENCE_THRESHOLD` に改名した。スキルの API の表は今の本体と合わない（ステップ 5 まで、スタンドからは使えない）
@@ -116,6 +117,8 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 直樹に判断してもらうこと
 
+- H6 の「求めていない」の閾値（`NO_RESPONSE_CONFIDENCE_THRESHOLD`、0.8）: 2026-10-21 の記録では、生の判断の「求めていない」の confidence が 0.70〜0.72 に固まり、閾値で 4 件が「求めている」に倒れた（3 件はラベルと外れ、1 件は当たり）。
+  案は (1) 0.8 のまま（拾いすぎは設計どおり、片付けで落とす）、(2) 0.7 に下げる、(3) プロンプトに例を足して rerecord。0007 の実データで分布を見てから決める案を推した
 - ステップ 2 で決めた実装の細部（計画と食い違いはないと判断したが、見てほしい）:
   1. 片付けたスレッドにアンカーで新しいシグナルが来ても開き直さず、`activeSinceDismissed` で知らせるだけにした（外のソースのスレッドにも 0014 の 4 を当てた）。仕分け待ちには出ないので、スタンドが `activeSinceDismissed` を見て開き直す運用になる
   2. `SignalThreaded.by` に `no_match`（どの規則にも当たらず候補もない → 新しいスレッド）を足した。計画のイベントの表に書き足した
