@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_INGEST_JSON_SCHEMA,
+  AiIngestDecision,
   buildIngestPrompt,
   DEFAULT_POLICY,
   DomainError,
@@ -257,5 +259,14 @@ describe('プロンプト', () => {
     const prompt = JSON.parse(buildIngestPrompt(r.request!));
     expect(Object.keys(prompt).sort()).toEqual(['data_source', 'mode', 'signal']);
     expect(prompt.signal).toMatchObject({ direction: 'received', subject: '件名' });
+  });
+
+  it('H6 構造化出力の JSON Schema は API が受け付ける形（enum は単一の型と組む）で、zod のスキーマと同じ値を通す', () => {
+    for (const [name, prop] of Object.entries(AI_INGEST_JSON_SCHEMA.properties)) {
+      const p = prop as { type?: unknown; enum?: unknown };
+      if (p.enum) expect(typeof p.type, name).toBe('string');
+    }
+    expect(AI_INGEST_JSON_SCHEMA.required).toEqual(Object.keys(AiIngestDecision.shape));
+    expect(AI_INGEST_JSON_SCHEMA.properties.thread.anyOf).toEqual([{ type: 'string', enum: ['existing', 'new'] }, { type: 'null' }]);
   });
 });

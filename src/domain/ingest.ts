@@ -397,7 +397,8 @@ export function buildIngestPrompt(request: IngestRequest): string {
 export const AI_INGEST_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    thread: { type: ['string', 'null'], enum: ['existing', 'new', null] },
+    // enum と型の配列は同時に書けない（API が受け付けない）ので anyOf に分ける
+    thread: { anyOf: [{ type: 'string', enum: ['existing', 'new'] }, { type: 'null' }] },
     thread_id: { type: ['string', 'null'] },
     title: { type: ['string', 'null'] },
     needs_response: { type: ['boolean', 'null'] },
