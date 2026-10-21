@@ -238,6 +238,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 - 自動モードの判定で止められたこと: 環境変数の `ANTHROPIC_API_KEY` を `wrangler secret put` でクラウドへ送る（直樹が `!` で実行した）、`issue_token` で得たトークンをファイルに書く（トークンは curl の引数に直接書けば通った）。CI の再実行は直樹の確認を待った
 - `npx neonctl` は API キーを渡しても止まって返ってこない。Neon は `https://console.neon.tech/api/v2` を curl で呼ぶ（プロジェクト一覧には `org_id=org-broad-river-99881946` が要る）
 - Neon の組織には ubs-apps の本番プロジェクト `ubs-app`（damp-bread-05008141）もある。murmur では触らない
+- 2026-10-21: `dev.env` の `DATABASE_URL` が Neon の murmur プロジェクトの `main` ブランチ（テーブルなし）の接続文字列になっていて、`pnpm seed` が `relation "events" does not exist` で落ちた。`dev` ブランチの接続文字列（プール用でよい）に直して通った。Neon はブランチごとにエンドポイント（`ep-...`）が違う。migrate・seed の前にホスト名を確かめる
 - `~/.config/murmur/dev.env` の値はクォートしておく（接続文字列の `&` でシェルが割れ、エラー表示にパスワードが出た。2026-10-17 にロール neondb_owner のパスワードをリセット済み）
 - `! gh secret set ...` は端末の入力欄が出ない。秘密の入力は直樹に別のターミナルでやってもらう
 - ゲートウェイの本番 `wrangler.jsonc`（git 管理外）を書き換える前の控え: 前セッションの scratchpad にあるだけで、次のセッションからは見えない。差分は `services` の 1 行と `SERVICES.murmur` だけ
