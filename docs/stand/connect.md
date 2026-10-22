@@ -64,6 +64,14 @@ WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 2. マーケットプレイス `novshi-tech/api-gateway-mcp` と `novshi-tech/nvt-api-gateway-skills` を追加し、`api-gateway` と `nvt-api-gateway` のプラグインをインストールする
 3. 同じく list_threads で確認する
 
+## 複数の組織を使い分けるとき（`docs/adr/0018`）
+
+Murmur とゲートウェイは「1 つの接続 = 1 つの組織（IdP が 1 つ）」が前提。1 人のユーザが複数の組織にまたがる対応は本体にもゲートウェイにも入れない（適切なセキュリティ境界を引けないため）。
+MCP に同時につながるのは 1 テナントだけなので、別の組織の Murmur を使うときはスタンドの側で接続先を切り替える。
+
+- Claude Code: `settings.json` で claude.ai の公式コネクタ（API ゲートウェイ）を切り、その組織のゲートウェイの MCP をローカルで別途つなぐ。組織ごとに設定を分けておき、切り替えて使う
+- Cowork: claude.ai のコネクタが 1 つなので、1 つの組織に固定する
+
 ## H7（スタンド主導の完走）の回し方
 
 1. `fixtures/absence` と `fixtures/complaint` の seed を投入し、`signals.jsonl` の受信だけを Webhook で時刻順に流す
