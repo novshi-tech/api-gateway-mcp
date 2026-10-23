@@ -12,7 +12,7 @@
 - 計画 v2 は 2026-10-21 に完了（振り返りは `docs/retrospective-v2.md`）。次の段階（自社の実データで Ingest を確かめる）のゴールと段取りは `docs/adr/0016`
 - 1 人のユーザが複数の組織（テナント）にまたがる対応はやらない（`docs/adr/0018`）。1 つの接続 = 1 つの組織。組織の切り替えはスタンドの側で行い、本体にもゲートウェイにも切り替えやアカウントリンクを足さない
 - 立ち位置（`docs/adr/0020`）: Murmur は 1 チーム（会社・部署・プロジェクトなど、緊密なタスクの共有とディスパッチが要るグループ）に 1 つセルフホストする。ゲートウェイとは 1 対 1。チームの境界を越えることを最初から想定し、越えるときはチームの中とは違う要約レベルのスレッドを共有する。将来像はチームごとの Murmur が送り合う形と個人の Murmur（`docs/adr/0022`、構想）
-- マルチテナントの概念は本体から外し、ストレージは Neon から D1 か Durable Object の SQLite に移す方向（`docs/adr/0021`。どちらにするかと時期は未決）。実装するまで、コードにはテナントと Postgres の実装が残る
+- マルチテナントの概念は本体から外し（1 デプロイ = 1 チーム）、ストレージは D1 にした（`docs/adr/0021`、2026-10-23 に実装）。投影は変わった行だけ upsert する。Postgres の実装は消した（要る人は `Repo` を実装する）
 - ADR には汎用の製品としての決定を書く。特定の会社の事情（どの会社のアカウントで回すか、どの会社をまとめるか）は書かない
 
 ## 約束事
@@ -50,7 +50,7 @@ src/
     turn.ts        クエリ層の「誰の番か」（持ち主・担当者の写し・読者が 1 人・宛先）、リンク先から導出したボール、結び候補
     visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）、一覧のフィルタ、スレッドの詳細とタイムライン
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存
-  store/         イベントストア・投影・マスタ（メモリ実装と Drizzle/Postgres 実装）
+  store/         イベントストア・投影・マスタ（メモリ実装と D1 実装。投影は変わった行だけ upsert する）
   ingest/        Claude 呼び出し（記録・再生）、Decider
   connectors/    Connector インタフェース（取り込みだけ。シグナルと状態の写し）+ dummy/
   api/           HTTP API の入力スキーマ
@@ -59,7 +59,7 @@ src/
   index.ts       Worker の入口（fetch / scheduled）と配線
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/
-drizzle/         マイグレーション（drizzle-kit generate で作る）
+drizzle/         D1 のマイグレーション（drizzle-kit generate で作り、wrangler d1 migrations apply で当てる）
 ```
 
 時刻と ID はシェルが `CoreContext`（`now`・`newId`）で渡す。コアの関数は同じ入力なら同じ出力を返す。
@@ -69,13 +69,14 @@ drizzle/         マイグレーション（drizzle-kit generate で作る）
 ```sh
 pnpm install
 pnpm typecheck
-pnpm test                                   # vitest（コア・シェル・4 シナリオ。Postgres は pglite）
+pnpm test                                   # vitest（コア・シェル・4 シナリオ。D1 は Miniflare）
 pnpm scenario verify all                    # 4 シナリオを expected.json と比較（H1 のリプレイ比較も）
-pnpm scenario verify development --db pglite
+pnpm scenario verify development --db d1
 pnpm scenario verify all --ai replay        # 記録した Claude の判断で H6 の一致率を出す
 ANTHROPIC_API_KEY=... pnpm scenario verify all --ai record   # 記録を作る（モデルを変えたら --ai rerecord）
 pnpm db:generate                            # src/store/schema.ts からマイグレーションを作る
-DATABASE_URL=... pnpm db:migrate            # Neon に当てる
+pnpm db:migrate dev                         # D1 に当てる（wrangler d1 migrations apply）
+pnpm seed <scenario> --env dev              # D1 のデータを消して seed を入れる
 pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
 ```
 

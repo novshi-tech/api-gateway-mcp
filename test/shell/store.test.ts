@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { canonicalJson, draft, foldChanges } from '../../src/domain';
-import { pgRepo } from '../../src/store/drizzle';
+import { d1Repo } from '../../src/store/d1';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
-import { pgliteDb } from '../../scripts/lib/pglite';
+import { localD1 } from '../../scripts/lib/d1';
 import { answer, email, EventLog, ingestPure, makeCtx, seed } from '../helpers/world';
 
-// メモリ実装と Postgres 実装（pglite）に同じ契約テストを当てる
+// メモリ実装と D1 実装（Miniflare）に同じ契約テストを当てる
 
 const AT = '2026-10-16T09:00:00.000Z';
 const dismissed = (threadId: string) => draft('ThreadDismissed', { threadId, actorUserId: 'u', reason: 'r' });
@@ -14,11 +14,11 @@ let closeDb: (() => Promise<void>) | undefined;
 const impls: [string, () => Promise<Repo>][] = [
   ['memory', async () => memoryRepo()],
   [
-    'postgres',
+    'd1',
     async () => {
-      const { db, close } = await pgliteDb();
+      const { db, close } = await localD1();
       closeDb = close;
-      return pgRepo(db);
+      return d1Repo(db);
     },
   ],
 ];
@@ -89,6 +89,28 @@ describe.each(impls)('Repo 契約（%s）', (_name, make) => {
     expect(changes.signalIds).toHaveLength(1); // 前からあるシグナルは書き直さない
     await repo.projections.save(projections, changes);
     expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(log.state()));
+    await repo.projections.clear();
+  });
+
+  it('1 文に収まらない行数も書ける（D1 はバインド変数が 1 文 100 個まで）', async () => {
+    const before = (await repo.events.read()).length;
+    const many = Array.from({ length: 30 }, (_, i) => dismissed(`m${i}`));
+    const stored = await repo.events.append(before, many, AT);
+    expect(stored.map((e) => e.seq)).toEqual(many.map((_, i) => before + i + 1));
+    expect((await repo.events.read(before)).length).toBe(30);
+    // 先に誰かが書いていれば、何行あっても 1 行も入らない
+    await expect(repo.events.append(before, many, AT)).rejects.toBeInstanceOf(ConcurrencyError);
+    expect((await repo.events.read()).length).toBe(before + 30);
+
+    const log = new EventLog();
+    const ctx = makeCtx(AT);
+    for (let i = 0; i < 40; i++) ingestPure(log, ctx, email({ from: `c${i}@example.com`, sourceRef: `r${i}` }), () => answer({ title: `件 ${i}` }));
+    const p = log.state();
+    await repo.projections.save(p);
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(p));
+    await repo.projections.clear();
+    await repo.projections.save(p, foldChanges(log.events).changes);
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(p));
     await repo.projections.clear();
   });
 

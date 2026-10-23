@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { canonicalJson, deriveComm, emptyProjections, fold, foldChanges, type DomainEvent } from '../src/domain';
-import { pgRepo } from '../src/store/drizzle';
-import { pgliteDb } from '../scripts/lib/pglite';
+import { d1Repo } from '../src/store/d1';
+import { localD1 } from '../scripts/lib/d1';
 import { FsRecordingStore } from '../scripts/lib/recordings';
 import { addMetrics, emptyMetrics, ingestMetrics, listScenarios, loadScenario, runScenario, sha256, verifyScenario } from '../scripts/lib/scenario';
 
@@ -19,21 +19,21 @@ describe.each(names)('シナリオ %s', (name) => {
     expect(v.errors).toEqual([]);
   });
 
-  it('H1 投影を全削除してリプレイしてもスレッドの投影のハッシュが一致し、Postgres でも同じになる', async () => {
+  it('H1 投影を全削除してリプレイしてもスレッドの投影のハッシュが一致し、D1 でも同じになる', async () => {
     const mem = await runScenario(scenario);
     const memHash = await sha256(canonicalJson((await mem.service.state()).threads));
     const rebuilt = await mem.service.rebuild();
     expect(await sha256(canonicalJson(rebuilt.threads))).toBe(memHash);
 
-    const { db, close } = await pgliteDb();
+    const { db, close } = await localD1();
     try {
-      const pg = await runScenario(scenario, { repo: pgRepo(db) });
-      const pgState = await pg.service.state();
-      expect(await sha256(canonicalJson(pgState.threads))).toBe(memHash);
-      await pg.repo.projections.clear();
-      const pgRebuilt = await pg.service.state();
-      expect(await sha256(canonicalJson(pgRebuilt.threads))).toBe(memHash);
-      expect(canonicalJson(pgRebuilt)).toBe(canonicalJson(pgState));
+      const d1 = await runScenario(scenario, { repo: d1Repo(db) });
+      const d1State = await d1.service.state();
+      expect(await sha256(canonicalJson(d1State.threads))).toBe(memHash);
+      await d1.repo.projections.clear();
+      const d1Rebuilt = await d1.service.state();
+      expect(await sha256(canonicalJson(d1Rebuilt.threads))).toBe(memHash);
+      expect(canonicalJson(d1Rebuilt)).toBe(canonicalJson(d1State));
     } finally {
       await close();
     }
