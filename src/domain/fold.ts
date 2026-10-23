@@ -1,6 +1,6 @@
 import { deriveComm, sortLog } from './comm';
 import type { DomainEvent, PayloadOf } from './events';
-import { emptyProjections, indexKey, type Projections, type SignalRecord, type Thread } from './projections';
+import { emptyProjections, indexKey, type ProjectionChanges, type Projections, type SignalRecord, type Thread } from './projections';
 
 /**
  * 畳み込み。IO を持たない純関数で、入力の state は変更しない。
@@ -9,22 +9,35 @@ import { emptyProjections, indexKey, type Projections, type SignalRecord, type T
  * リンク先の状態は読まない（リンク先と合わせるのはクエリ層）。
  */
 export function fold(events: readonly DomainEvent[], base?: Projections): Projections {
+  return foldChanges(events, base).projections;
+}
+
+/** fold と同じ。あわせて、base から変わったスレッドとシグナルを返す（投影を差分だけ保存するため、0021） */
+export function foldChanges(events: readonly DomainEvent[], base?: Projections): { projections: Projections; changes: ProjectionChanges } {
   const state: Projections = base ? structuredClone(base) : emptyProjections();
-  for (const e of events) apply(state, e);
-  return state;
+  const c: Changes = { threads: new Set(), signals: new Set(), index: false };
+  for (const e of events) apply(state, e, c);
+  return { projections: state, changes: { threadIds: [...c.threads].sort(), signalIds: [...c.signals].sort(), index: c.index } };
 }
 
 export class FoldError extends Error {}
 
-function apply(s: Projections, e: DomainEvent): void {
+/** fold の途中で書き換えたもの。スレッドは recompute、シグナルは addSignal・置き先・記録の統合で書き換わる */
+interface Changes {
+  threads: Set<string>;
+  signals: Set<string>;
+  index: boolean;
+}
+
+function apply(s: Projections, e: DomainEvent, c: Changes): void {
   if (e.seq <= s.lastSeq) throw new FoldError(`non-monotonic seq ${e.seq} after ${s.lastSeq}`);
   s.lastSeq = e.seq;
 
   switch (e.type) {
     case 'SignalObserved':
-      return onSignal(s, e);
+      return onSignal(s, e, c);
     case 'SignalThreaded':
-      return onThreaded(s, e, e.payload);
+      return onThreaded(s, e, e.payload, c);
     case 'ThreadDismissed':
     case 'ThreadReopened': {
       const t = mustThread(s, e.payload.threadId);
@@ -35,23 +48,23 @@ function apply(s: Projections, e: DomainEvent): void {
         reason: e.payload.reason,
         actorUserId: e.payload.actorUserId,
       });
-      recompute(s, t, e.at);
+      recompute(s, t, e.at, c);
       return;
     }
     case 'ThreadClaimed': {
       const t = mustThread(s, e.payload.threadId);
       t.log.push({ seq: e.seq, at: e.at, kind: 'claimed', userId: e.payload.userId, actorUserId: e.payload.actorUserId, reason: e.payload.reason });
-      recompute(s, t, e.at);
+      recompute(s, t, e.at, c);
       return;
     }
     case 'ThreadLinked':
-      return onLinked(s, e, e.payload);
+      return onLinked(s, e, e.payload, c);
     case 'OutboundRecorded':
-      return onRecorded(s, e, e.payload);
+      return onRecorded(s, e, e.payload, c);
     case 'ReplyOverdue': {
       const t = mustThread(s, e.payload.threadId);
       t.log.push({ seq: e.seq, at: e.at, kind: 'overdue', signalId: e.payload.signalId, replyExpectedBy: e.payload.replyExpectedBy });
-      recompute(s, t, e.at);
+      recompute(s, t, e.at, c);
       return;
     }
     case 'ThreadMirrored': {
@@ -63,7 +76,7 @@ function apply(s: Projections, e: DomainEvent): void {
         else t.attributes[name] = value;
       }
       t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
-      recompute(s, t, e.at);
+      recompute(s, t, e.at, c);
       return;
     }
     case 'ThreadAttributeSet': {
@@ -72,14 +85,14 @@ function apply(s: Projections, e: DomainEvent): void {
       if (p.value === null) delete t.attributes[p.name];
       else t.attributes[p.name] = p.value;
       t.log.push({ seq: e.seq, at: e.at, kind: 'attribute', name: p.name, value: p.value, actorUserId: p.actorUserId });
-      recompute(s, t, e.at);
+      recompute(s, t, e.at, c);
       return;
     }
   }
 }
 
 /** 無向の辺を両端に載せる（外すときは両端から外す） */
-function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>): void {
+function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>, c: Changes): void {
   if (p.a === p.b) throw new FoldError(`thread ${p.a} cannot link to itself`);
   const ends: [Thread, string][] = [
     [mustThread(s, p.a), p.b],
@@ -100,19 +113,19 @@ function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>):
       actorUserId: p.actorUserId,
       reason: p.reason,
     });
-    recompute(s, t, e.at);
+    recompute(s, t, e.at, c);
   }
 }
 
-function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserved' }>): void {
-  addSignal(s, e, { ...e.payload, recorded: null });
+function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserved' }>, c: Changes): void {
+  addSignal(s, e, { ...e.payload, recorded: null }, c);
 }
 
 /**
  * 送信の記録。新しい送信ならシグナルを作り（置き先は続く SignalThreaded）、観測が先に届いていれば
  * そのシグナルに記録を重ねる（シグナルは 1 本のまま。返事期待だけがスレッドに載る）
  */
-function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecorded'>): void {
+function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecorded'>, c: Changes): void {
   const recorded = { actorUserId: p.actorUserId, at: e.at, replyExpectedBy: p.replyExpectedBy, sourceThreadId: p.sourceThreadId };
   if (!p.merged) {
     addSignal(s, e, {
@@ -122,23 +135,24 @@ function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecord
       anchors: { ...p.anchors, messageId: p.sentRef },
       sourceRef: `sent:${p.sentRef}`,
       recorded,
-    });
+    }, c);
     return;
   }
   const sig = s.signals[p.signalId];
   if (!sig || sig.direction !== 'outbound') throw new FoldError(`cannot merge record into signal ${p.signalId}`);
   sig.recorded = recorded;
+  c.signals.add(sig.signalId);
   const t = sig.threadId ? s.threads[sig.threadId] : undefined;
   const entry = t?.log.find((l) => l.signalId === sig.signalId && l.kind === 'signal');
   if (t && entry) {
     entry.replyExpectedBy = p.replyExpectedBy;
-    recompute(s, t, e.at);
+    recompute(s, t, e.at, c);
   }
 }
 
 type NewSignal = Omit<SignalRecord, 'at' | 'seq' | 'threadId' | 'threadedBy' | 'needsResponse'>;
 
-function addSignal(s: Projections, e: DomainEvent, p: NewSignal): void {
+function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): void {
   const record: SignalRecord = {
     signalId: p.signalId,
     dataSourceId: p.dataSourceId,
@@ -163,9 +177,11 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal): void {
   s.signals[p.signalId] = record;
   s.index.sourceRefs[indexKey(p.dataSourceId, p.sourceRef)] = p.signalId;
   if (p.anchors.messageId) s.index.messageIds[indexKey(p.dataSourceId, p.anchors.messageId)] = p.signalId;
+  c.signals.add(p.signalId);
+  c.index = true;
 }
 
-function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded'>): void {
+function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded'>, c: Changes): void {
   const sig = s.signals[p.signalId];
   if (!sig) throw new FoldError(`unknown signal ${p.signalId}`);
 
@@ -174,7 +190,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
     const prev = mustThread(s, sig.threadId);
     prev.signalIds = prev.signalIds.filter((id) => id !== sig.signalId);
     prev.log = prev.log.filter((l) => l.signalId !== sig.signalId);
-    recompute(s, prev, e.at);
+    recompute(s, prev, e.at, c);
   }
 
   const choice = p.thread;
@@ -189,6 +205,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
   sig.threadId = t.id;
   sig.threadedBy = p.by;
   sig.needsResponse = sig.direction === 'outbound' ? null : p.needsResponse;
+  c.signals.add(sig.signalId);
   t.log.push({
     seq: sig.seq,
     at: sig.at,
@@ -199,10 +216,11 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
     toPartyIds: sig.direction === 'outbound' ? sig.toPartyIds : undefined,
     replyExpectedBy: sig.recorded?.replyExpectedBy ?? undefined,
   });
-  recompute(s, t, e.at);
+  recompute(s, t, e.at, c);
 }
 
-function recompute(s: Projections, t: Thread, at: string): void {
+function recompute(s: Projections, t: Thread, at: string, c: Changes): void {
+  c.threads.add(t.id);
   t.log = sortLog(t.log);
   t.signalIds = t.log.filter((l) => l.kind === 'signal' || l.kind === 'note').map((l) => l.signalId!);
   Object.assign(t, deriveComm(t.log));

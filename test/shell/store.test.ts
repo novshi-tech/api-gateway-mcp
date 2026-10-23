@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { canonicalJson, draft } from '../../src/domain';
+import { canonicalJson, draft, foldChanges } from '../../src/domain';
 import { pgRepo } from '../../src/store/drizzle';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
@@ -70,6 +70,26 @@ describe.each(impls)('Repo 契約（%s）', (_name, make) => {
     expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(p));
     await repo.projections.clear();
     expect(await repo.projections.load()).toBeNull();
+  });
+
+  it('差分の保存は、変わったスレッドとシグナルだけを書いて丸ごとの保存と同じものになる', async () => {
+    const log = new EventLog();
+    const ctx = makeCtx(AT);
+    ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }), () => answer({ title: '雨漏り' }));
+    ingestPure(log, ctx, email({ from: 'ad@x', sourceRef: 'r2' }), () => answer({ needs_response: false }));
+    const before = log.state();
+    // 空からも差分で書ける
+    await repo.projections.save(before, foldChanges(log.events).changes);
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(before));
+
+    const n = log.events.length;
+    ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'r3', anchors: { inReplyTo: '<m1>' } }));
+    log.push([dismissed(Object.keys(before.threads).sort()[1]!)], AT);
+    const { projections, changes } = foldChanges(log.events.slice(n), before);
+    expect(changes.signalIds).toHaveLength(1); // 前からあるシグナルは書き直さない
+    await repo.projections.save(projections, changes);
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(log.state()));
+    await repo.projections.clear();
   });
 
   it('マスタを丸ごと入れ替えて読み出せる', async () => {

@@ -1,4 +1,4 @@
-import type { DomainEvent, DraftEvent, Projections, Seed } from '../domain';
+import type { DomainEvent, DraftEvent, ProjectionChanges, Projections, Seed } from '../domain';
 
 export class ConcurrencyError extends Error {
   constructor(expected: number) {
@@ -20,7 +20,11 @@ export interface EventStore {
 /** 投影の保存先。fold の結果をそのまま置き、いつでも消して作り直せる */
 export interface ProjectionStore {
   load(): Promise<Projections | null>;
-  save(p: Projections): Promise<void>;
+  /**
+   * changes を渡せば、保存済みの投影に変わったスレッド・シグナル（と索引）だけを書く（0021）。
+   * 渡さなければ丸ごと入れ替える（作り直しのとき）
+   */
+  save(p: Projections, changes?: ProjectionChanges): Promise<void>;
   clear(): Promise<void>;
 }
 

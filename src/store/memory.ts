@@ -1,4 +1,4 @@
-import { parseEvent, Seed, type DomainEvent, type DraftEvent, type Projections } from '../domain';
+import { parseEvent, Seed, type DomainEvent, type DraftEvent, type ProjectionChanges, type Projections } from '../domain';
 import { ConcurrencyError, type EventStore, type MasterStore, type ProjectionStore, type Repo } from './types';
 
 /** テスト・CLI 用のインメモリ実装 */
@@ -23,8 +23,17 @@ export class MemoryProjectionStore implements ProjectionStore {
   async load() {
     return this.saved ? structuredClone(this.saved) : null;
   }
-  async save(p: Projections) {
-    this.saved = structuredClone(p);
+  /** 差分は保存済みのものに当てる（差分の取りこぼしがあれば、読み出した投影がリプレイと食い違って H1 で見つかる） */
+  async save(p: Projections, changes?: ProjectionChanges) {
+    if (!changes || !this.saved) {
+      this.saved = structuredClone(p);
+      return;
+    }
+    const saved = this.saved;
+    saved.lastSeq = p.lastSeq;
+    if (changes.index) saved.index = structuredClone(p.index);
+    for (const id of changes.threadIds) saved.threads[id] = structuredClone(p.threads[id]!);
+    for (const id of changes.signalIds) saved.signals[id] = structuredClone(p.signals[id]!);
   }
   async clear() {
     this.saved = null;

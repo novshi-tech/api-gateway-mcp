@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { canonicalJson, deriveComm, emptyProjections, fold, type DomainEvent } from '../src/domain';
+import { canonicalJson, deriveComm, emptyProjections, fold, foldChanges, type DomainEvent } from '../src/domain';
 import { pgRepo } from '../src/store/drizzle';
 import { pgliteDb } from '../scripts/lib/pglite';
 import { FsRecordingStore } from '../scripts/lib/recordings';
@@ -46,6 +46,26 @@ describe.each(names)('シナリオ %s', (name) => {
     expect(canonicalJson(fold(events))).toBe(whole);
     const stepwise = events.reduce((p, e) => fold([e], p), emptyProjections());
     expect(canonicalJson(stepwise)).toBe(whole);
+  });
+
+  it('H1 fold の差分は、base から実際に変わったスレッド・シグナル・索引を必ず含む（差分だけ保存しても投影が欠けない）', async () => {
+    const run = await runScenario(scenario);
+    const events = await run.repo.events.read();
+    let base = emptyProjections();
+    // 1 件ずつと、2 件ずつ（1 回の操作で複数のイベントを書くのと同じ）の両方で確かめる
+    for (const size of [1, 2]) {
+      base = emptyProjections();
+      for (let i = 0; i < events.length; i += size) {
+        const { projections: next, changes } = foldChanges(events.slice(i, i + size), base);
+        const changed = <T,>(a: Record<string, T>, b: Record<string, T>) =>
+          Object.keys(b).filter((id) => canonicalJson(a[id] ?? null) !== canonicalJson(b[id]));
+        expect(changes.threadIds).toEqual(expect.arrayContaining(changed(base.threads, next.threads)));
+        expect(changes.signalIds).toEqual(expect.arrayContaining(changed(base.signals, next.signals)));
+        if (canonicalJson(base.index) !== canonicalJson(next.index)) expect(changes.index).toBe(true);
+        base = next;
+      }
+      expect(canonicalJson(base)).toBe(canonicalJson(fold(events)));
+    }
   });
 
   it('H1 fold は 1 段: 各スレッドの投影は、そのスレッドに綴じたものだけから決まる', async () => {

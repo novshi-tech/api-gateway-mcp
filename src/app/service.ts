@@ -13,6 +13,7 @@ import {
   isMirror,
   planMirror,
   fold,
+  foldChanges,
   getListView,
   getThreadView,
   linkThreads,
@@ -90,9 +91,9 @@ export class MurmurService {
     const saved = (await repo.projections.load()) ?? emptyProjections();
     const missing = await repo.events.read(saved.lastSeq);
     if (missing.length === 0) return saved;
-    const next = fold(missing, saved);
-    await repo.projections.save(next);
-    return next;
+    const { projections, changes } = foldChanges(missing, saved);
+    await repo.projections.save(projections, changes);
+    return projections;
   }
 
   /** 投影を消してイベントから作り直す（H1 の検証にも使う） */
@@ -119,7 +120,8 @@ export class MurmurService {
       if (events.length === 0) return result;
       try {
         const stored = await this.deps.repo.events.append(p.lastSeq, events, ctx.now);
-        await this.deps.repo.projections.save(fold(stored, p));
+        const { projections, changes } = foldChanges(stored, p);
+        await this.deps.repo.projections.save(projections, changes);
         return result;
       } catch (err) {
         if (err instanceof ConcurrencyError && attempt < MAX_RETRIES) continue;

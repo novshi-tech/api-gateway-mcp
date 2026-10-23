@@ -123,6 +123,14 @@ export interface Projections {
   };
 }
 
+/** fold で base から変わったもの。スレッドとシグナルは消えないので、保存は変わった行の upsert で足りる */
+export interface ProjectionChanges {
+  threadIds: string[];
+  signalIds: string[];
+  /** 索引（sourceRefs・messageIds）が変わった */
+  index: boolean;
+}
+
 export function emptyProjections(): Projections {
   return { lastSeq: 0, threads: {}, signals: {}, index: { sourceRefs: {}, messageIds: {} } };
 }

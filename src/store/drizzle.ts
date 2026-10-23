@@ -6,6 +6,7 @@ import {
   Seed,
   type DomainEvent,
   type DraftEvent,
+  type ProjectionChanges,
   type Projections,
   type SignalRecord,
   type Thread,
@@ -67,7 +68,8 @@ export class PgProjectionStore implements ProjectionStore {
     return p;
   }
 
-  async save(p: Projections): Promise<void> {
+  async save(p: Projections, changes?: ProjectionChanges): Promise<void> {
+    if (changes) return this.saveChanges(p, changes);
     await this.db.transaction(async (tx) => {
       await clearAll(tx as unknown as Db);
       await tx.insert(schema.projectionMeta).values({ id: META_ID, lastSeq: p.lastSeq, idx: p.index });
@@ -81,6 +83,37 @@ export class PgProjectionStore implements ProjectionStore {
         schema.signals,
         Object.values(p.signals).map((s) => ({ id: s.signalId, dataSourceId: s.dataSourceId, threadId: s.threadId, data: s })),
       );
+    });
+  }
+
+  /** 変わったスレッドとシグナルだけを upsert する（スレッドもシグナルも消えないので、消す行はない） */
+  private async saveChanges(p: Projections, changes: ProjectionChanges): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const meta = { id: META_ID, lastSeq: p.lastSeq, idx: p.index };
+      await tx
+        .insert(schema.projectionMeta)
+        .values(meta)
+        .onConflictDoUpdate({
+          target: schema.projectionMeta.id,
+          set: changes.index ? { lastSeq: meta.lastSeq, idx: meta.idx } : { lastSeq: meta.lastSeq },
+        });
+      for (let i = 0; i < changes.threadIds.length; i += 500) {
+        const rows = changes.threadIds.slice(i, i + 500).map((id) => ({ id, dataSourceId: p.threads[id]!.dataSourceId, data: p.threads[id]! }));
+        await tx
+          .insert(schema.threads)
+          .values(rows)
+          .onConflictDoUpdate({ target: schema.threads.id, set: { dataSourceId: sql`excluded.data_source_id`, data: sql`excluded.data` } });
+      }
+      for (let i = 0; i < changes.signalIds.length; i += 500) {
+        const rows = changes.signalIds.slice(i, i + 500).map((id) => {
+          const sig = p.signals[id]!;
+          return { id, dataSourceId: sig.dataSourceId, threadId: sig.threadId, data: sig };
+        });
+        await tx.insert(schema.signals).values(rows).onConflictDoUpdate({
+          target: schema.signals.id,
+          set: { dataSourceId: sql`excluded.data_source_id`, threadId: sql`excluded.thread_id`, data: sql`excluded.data` },
+        });
+      }
     });
   }
 
