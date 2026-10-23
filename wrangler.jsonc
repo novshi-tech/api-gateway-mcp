@@ -31,8 +31,7 @@
         "GATEWAY_JWKS": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"MiS4fsNuFhRhzlIQVbAX3623EaYblKi4uXkaeAPBhrw\",\"kid\":\"KNBlv8ntIyJzelvRChDnIPMD9d1Eavr1BoXeJE7gYq0\",\"alg\":\"EdDSA\",\"use\":\"sig\"}]}"
       },
       "d1_databases": [
-        // TODO: wrangler d1 create murmur-dev --location apac の database_id に置き換える（置き換えるまで deploy は失敗する）
-        { "binding": "DB", "database_name": "murmur-dev", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }
+        { "binding": "DB", "database_name": "murmur-dev", "database_id": "c74085ea-ccd1-4779-871a-b585afd7624d", "migrations_dir": "drizzle" }
       ],
       "triggers": { "crons": ["*/5 * * * *"] }
     },

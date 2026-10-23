@@ -167,7 +167,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 0. 2026-10-23 の ADR（0020・0021・0022、0016 の書き直し）を直樹がレビューする
 0. **0021 の実装（ブランチ `claude/adoring-noether-yjejoy`）を main に入れる前に**、直樹が手でやること（main への push で CI が murmur-dev にデプロイするので、先に済ませないとデプロイが落ちる）:
-   1. `wrangler d1 create murmur-dev --location apac` で D1 を作り、出力の `database_id` を `wrangler.jsonc` の `env.dev.d1_databases` に書く（今は仮の値）。prod も同じ（`murmur`）
+   1. ~~D1 を作って `database_id` を書く~~ → dev は済み（2026-10-23、直樹が作成。`c74085ea-ccd1-4779-871a-b585afd7624d` を `wrangler.jsonc` に書いた）。prod（`murmur`）は仮の値のまま（タグを打たないので当面は要らない）
    2. `pnpm db:migrate dev`（`wrangler d1 migrations apply DB --remote --env dev`）
    3. `pnpm seed absence --env dev --user u_kimura=<直樹のゲートウェイの User ID>`（dev の Neon のイベントは移さない。seed から入れ直す）
    4. `wrangler secret delete DATABASE_URL --env dev`（任意）。そのあと main に入れる

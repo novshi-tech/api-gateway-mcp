@@ -104,7 +104,7 @@ SQLite を裏に持つ Durable Object は、1 つごとに専用の SQLite を�
 - **テスト**: `@cloudflare/vitest-pool-workers` には移さず、Node の vitest のまま Miniflare の D1（`scripts/lib/d1.ts`、本物と同じ workerd の実装）を使う。0002 の逸脱（pglite）はこれで解消。
   Miniflare 5（beta、wrangler 4.151 が使う版）は設定の形が変わったので `convertV4MiniflareOptions` で旧い形を渡している
 - **seed**: `pnpm seed <scenario> --env dev` は SQL を作って `wrangler d1 execute` で流す（Cloudflare の認証は wrangler のもの）
-- **まだのこと**: `wrangler.jsonc` の `database_id` は仮の値（`wrangler d1 create murmur-dev --location apac` で作って置き換える。置き換えるまで deploy は失敗する）。
+- **まだのこと**: `wrangler.jsonc` の prod の `database_id` は仮の値（dev は作成済み）。
   `projection_meta.idx` が何件で 2 MB に届くかは測っていない。決定の 4（ゲートウェイの `deploy` スキルで一緒にデプロイ、Service Binding で JWKS を取る）は未着手
 
 ## 未決
