@@ -35,7 +35,6 @@ export const FIXTURES_DIR = join(import.meta.dirname, '../../fixtures');
 
 export const ScenarioConfig = z.object({
   title: z.string(),
-  tenant: z.string(),
   hypotheses: z.array(z.string()),
   /** desk-checked = 机上シミュレーション済み、draft = スタンドで回す前の下書き、stand-recorded = スタンド主導の記録を固めたもの */
   status: z.enum(['desk-checked', 'draft', 'stand-recorded']),
@@ -308,8 +307,6 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
 
   const records: StepRecord[] = [];
   const checkpointErrors: string[] = [];
-  const tenant = scenario.config.tenant;
-
   for (const step of scenario.steps) {
     clock.set(step.at);
     const rec: StepRecord = { step };
@@ -317,7 +314,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
       hint.current = { stepId: step.id, label: scenario.expected.ingest[step.id] };
       observed.last = undefined;
       const inbound = InboundSignalBody.parse(subst(step.signal));
-      rec.ingest = await service.ingest(tenant, inbound);
+      rec.ingest = await service.ingest(inbound);
       rec.confidence = observed.last;
       for (const [alias, path] of Object.entries(step.bind ?? {})) {
         const v = (rec.ingest as Record<string, unknown>)[path];
@@ -337,7 +334,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
         const sentRef = String(input.sent_ref);
         const body = rec.response.body as { timeline: { signal?: { anchors: Record<string, unknown>; to: { value: string }[]; signalId: string } }[] };
         const sent = body.timeline.find((e) => e.signal?.anchors.messageId === sentRef)?.signal;
-        await backend.enqueue(tenant, {
+        await backend.enqueue({
           dataSourceId: ds.id,
           channel: ds.channel,
           from: { channel: ds.channel, value: self.value },
@@ -354,7 +351,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
         bindings[alias] = v;
       }
     } else if ('mirror' in step) {
-      rec.mirror = await service.mirror(tenant, InboundMirrorBody.parse({ kind: 'mirror', ...(subst(step.mirror) as object) }));
+      rec.mirror = await service.mirror(InboundMirrorBody.parse({ kind: 'mirror', ...(subst(step.mirror) as object) }));
     } else {
       hint.current = { stepId: step.id };
       rec.cron = { ingested: await service.pollConnectors(), overdue: await service.checkOverdue() };
@@ -362,7 +359,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
     records.push(rec);
 
     for (const cp of scenario.expected.checkpoints.filter((c) => c.after === step.id)) {
-      const p = await service.state(tenant);
+      const p = await service.state();
       checkpointErrors.push(...compareThreads(p, cp.threads, resolve, `checkpoint after ${step.id}`));
       checkpointErrors.push(...checkViews(new Directory(scenario.seed), p, cp.views, resolve, `checkpoint after ${step.id}`));
     }
@@ -384,7 +381,7 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
       { thread_id: input.thread_id, new_thread_title: input.new_thread_title, needs_response: input.needs_response, reason: input.reason },
     ],
     get_list: () => ['GET', `/api/lists/${enc(String(input.list_id))}`],
-    add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body, tenant: input.tenant }],
+    add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body }],
     claim_thread: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/claim`, { user_id: input.user_id, reason: input.reason }],
     link_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/links`, { thread_id: input.other_thread_id, reason: input.reason }],
     unlink_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/unlink`, { thread_id: input.other_thread_id, reason: input.reason }],
@@ -444,7 +441,7 @@ function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityC
       const party = dir.party(check.ghostParty);
       if (!party) errors.push(`${where}: party ${check.ghostParty} がない`);
       else if (party.userId) errors.push(`${where}: ${check.ghostParty} はゴーストではない`);
-      else if (deriveViewer(dir, check.ghostParty).memberships.length > 0) errors.push(`${where}: ${check.ghostParty} が Viewer になれる`);
+      else if (deriveViewer(dir, check.ghostParty).partyId !== null) errors.push(`${where}: ${check.ghostParty} が Viewer になれる`);
       continue;
     }
     const viewer = deriveViewer(dir, check.as);
@@ -454,7 +451,7 @@ function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityC
       continue;
     }
     if ('threads' in check) {
-      const got = listThreads(dir, viewer, [p], { filter: check.threads.filter, dataSourceId: check.threads.dataSource }).map((t) => t.id).sort();
+      const got = listThreads(dir, viewer, p, { filter: check.threads.filter, dataSourceId: check.threads.dataSource }).map((t) => t.id).sort();
       const want = check.expect.map(resolve).sort();
       if (canonicalJson(got) !== canonicalJson(want)) {
         errors.push(`${where}: ${check.as} の ${check.threads.filter} は ${canonicalJson(got)}（期待 ${canonicalJson(want)}）`);
@@ -566,17 +563,16 @@ export async function sha256(s: string): Promise<string> {
 }
 
 /** H1: 投影を全削除してイベントからリプレイし、スレッドの投影のハッシュが元と一致するか */
-export async function replayCheck(service: MurmurService, tenantId: string): Promise<{ before: string; after: string; fullMatch: boolean }> {
-  const original = await service.state(tenantId);
+export async function replayCheck(service: MurmurService): Promise<{ before: string; after: string; fullMatch: boolean }> {
+  const original = await service.state();
   const before = await sha256(canonicalJson(original.threads));
-  const rebuilt = await service.rebuild(tenantId);
+  const rebuilt = await service.rebuild();
   const after = await sha256(canonicalJson(rebuilt.threads));
   return { before, after, fullMatch: canonicalJson(original) === canonicalJson(rebuilt) };
 }
 
 export async function verifyScenario(run: Run): Promise<Verification> {
   const { scenario, service } = run;
-  const tenant = scenario.config.tenant;
   const errors = [...run.checkpointErrors];
   const resolve = (s: string) => {
     if (!s.startsWith('$')) return s;
@@ -584,13 +580,13 @@ export async function verifyScenario(run: Run): Promise<Verification> {
     if (!v) throw new Error(`unbound ${s}`);
     return v;
   };
-  const p = await service.state(tenant);
+  const p = await service.state();
   const f = scenario.expected.final;
   errors.push(...compareThreads(p, f.threads, resolve, 'final'));
   if (f.threadCount !== undefined && Object.keys(p.threads).length !== f.threadCount) {
     errors.push(`final: スレッド数 ${Object.keys(p.threads).length}（期待 ${f.threadCount}）`);
   }
-  const events = await run.repo.events.read(tenant);
+  const events = await run.repo.events.read();
   for (const [type, n] of Object.entries(f.eventCounts)) {
     const actual = events.filter((e) => e.type === type).length;
     if (actual !== n) errors.push(`final: ${type} が ${actual} 件（期待 ${n}）`);
@@ -604,7 +600,7 @@ export async function verifyScenario(run: Run): Promise<Verification> {
   const metrics = ingestMetrics(run);
   errors.push(...metrics.mismatches.map((m) => `ingest: ${m}`));
 
-  const replay = await replayCheck(service, tenant);
+  const replay = await replayCheck(service);
   const replayOk = replay.before === replay.after && replay.fullMatch;
   if (!replayOk) errors.push(`H1: リプレイ後の投影が一致しない (${replay.before} != ${replay.after})`);
 

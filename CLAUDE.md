@@ -38,7 +38,7 @@
 ```
 src/
   domain/        関数型コア。zod と domain 内しか import しない。Date.now・乱数・fetch・crypto 禁止
-    entities.ts    マスタ（Tenant / User / Party / Address / CredentialRef / DataSource / List / ListMember / AttributeDef）
+    entities.ts    マスタ（User / Party / Address / CredentialRef / DataSource / List / ListMember / AttributeDef）
     events.ts      イベント型（zod）
     fold.ts        fold(events) → projections（1 段）
     comm.ts        通信状態（ボール）の導出。シグナルの向き・「求めているか」・持ち主・片付けだけ

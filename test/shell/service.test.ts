@@ -8,32 +8,32 @@ import { answer, email, line, seed } from '../helpers/world';
 describe('MurmurService.ingest', () => {
   it('H6 受信 → 区切り → スレッド。同じ source_ref は duplicate。観測された送信は構造で決まれば AI を呼ばない', async () => {
     const { service, decider } = await makeService(seed, { decide: () => answer({ title: '雨漏り' }) });
-    const r = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     expect(r).toEqual({ status: 'threaded', signalId: 'sig_1', threadId: 'thr_2', newThread: true, by: 'no_match', needsResponse: true });
     expect(decider.requests.map((q) => q.mode)).toEqual(['new']);
-    expect(await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }))).toEqual({ status: 'duplicate', signalId: 'sig_1' });
+    expect(await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1' }))).toEqual({ status: 'duplicate', signalId: 'sig_1' });
 
-    const sent = await service.ingest('ubs', email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
+    const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect((await service.state('ubs')).threads.thr_2!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect((await service.state()).threads.thr_2!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {
     const { service } = await makeService(seed);
-    await expect(service.ingest('ubs', email({ dataSourceId: 'ds_notes_alice', from: 'a@x', sourceRef: 'r' }))).rejects.toMatchObject({ code: 'invalid' });
+    await expect(service.ingest(email({ dataSourceId: 'ds_notes_alice', from: 'a@x', sourceRef: 'r' }))).rejects.toMatchObject({ code: 'invalid' });
   });
 });
 
 describe('コネクタの取り込み（Cron）', () => {
   it('H6 データソースごとにダミーのキューから取り込む', async () => {
     const { service, backend } = await makeService(seed, { decide: () => answer() });
-    await backend.enqueue('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
-    await backend.enqueue('ubs', line({ from: 'U_carol', sourceRef: 'l1' }));
+    await backend.enqueue(email({ from: 'carol@example.com', sourceRef: 'r1' }));
+    await backend.enqueue(line({ from: 'U_carol', sourceRef: 'l1' }));
     const results = await service.pollConnectors();
     expect(results.map((r) => r.status)).toEqual(['threaded', 'threaded']);
     expect(await service.pollConnectors()).toEqual([]);
-    const p = await service.state('ubs');
+    const p = await service.state();
     expect(Object.values(p.threads).map((t) => t.dataSourceId).sort()).toEqual(['ds_line', 'ds_support']);
     expect(await service.tick()).toEqual({ ingested: 0, overdue: 0 });
   });
@@ -42,8 +42,8 @@ describe('コネクタの取り込み（Cron）', () => {
 describe('スタンドの操作', () => {
   it('H3 片付け・開き直し・移し替え。見えないものは not_found', async () => {
     const { service } = await makeService(seed, { decide: () => answer({ thread: null }) });
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
-    const r2 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r2 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
     const [t] = await service.listThreads('u_bob', { filter: 'triage' });
     expect(t!.signalCount).toBe(2);
 
@@ -65,18 +65,17 @@ describe('スタンドの操作', () => {
     expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ partyId: 'p_alice', name: 'Alice' }]);
   });
 
-  it('/me は User と各テナントの Party と、読者になっているリスト（データソース）を返す', async () => {
+  it('/me は User と Party と、読者になっているリスト（データソース）を返す', async () => {
     const { service } = await makeService(seed);
     const me = await service.me('u_alice');
-    expect(me.parties.map((p) => [p.tenantId, p.partyId])).toEqual([
-      ['ubs', 'p_alice'],
-      ['nvt', 'p_alice_nvt'],
-    ]);
-    expect(me.parties[0]!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
+    expect(me.party?.partyId).toBe('p_alice');
+    expect(me.party!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
       ['l_support', 'ds_support', 'service'],
       ['l_alice', 'ds_alice', 'service'],
       ['l_notes_alice', 'ds_notes_alice', 'notes'],
     ]);
+    // このデプロイに Party のない User は party が null
+    expect((await service.me('u_mallory')).party).toBeNull();
     await expect(service.me('u_ghost')).rejects.toMatchObject({ code: 'not_found' });
   });
 });
@@ -84,14 +83,14 @@ describe('スタンドの操作', () => {
 describe('投影と並行性', () => {
   it('H1 投影が遅れていても state() がイベントから追いつき、rebuild で作り直せる', async () => {
     const { service, repo } = await makeService(seed, { decide: () => answer() });
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
-    const full = await service.state('ubs');
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1' }));
+    const full = await service.state();
     // 投影の保存に失敗したのと同じ状態を作る
     const threadId = Object.keys(full.threads)[0]!;
-    await repo.events.append('ubs', full.lastSeq, [draft('ThreadDismissed', { threadId, actorUserId: 'u_alice', reason: 'x' })], '2026-10-16T10:00:00.000Z');
-    const caughtUp = await service.state('ubs');
+    await repo.events.append(full.lastSeq, [draft('ThreadDismissed', { threadId, actorUserId: 'u_alice', reason: 'x' })], '2026-10-16T10:00:00.000Z');
+    const caughtUp = await service.state();
     expect(caughtUp.threads[threadId]!.dismissed).toBe(true);
-    expect(canonicalJson(await service.rebuild('ubs'))).toBe(canonicalJson(caughtUp));
+    expect(canonicalJson(await service.rebuild())).toBe(canonicalJson(caughtUp));
   });
 
   it('追記が競合したら読み直してやり直す', async () => {
@@ -100,12 +99,11 @@ describe('投影と並行性', () => {
     const repo: Repo = {
       ...inner,
       events: {
-        read: (t, a) => inner.events.read(t, a),
-        append: async (t, seq, drafts, at) => {
+        read: (a) => inner.events.read(a),
+        append: async (seq, drafts, at) => {
           if (conflicts-- > 0) {
             // 別のリクエストが先に書いた
             await inner.events.append(
-              t,
               seq,
               [
                 draft('SignalObserved', {
@@ -121,15 +119,15 @@ describe('投影と並行性', () => {
               ],
               at,
             );
-            throw new ConcurrencyError(t, seq);
+            throw new ConcurrencyError(seq);
           }
-          return inner.events.append(t, seq, drafts, at);
+          return inner.events.append(seq, drafts, at);
         },
       },
     };
     const { service } = await makeService(seed, { repo, decide: () => answer() });
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1' }));
-    const events = await repo.events.read('ubs');
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1' }));
+    const events = await repo.events.read();
     expect(events.map((e) => e.type)).toEqual(['SignalObserved', 'SignalObserved', 'SignalThreaded']);
   });
 });

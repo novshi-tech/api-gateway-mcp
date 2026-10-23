@@ -111,7 +111,7 @@ describe('個人のメモ（add_note）', () => {
     expect(() => addNote(log.state(), alice, ctx, { threadId: support, body: 'x' })).toThrow(/not in your notes/);
     expect(() => addNote(log.state(), alice, ctx, { body: ' ' })).toThrow(/body/);
     expect(() => addNote(log.state(), alice, ctx, { threadId: first.threadId, title: 't', body: 'x' })).toThrow(/title/);
-    // 別テナントにメモのデータソースがなければ not_found
+    // メモのデータソースがなければ not_found
     expect(() => addNote(log.state(), eve, ctx, { body: 'x' })).toThrow(/notes/);
   });
 

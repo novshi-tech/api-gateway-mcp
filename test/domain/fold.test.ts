@@ -141,17 +141,16 @@ describe('fold', () => {
     expect(canonicalJson(stepwise)).toBe(canonicalJson(whole));
   });
 
-  it('H1 不正な列は FoldError（seq の逆行・別テナント・未知のシグナルやスレッド・データソースをまたぐ置き先）', () => {
+  it('H1 不正な列は FoldError（seq の逆行・未知のシグナルやスレッド・データソースをまたぐ置き先）', () => {
     const log = new EventLog();
     log.push([observed('s1'), intoNew('s1', 't1')], T0);
     const [a, b] = log.events as [DomainEvent, DomainEvent];
     expect(() => fold([b, a])).toThrow(FoldError);
-    expect(() => fold([a, { ...b, tenantId: 'nvt' }])).toThrow(/tenant mismatch/);
     expect(() => fold([{ ...b, seq: 1 }])).toThrow(/unknown signal/);
-    expect(() => fold([a, { ...into('s1', 'nope'), tenantId: 'ubs', seq: 2, at: T0 } as DomainEvent])).toThrow(/unknown thread/);
-    expect(() => fold([...log.events, { ...intoNew('s1', 't1'), tenantId: 'ubs', seq: 3, at: T0 } as DomainEvent])).toThrow(/already exists/);
-    const other = { ...observed('s9', { dataSourceId: 'ds_alice', sourceRef: 'x' }), tenantId: 'ubs', seq: 3, at: T0 } as DomainEvent;
-    expect(() => fold([...log.events, other, { ...into('s9', 't1'), tenantId: 'ubs', seq: 4, at: T0 } as DomainEvent])).toThrow(/cannot go into/);
+    expect(() => fold([a, { ...into('s1', 'nope'), seq: 2, at: T0 } as DomainEvent])).toThrow(/unknown thread/);
+    expect(() => fold([...log.events, { ...intoNew('s1', 't1'), seq: 3, at: T0 } as DomainEvent])).toThrow(/already exists/);
+    const other = { ...observed('s9', { dataSourceId: 'ds_alice', sourceRef: 'x' }), seq: 3, at: T0 } as DomainEvent;
+    expect(() => fold([...log.events, other, { ...into('s9', 't1'), seq: 4, at: T0 } as DomainEvent])).toThrow(/cannot go into/);
   });
 
   it('H1 個人のメモ: SignalObserved（channel note）+ SignalThreaded（by self）。ボールは動かず、シグナルとして並ぶ', () => {
@@ -190,8 +189,8 @@ describe('fold', () => {
     expect(p.threads.m1!.links).toEqual([]);
     expect(p.threads.t1!.links).toEqual([]);
     expect(p.threads.t1!.log.map((l) => l.kind)).toEqual(['signal', 'linked', 'unlinked']);
-    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 't1', route: 'manual', actorUserId: 'u' }), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/itself/);
-    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 'nope', route: 'manual', actorUserId: 'u' }), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/unknown thread/);
+    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 't1', route: 'manual', actorUserId: 'u' }), seq: 99, at: T2 } as DomainEvent])).toThrow(/itself/);
+    expect(() => fold([...log.events, { ...draft('ThreadLinked', { a: 't1', b: 'nope', route: 'manual', actorUserId: 'u' }), seq: 99, at: T2 } as DomainEvent])).toThrow(/unknown thread/);
   });
 
   it('H2 ThreadAttributeSet: 値を付け、null で外す。ボールは動かない', () => {
@@ -227,7 +226,7 @@ describe('fold', () => {
     const p = log.state();
     expect(p.threads.t1).toMatchObject({ signalIds: before.signalIds, ball: before.ball, lastOutboundAt: T1, replyExpectedBy: T2 });
     expect(p.signals.o1!.recorded).toMatchObject({ replyExpectedBy: T2 });
-    expect(() => fold([...log.events, { ...recorded('s1', true, T2), tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(/cannot merge/);
+    expect(() => fold([...log.events, { ...recorded('s1', true, T2), seq: 99, at: T2 } as DomainEvent])).toThrow(/cannot merge/);
   });
 
   it('H9 ThreadMirrored: 変わった属性を写し（null は空）、done でボールは「なし」・返事期待の超過も消える。done が外れたら綴じた分から戻る', () => {
@@ -247,7 +246,7 @@ describe('fold', () => {
     expect(t).toMatchObject({ attributes: { status: '完了', done: true }, ball: { kind: 'none' }, closedAtSource: true, overdue: false, dismissed: false });
     log.push([mirrored({ done: false })], '2026-10-16T14:00:00.000Z');
     expect(log.state().threads.t1).toMatchObject({ closedAtSource: false, ball: { kind: 'party', partyIds: ['p_carol'] }, overdue: true });
-    expect(() => fold([...log.events, { ...mirrored({ done: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, tenantId: 'ubs', seq: 99, at: T2 } as DomainEvent])).toThrow(
+    expect(() => fold([...log.events, { ...mirrored({ done: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, seq: 99, at: T2 } as DomainEvent])).toThrow(
       /mirror of ds_line/,
     );
   });

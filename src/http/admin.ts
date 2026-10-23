@@ -121,47 +121,40 @@ ${body}
 </body></html>`;
 }
 
-/** 運用者の Viewer: テナントの全データソースの読者として見る（管理画面だけで使う） */
-function operator(dir: Directory, tenantId: string): Viewer {
-  const lists = dir.seed.lists.filter((l) => l.tenantId === tenantId);
-  return {
-    userId: '',
-    memberships: [{ tenantId, partyId: '', listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) }],
-  };
+/** 運用者の Viewer: 全データソースの読者として見る（管理画面だけで使う） */
+function operator(dir: Directory): Viewer {
+  const lists = dir.seed.lists;
+  return { userId: '', partyId: null, listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) };
 }
 
 // ---- リスト一覧 ----
 
-export function renderAdminIndex(dir: Directory, states: readonly Projections[], href: Href): string {
-  const sections = dir.seed.tenants
-    .map((tenant) => {
-      const p = states.find((s) => s.tenantId === tenant.id);
-      const threads = Object.values(p?.threads ?? {});
-      const rows = dir.seed.lists
-        .filter((l) => l.tenantId === tenant.id)
-        .map((l) => {
-          const ds = dir.dataSource(l.dataSourceId);
-          const ts = threads.filter((t) => t.dataSourceId === l.dataSourceId);
-          const triage = p ? ts.filter((t) => !t.dismissed && turnOf(dir, p, t).kind === 'triage').length : 0;
-          return `<tr><td><a href="${esc(href(`/admin/lists/${l.id}`))}">${esc(ds?.name ?? l.dataSourceId)}</a><br><small>${esc(l.id)}</small></td>
+export function renderAdminIndex(dir: Directory, p: Projections, href: Href): string {
+  const threads = Object.values(p.threads);
+  const rows = dir.seed.lists
+    .map((l) => {
+      const ds = dir.dataSource(l.dataSourceId);
+      const ts = threads.filter((t) => t.dataSourceId === l.dataSourceId);
+      const triage = ts.filter((t) => !t.dismissed && turnOf(dir, p, t).kind === 'triage').length;
+      return `<tr><td><a href="${esc(href(`/admin/lists/${l.id}`))}">${esc(ds?.name ?? l.dataSourceId)}</a><br><small>${esc(l.id)}</small></td>
 <td>${ds?.kind === 'notes' ? '個人のメモ' : esc(ds?.channel ?? '')}</td>
 <td>${dir.readersOfList(l.id).map((r) => esc(r.name)).join(', ')}</td>
 <td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => t.overdue).length}</td></tr>`;
-        })
-        .join('\n');
-      return `<section><h2>${esc(tenant.name)} <small>${esc(tenant.id)} · seq ${p?.lastSeq ?? 0} · <a href="${esc(href(`/timeline.html?tenant=${tenant.id}`))}">タイムライン</a></small></h2>
-<div class="scroll"><table><thead><tr><th>データソース</th><th>種類</th><th>読者</th><th>未片付け / 全部</th><th>仕分け待ち</th><th>期限超過</th></tr></thead>
-<tbody>${rows || '<tr><td colspan="6">リストはない</td></tr>'}</tbody></table></div></section>`;
     })
     .join('\n');
-  return page('Murmur 管理', `<h1>リスト一覧</h1>\n${sections || '<p>テナントはない</p>'}`);
+  return page(
+    'Murmur 管理',
+    `<h1>リスト一覧 <small>seq ${p.lastSeq} · <a href="${esc(href('/timeline.html'))}">タイムライン</a></small></h1>
+<div class="scroll"><table><thead><tr><th>データソース</th><th>種類</th><th>読者</th><th>未片付け / 全部</th><th>仕分け待ち</th><th>期限超過</th></tr></thead>
+<tbody>${rows || '<tr><td colspan="6">リストはない</td></tr>'}</tbody></table></div>`,
+  );
 }
 
 // ---- リストのスレッド一覧 ----
 
 export function renderAdminList(dir: Directory, p: Projections, listId: string, href: Href): string | null {
   const list = dir.list(listId);
-  if (!list || list.tenantId !== p.tenantId) return null;
+  if (!list) return null;
   const ds = dir.dataSource(list.dataSourceId);
   const n = names(dir, p);
   const rows = Object.values(p.threads)
@@ -188,7 +181,7 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
 // ---- スレッドの詳細 ----
 
 export function renderAdminThread(dir: Directory, p: Projections, threadId: string, href: Href): string | null {
-  const view = getThreadView(dir, operator(dir, p.tenantId), p, threadId);
+  const view = getThreadView(dir, operator(dir), p, threadId);
   if (!view) return null;
   const t = p.threads[threadId]!;
   const n = names(dir, p);
@@ -223,7 +216,7 @@ ${attrs ? `<h3>属性</h3><ul>${attrs}</ul>` : ''}
   );
 }
 
-// ---- テナントの全スレッドのタイムライン（timeline.html） ----
+// ---- 全スレッドのタイムライン（timeline.html） ----
 
 export function renderTimeline(dir: Directory, p: Projections): string {
   const n = names(dir, p);
@@ -239,5 +232,5 @@ export function renderTimeline(dir: Directory, p: Projections): string {
 </section>`,
     )
     .join('\n');
-  return page('Murmur Timeline', `<h1>テナント ${esc(p.tenantId)} のタイムライン <small>seq ${p.lastSeq}</small></h1>\n${sections || '<p>スレッドはまだない</p>'}`);
+  return page('Murmur Timeline', `<h1>タイムライン <small>seq ${p.lastSeq}</small></h1>\n${sections || '<p>スレッドはまだない</p>'}`);
 }

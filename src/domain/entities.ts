@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 // マスタ（イベントではない）。seed.json と DB のマスタテーブルが同じ形を持つ。
+// 1 デプロイ = 1 チームなので、テナントのキーは持たない（0020・0021）。
 
 /** note = 個人のメモ（0014）。それ以外は外のサービス */
 export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'note']);
@@ -9,14 +10,12 @@ export type Channel = z.infer<typeof Channel>;
 /** 資格情報の主体 */
 export const Principal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user'), userId: z.string() }),
-  z.object({ kind: z.literal('organization'), tenantId: z.string() }),
+  /** 組織（このデプロイのチーム、0020・0021） */
+  z.object({ kind: z.literal('organization') }),
 ]);
 export type Principal = z.infer<typeof Principal>;
 
-export const Tenant = z.object({ id: z.string(), name: z.string() });
-export type Tenant = z.infer<typeof Tenant>;
-
-/** ゲートウェイの User と 1:1 */
+/** ゲートウェイの User と 1:1。このデプロイ（チーム）の Party は 1 つまで */
 export const User = z.object({ id: z.string(), name: z.string() });
 export type User = z.infer<typeof User>;
 
@@ -26,7 +25,6 @@ export type User = z.infer<typeof User>;
  */
 export const Party = z.object({
   id: z.string(),
-  tenantId: z.string(),
   name: z.string(),
   kind: z.enum(['person', 'organization']),
   userId: z.string().optional(),
@@ -38,7 +36,6 @@ export type Party = z.infer<typeof Party>;
 
 export const Address = z.object({
   id: z.string(),
-  tenantId: z.string(),
   channel: Channel,
   value: z.string(),
   partyId: z.string(),
@@ -49,7 +46,6 @@ export type Address = z.infer<typeof Address>;
 
 export const CredentialRef = z.object({
   id: z.string(),
-  tenantId: z.string(),
   principal: Principal,
   addressId: z.string(),
   /** ゲートウェイ側の資格情報の識別子（プロトでは未使用） */
@@ -67,7 +63,6 @@ export const DataSource = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('service'),
     id: z.string(),
-    tenantId: z.string(),
     channel: Channel.exclude(['note']),
     name: z.string(),
     description: z.string().default(''),
@@ -79,7 +74,6 @@ export const DataSource = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('notes'),
     id: z.string(),
-    tenantId: z.string(),
     name: z.string(),
     description: z.string().default(''),
     ownerPartyId: z.string(),
@@ -89,7 +83,7 @@ export type DataSource = z.infer<typeof DataSource>;
 export type ServiceDataSource = Extract<DataSource, { kind: 'service' }>;
 
 /** データソース 1 つに 1 つ。可視性の単位 */
-export const List = z.object({ id: z.string(), tenantId: z.string(), dataSourceId: z.string() });
+export const List = z.object({ id: z.string(), dataSourceId: z.string() });
 export type List = z.infer<typeof List>;
 
 /** リストの読者 */
@@ -110,7 +104,6 @@ export const AttributeDef = z.object({
 export type AttributeDef = z.infer<typeof AttributeDef>;
 
 export const Seed = z.object({
-  tenants: z.array(Tenant),
   users: z.array(User),
   parties: z.array(Party),
   addresses: z.array(Address),

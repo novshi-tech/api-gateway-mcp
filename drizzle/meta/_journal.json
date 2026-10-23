@@ -22,6 +22,13 @@
       "when": 1792483650443,
       "tag": "0002_v2_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792723836798,
+      "tag": "0003_single_team",
+      "breakpoints": true
     }
   ]
 }

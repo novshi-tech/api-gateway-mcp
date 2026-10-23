@@ -33,25 +33,27 @@ describe.each(impls)('Repo 契約（%s）', (_name, make) => {
     closeDb = undefined;
   });
 
-  it('append した列が read でそのまま戻る（seq は tenant ごとに 1 から）', async () => {
-    const a = await repo.events.append('t1', 0, [dismissed('x'), draft('ThreadReopened', { threadId: 'x', actorUserId: 'u' })], AT);
-    const b = await repo.events.append('t2', 0, [dismissed('y')], AT);
+  it('append した列が read でそのまま戻る（seq は 1 から）', async () => {
+    expect(await repo.events.read()).toEqual([]);
+    const a = await repo.events.append(0, [dismissed('x'), draft('ThreadReopened', { threadId: 'x', actorUserId: 'u' })], AT);
+    const b = await repo.events.append(2, [dismissed('y')], AT);
     expect(a.map((e) => e.seq)).toEqual([1, 2]);
-    expect(b[0]!.seq).toBe(1);
-    expect(await repo.events.read('t1')).toEqual(a);
-    expect(await repo.events.read('t1', 1)).toEqual([a[1]]);
-    expect(await repo.events.read('nobody')).toEqual([]);
+    expect(b[0]!.seq).toBe(3);
+    expect(await repo.events.read()).toEqual([...a, ...b]);
+    expect(await repo.events.read(1)).toEqual([a[1], b[0]]);
+    expect(await repo.events.read(3)).toEqual([]);
   });
 
   it('期待した seq と違えば ConcurrencyError（楽観ロック）', async () => {
-    await expect(repo.events.append('t1', 0, [dismissed('x')], AT)).rejects.toBeInstanceOf(ConcurrencyError);
-    await expect(repo.events.append('t1', 5, [dismissed('x')], AT)).rejects.toBeInstanceOf(ConcurrencyError);
-    expect(await repo.events.append('t1', 2, [], AT)).toEqual([]);
-    expect((await repo.events.read('t1')).length).toBe(2);
+    await expect(repo.events.append(0, [dismissed('x')], AT)).rejects.toBeInstanceOf(ConcurrencyError);
+    await expect(repo.events.append(5, [dismissed('x')], AT)).rejects.toBeInstanceOf(ConcurrencyError);
+    expect(await repo.events.append(3, [], AT)).toEqual([]);
+    expect((await repo.events.read()).length).toBe(3);
   });
 
   it('不正な payload は append できない', async () => {
-    await expect(repo.events.append('t3', 0, [{ type: 'ThreadDismissed', payload: {} } as never], AT)).rejects.toThrow();
+    await expect(repo.events.append(3, [{ type: 'ThreadDismissed', payload: {} } as never], AT)).rejects.toThrow();
+    expect((await repo.events.read()).length).toBe(3);
   });
 
   it('投影は保存・読み出しで同じものが戻り、clear で消える', async () => {
@@ -62,12 +64,12 @@ describe.each(impls)('Repo 契約（%s）', (_name, make) => {
     ingestPure(log, ctx, email({ from: 'ad@x', sourceRef: 'r3' }), () => answer({ needs_response: false, confidence: 0.99 }));
     const p = log.state();
     await repo.projections.save(p);
-    expect(canonicalJson(await repo.projections.load('ubs'))).toBe(canonicalJson(p));
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(p));
     // 上書き保存も同じ
     await repo.projections.save(p);
-    expect(canonicalJson(await repo.projections.load('ubs'))).toBe(canonicalJson(p));
-    await repo.projections.clear('ubs');
-    expect(await repo.projections.load('ubs')).toBeNull();
+    expect(canonicalJson(await repo.projections.load())).toBe(canonicalJson(p));
+    await repo.projections.clear();
+    expect(await repo.projections.load()).toBeNull();
   });
 
   it('マスタを丸ごと入れ替えて読み出せる', async () => {

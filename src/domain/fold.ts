@@ -9,8 +9,7 @@ import { emptyProjections, indexKey, type Projections, type SignalRecord, type T
  * リンク先の状態は読まない（リンク先と合わせるのはクエリ層）。
  */
 export function fold(events: readonly DomainEvent[], base?: Projections): Projections {
-  const first = events[0];
-  const state: Projections = base ? structuredClone(base) : emptyProjections(first?.tenantId ?? '');
+  const state: Projections = base ? structuredClone(base) : emptyProjections();
   for (const e of events) apply(state, e);
   return state;
 }
@@ -18,8 +17,6 @@ export function fold(events: readonly DomainEvent[], base?: Projections): Projec
 export class FoldError extends Error {}
 
 function apply(s: Projections, e: DomainEvent): void {
-  if (s.tenantId === '') s.tenantId = e.tenantId;
-  if (e.tenantId !== s.tenantId) throw new FoldError(`tenant mismatch: ${e.tenantId} != ${s.tenantId}`);
   if (e.seq <= s.lastSeq) throw new FoldError(`non-monotonic seq ${e.seq} after ${s.lastSeq}`);
   s.lastSeq = e.seq;
 
@@ -183,7 +180,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
   const choice = p.thread;
   if (choice.kind === 'new') {
     if (s.threads[choice.threadId]) throw new FoldError(`thread ${choice.threadId} already exists`);
-    s.threads[choice.threadId] = newThread(s.tenantId, choice.threadId, sig.dataSourceId, choice.title, sig.at);
+    s.threads[choice.threadId] = newThread(choice.threadId, sig.dataSourceId, choice.title, sig.at);
   }
   const t = mustThread(s, choice.threadId);
   if (t.dataSourceId !== sig.dataSourceId) {
@@ -219,10 +216,9 @@ function recompute(s: Projections, t: Thread, at: string): void {
   if (at > t.updatedAt) t.updatedAt = at;
 }
 
-function newThread(tenantId: string, id: string, dataSourceId: string, title: string, at: string): Thread {
+function newThread(id: string, dataSourceId: string, title: string, at: string): Thread {
   return {
     id,
-    tenantId,
     dataSourceId,
     title,
     counterpartPartyIds: [],

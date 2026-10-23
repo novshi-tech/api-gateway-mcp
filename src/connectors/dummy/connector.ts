@@ -3,7 +3,7 @@ import type { Connector, Cursor } from '../types';
 
 /** ダミー上流の受信キュー。メモリ版と DB 版がある */
 export interface DummyBackend {
-  enqueue(tenantId: string, item: InboundItem): Promise<void>;
+  enqueue(item: InboundItem): Promise<void>;
   /** データソースの未取得のシグナル・写しを、積んだ順に取り出す */
   take(dataSourceId: string): Promise<InboundItem[]>;
 }
@@ -22,18 +22,18 @@ export class DummyConnector implements Connector {
 }
 
 export class MemoryDummyBackend implements DummyBackend {
-  readonly queue: { tenantId: string; item: InboundItem }[] = [];
+  readonly queue: InboundItem[] = [];
 
-  async enqueue(tenantId: string, item: InboundItem) {
-    this.queue.push({ tenantId, item });
+  async enqueue(item: InboundItem) {
+    this.queue.push(item);
   }
 
   async take(dataSourceId: string) {
     const taken: InboundItem[] = [];
     for (let i = 0; i < this.queue.length; ) {
-      const q = this.queue[i]!;
-      if (q.item.dataSourceId === dataSourceId) {
-        taken.push(q.item);
+      const item = this.queue[i]!;
+      if (item.dataSourceId === dataSourceId) {
+        taken.push(item);
         this.queue.splice(i, 1);
       } else i++;
     }

@@ -8,8 +8,8 @@ import type { DummyBackend } from './connector';
 export class PgDummyBackend implements DummyBackend {
   constructor(private readonly db: Db) {}
 
-  async enqueue(tenantId: string, item: InboundItem) {
-    await this.db.insert(dummyQueue).values({ tenantId, dataSourceId: item.dataSourceId, message: item });
+  async enqueue(item: InboundItem) {
+    await this.db.insert(dummyQueue).values({ dataSourceId: item.dataSourceId, message: item });
   }
 
   async take(dataSourceId: string) {

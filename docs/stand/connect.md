@@ -49,7 +49,7 @@ pnpm deploy:dev   # dev だけ workers.dev を開けている（Webhook と管�
 
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
 マスタ（seed）の投入は `DATABASE_URL=... pnpm seed <scenario> --user <seed の User ID>=<ゲートウェイの User ID>`。
-DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy/{tenant}`（本文は InboundSignal の配列、`x-murmur-signature` は
+DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
 WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 
 ## Cowork
@@ -82,6 +82,6 @@ MCP に同時につながるのは 1 テナントだけなので、別の組織�
 ## 管理画面（参照専用）
 
 `https://murmur-dev.nose-0d2.workers.dev/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
-書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。テナントの全スレッドを 1 枚で見るときは `/timeline.html?tenant=<id>&token=...`
+書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。全スレッドを 1 枚で見るときは `/timeline.html?token=...`
 
 H7 で absence をスタンド主導で回す手順は `docs/stand/h7-absence.md`。

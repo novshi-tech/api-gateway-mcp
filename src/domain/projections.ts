@@ -73,7 +73,6 @@ export interface ThreadLink {
 /** エンティティはスレッドの 1 種類（0014）。データソースの写し */
 export interface Thread extends CommState {
   id: string;
-  tenantId: string;
   dataSourceId: string;
   title: string;
   /** 相手の Party（受信の from と送信の to から） */
@@ -114,7 +113,6 @@ export interface SignalRecord {
 }
 
 export interface Projections {
-  tenantId: string;
   lastSeq: number;
   threads: Record<string, Thread>;
   signals: Record<string, SignalRecord>;
@@ -125,8 +123,8 @@ export interface Projections {
   };
 }
 
-export function emptyProjections(tenantId: string): Projections {
-  return { tenantId, lastSeq: 0, threads: {}, signals: {}, index: { sourceRefs: {}, messageIds: {} } };
+export function emptyProjections(): Projections {
+  return { lastSeq: 0, threads: {}, signals: {}, index: { sourceRefs: {}, messageIds: {} } };
 }
 
 export function indexKey(dataSourceId: string, value: string): string {

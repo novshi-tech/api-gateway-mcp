@@ -23,7 +23,7 @@ async function main() {
     const db = drizzle(pool) as unknown as Db;
     await db.execute(sql.raw(`TRUNCATE ${TABLES.join(', ')}`));
     await pgRepo(db).master.replaceSeed(seed);
-    console.log(`${name}: tenants=${seed.tenants.map((t) => t.id).join(',')} users=${seed.users.map((u) => u.id).join(',')}`);
+    console.log(`${name}: users=${seed.users.map((u) => u.id).join(',')}`);
   } finally {
     await pool.end();
   }

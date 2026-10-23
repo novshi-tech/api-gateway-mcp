@@ -5,14 +5,14 @@ import { DomainError } from './errors';
 import { AttributeValue, draft, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
 import { linkCandidates } from './turn';
-import { canReadDataSource, membership, type Viewer } from './viewer';
+import { canReadDataSource, type Viewer } from './viewer';
 
 // スタンド（＝ユーザー）が呼ぶ操作の判断部分。状態とコマンドを受けてイベントを返すだけの純関数。
 // 操作できるのは、スレッドが見えている人（そのデータソースの読者）。
 
 export function visibleThreadOrThrow(p: Projections, viewer: Viewer, threadId: string): Thread {
   const t = p.threads[threadId];
-  if (!t || !canReadDataSource(viewer, p.tenantId, t.dataSourceId)) {
+  if (!t || !canReadDataSource(viewer, t.dataSourceId)) {
     throw new DomainError('not_found', `thread ${threadId} not found`);
   }
   return t;
@@ -20,7 +20,7 @@ export function visibleThreadOrThrow(p: Projections, viewer: Viewer, threadId: s
 
 export function visibleSignalOrThrow(p: Projections, viewer: Viewer, signalId: string): SignalRecord {
   const s = p.signals[signalId];
-  if (!s || !canReadDataSource(viewer, p.tenantId, s.dataSourceId)) {
+  if (!s || !canReadDataSource(viewer, s.dataSourceId)) {
     throw new DomainError('not_found', `signal ${signalId} not found`);
   }
   return s;
@@ -94,13 +94,13 @@ export function moveSignal(
 
 // ---- 個人のメモ（0014 の 2） ----
 
-/** Viewer のそのテナントでの個人のメモのデータソース */
-export function notesDataSourceOf(dir: Directory, viewer: Viewer, tenantId: string): Extract<DataSource, { kind: 'notes' }> | undefined {
-  const m = membership(viewer, tenantId);
-  if (!m) return undefined;
-  return dir
-    .dataSourcesOfTenant(tenantId)
-    .find((d): d is Extract<DataSource, { kind: 'notes' }> => d.kind === 'notes' && d.ownerPartyId === m.partyId && m.dataSourceIds.includes(d.id));
+/** Viewer の個人のメモのデータソース */
+export function notesDataSourceOf(dir: Directory, viewer: Viewer): Extract<DataSource, { kind: 'notes' }> | undefined {
+  if (viewer.partyId === null) return undefined;
+  return dir.seed.dataSources.find(
+    (d): d is Extract<DataSource, { kind: 'notes' }> =>
+      d.kind === 'notes' && d.ownerPartyId === viewer.partyId && viewer.dataSourceIds.includes(d.id),
+  );
 }
 
 /**
@@ -115,8 +115,8 @@ export function addNote(
   input: { threadId?: string; title?: string; body: string },
 ): { events: DraftEvent[]; threadId: string; signalId: string } {
   if (!input.body.trim()) throw new DomainError('invalid', 'body is required');
-  const ds = notesDataSourceOf(ctx.dir, viewer, p.tenantId);
-  if (!ds) throw new DomainError('not_found', `notes of ${viewer.userId} in tenant ${p.tenantId} not found`);
+  const ds = notesDataSourceOf(ctx.dir, viewer);
+  if (!ds) throw new DomainError('not_found', `notes of ${viewer.userId} not found`);
 
   let choice: ThreadChoice;
   if (input.threadId !== undefined) {
@@ -240,12 +240,12 @@ export function setAttribute(
   }
   const def = dir.attributeDefs(t.dataSourceId).find((d) => d.name === input.name);
   if (!def) throw new DomainError('invalid', `attribute ${input.name} is not defined for data source ${t.dataSourceId}`);
-  const value = input.value === null ? null : checkAttribute(dir, p.tenantId, def, input.value);
+  const value = input.value === null ? null : checkAttribute(dir, def, input.value);
   if ((t.attributes[def.name] ?? null) === value) return [];
   return [draft('ThreadAttributeSet', { threadId: t.id, name: def.name, value, actorUserId: viewer.userId })];
 }
 
-export function checkAttribute(dir: Directory, tenantId: string, def: AttributeDef, raw: unknown): AttributeValue {
+export function checkAttribute(dir: Directory, def: AttributeDef, raw: unknown): AttributeValue {
   const bad = (why: string) => new DomainError('invalid', `attribute ${def.name} (${def.type}): ${why}`);
   const parsed = AttributeValue.safeParse(raw);
   if (!parsed.success) throw bad('value must be a string, number or boolean');
@@ -267,8 +267,7 @@ export function checkAttribute(dir: Directory, tenantId: string, def: AttributeD
       if (typeof v !== 'string' || !(def.options ?? []).includes(v)) throw bad(`not one of ${(def.options ?? []).join(', ')}`);
       return v;
     case 'party': {
-      const party = typeof v === 'string' ? dir.party(v) : undefined;
-      if (!party || party.tenantId !== tenantId) throw bad('unknown party');
+      if (typeof v !== 'string' || !dir.party(v)) throw bad('unknown party');
       return v;
     }
   }

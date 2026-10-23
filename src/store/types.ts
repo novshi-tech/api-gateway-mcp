@@ -1,27 +1,27 @@
 import type { DomainEvent, DraftEvent, Projections, Seed } from '../domain';
 
 export class ConcurrencyError extends Error {
-  constructor(tenantId: string, expected: number) {
-    super(`concurrent append on tenant ${tenantId} (expected last seq ${expected})`);
+  constructor(expected: number) {
+    super(`concurrent append (expected last seq ${expected})`);
     this.name = 'ConcurrencyError';
   }
 }
 
-/** append-only のイベントストア。tenant ごとに単調な seq */
+/** append-only のイベントストア。単調な seq（1 デプロイ = 1 チームで 1 本、0021） */
 export interface EventStore {
   /**
    * expectedLastSeq の直後に追記する。他の書き込みが先にあれば ConcurrencyError（楽観ロック）。
    * at は全イベント共通の記録時刻。
    */
-  append(tenantId: string, expectedLastSeq: number, drafts: readonly DraftEvent[], at: string): Promise<DomainEvent[]>;
-  read(tenantId: string, afterSeq?: number): Promise<DomainEvent[]>;
+  append(expectedLastSeq: number, drafts: readonly DraftEvent[], at: string): Promise<DomainEvent[]>;
+  read(afterSeq?: number): Promise<DomainEvent[]>;
 }
 
 /** 投影の保存先。fold の結果をそのまま置き、いつでも消して作り直せる */
 export interface ProjectionStore {
-  load(tenantId: string): Promise<Projections | null>;
+  load(): Promise<Projections | null>;
   save(p: Projections): Promise<void>;
-  clear(tenantId: string): Promise<void>;
+  clear(): Promise<void>;
 }
 
 export interface MasterStore {

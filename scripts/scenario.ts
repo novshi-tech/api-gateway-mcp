@@ -39,7 +39,7 @@ async function main() {
       repo = pgRepo(db.db);
     }
     const run = await runScenario(scenario, { repo, decider });
-    const p = await run.service.state(scenario.config.tenant);
+    const p = await run.service.state();
     console.log(`\n# ${name}（${scenario.config.title}） ${scenario.config.hypotheses.join(' ')} [${scenario.config.status}]`);
     console.log(`  steps=${scenario.steps.length} events=${p.lastSeq} threads=${Object.keys(p.threads).length}`);
     if (cmd === 'verify') {

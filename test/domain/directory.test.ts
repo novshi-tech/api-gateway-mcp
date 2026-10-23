@@ -5,9 +5,9 @@ import { dir, seed } from '../helpers/world';
 
 describe('Directory', () => {
   it('Address は期間付きで、大文字小文字を区別しない', () => {
-    expect(dir.partyIdOfAddress('ubs', { channel: 'email', value: 'OLD@dave.example' }, '2025-06-01T00:00:00Z')).toBe('p_dave');
-    expect(dir.partyIdOfAddress('ubs', { channel: 'email', value: 'old@dave.example' }, '2026-06-01T00:00:00Z')).toBeNull();
-    expect(dir.partyIdOfAddress('nvt', { channel: 'email', value: 'info@dave.example' })).toBeNull();
+    expect(dir.partyIdOfAddress({ channel: 'email', value: 'OLD@dave.example' }, '2025-06-01T00:00:00Z')).toBe('p_dave');
+    expect(dir.partyIdOfAddress({ channel: 'email', value: 'old@dave.example' }, '2026-06-01T00:00:00Z')).toBeNull();
+    expect(dir.partyIdOfAddress({ channel: 'line', value: 'info@dave.example' })).toBeNull();
   });
 
   it('direction の判定: データソースの送信元（こちら）のアドレスか', () => {
@@ -19,17 +19,20 @@ describe('Directory', () => {
     expect(dir.isSelfAddress(dir.dataSource('ds_notes_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
   });
 
-  it('H3 Viewer は User の各テナントの Party と、読者になっているリスト・データソースを束ねる', () => {
+  it('H3 Viewer は User の Party と、読者になっているリスト・データソースを束ねる', () => {
     const v = deriveViewer(dir, 'u_alice');
-    expect(v.memberships).toEqual([
-      { tenantId: 'ubs', partyId: 'p_alice', listIds: ['l_support', 'l_alice', 'l_notes_alice'], dataSourceIds: ['ds_support', 'ds_alice', 'ds_notes_alice'] },
-      { tenantId: 'nvt', partyId: 'p_alice_nvt', listIds: [], dataSourceIds: [] },
-    ]);
-    expect(canReadDataSource(v, 'ubs', 'ds_alice')).toBe(true);
-    expect(canReadDataSource(v, 'ubs', 'ds_line')).toBe(false);
-    expect(canReadDataSource(v, 'nvt', 'ds_support')).toBe(false);
+    expect(v).toEqual({
+      userId: 'u_alice',
+      partyId: 'p_alice',
+      listIds: ['l_support', 'l_alice', 'l_notes_alice'],
+      dataSourceIds: ['ds_support', 'ds_alice', 'ds_notes_alice'],
+    });
+    expect(canReadDataSource(v, 'ds_alice')).toBe(true);
+    expect(canReadDataSource(v, 'ds_line')).toBe(false);
+    // このデプロイに Party のない User（チームの外）は何も読めない
+    expect(deriveViewer(dir, 'u_mallory')).toEqual({ userId: 'u_mallory', partyId: null, listIds: [], dataSourceIds: [] });
     // ゴースト Party は Viewer になれない
-    expect(deriveViewer(dir, 'p_carol').memberships).toEqual([]);
+    expect(deriveViewer(dir, 'p_carol').partyId).toBeNull();
   });
 });
 
@@ -45,7 +48,7 @@ describe('H3 マスタの整合性（seedProblems）', () => {
   };
 
   it('データソース 1 つにリスト 1 つ', () => {
-    expect(broken((s) => s.lists!.push({ id: 'l_dup', tenantId: 'ubs', dataSourceId: 'ds_support' })).join()).toMatch(/ds_support: リストが 2 個/);
+    expect(broken((s) => s.lists!.push({ id: 'l_dup', dataSourceId: 'ds_support' })).join()).toMatch(/ds_support: リストが 2 個/);
     expect(broken((s) => (s.lists = s.lists!.filter((l) => l.id !== 'l_line'))).join()).toMatch(/ds_line: リストが 0 個/);
   });
 
@@ -59,12 +62,15 @@ describe('H3 マスタの整合性（seedProblems）', () => {
     expect(broken((s) => s.listMembers!.push({ listId: 'l_line', partyId: 'p_alice' }))).toEqual([]);
   });
 
-  it('読者はテナントの User を持つ Party だけ（ゴーストや別テナントは読者になれない）', () => {
+  it('読者は User を持つ Party だけ（ゴーストは読者になれない）', () => {
     expect(broken((s) => s.listMembers!.push({ listId: 'l_support', partyId: 'p_carol' })).join()).toMatch(/ゴースト/);
-    expect(broken((s) => s.listMembers!.push({ listId: 'l_support', partyId: 'p_eve' })).join()).toMatch(/別テナント/);
   });
 
-  it('送信元のアドレスはデータソースのテナントとチャネルのもの', () => {
+  it('User の Party は 1 つまで（1 デプロイ = 1 チーム）', () => {
+    expect(broken((s) => s.parties!.push({ id: 'p_alice2', name: 'Alice', kind: 'person', userId: 'u_alice' })).join()).toMatch(/u_alice: Party が 2 個/);
+  });
+
+  it('送信元のアドレスはデータソースのチャネルのもの', () => {
     const problems = broken((s) => {
       const ds = s.dataSources!.find((d) => d.id === 'ds_support')!;
       if (ds.kind === 'service') ds.selfAddressIds = ['a_oa'];

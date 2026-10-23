@@ -8,20 +8,12 @@ import type { AddressRef } from './events';
 export class Directory {
   constructor(readonly seed: Seed) {}
 
-  tenantIds(): string[] {
-    return this.seed.tenants.map((t) => t.id);
-  }
-
   party(partyId: string): Party | undefined {
     return this.seed.parties.find((p) => p.id === partyId);
   }
 
   dataSource(dataSourceId: string): DataSource | undefined {
     return this.seed.dataSources.find((d) => d.id === dataSourceId);
-  }
-
-  dataSourcesOfTenant(tenantId: string): DataSource[] {
-    return this.seed.dataSources.filter((d) => d.tenantId === tenantId);
   }
 
   list(listId: string): List | undefined {
@@ -32,9 +24,9 @@ export class Directory {
     return this.seed.lists.find((l) => l.dataSourceId === dataSourceId);
   }
 
-  /** User の各テナントでの Party。ゴースト Party は User を持たないので出てこない */
-  partiesOfUser(userId: string): Party[] {
-    return this.seed.parties.filter((p) => p.userId === userId);
+  /** User の Party（このデプロイに 1 つまで）。ゴースト Party は User を持たないので出てこない */
+  partyOfUser(userId: string): Party | undefined {
+    return this.seed.parties.find((p) => p.userId === userId);
   }
 
   listIdsOfParty(partyId: string): string[] {
@@ -55,18 +47,12 @@ export class Directory {
   }
 
   /** at 時点で有効な Address を引く。期間付きの紐づけに対応する */
-  findAddress(tenantId: string, ref: AddressRef, at?: string): Address | undefined {
-    return this.seed.addresses.find(
-      (a) =>
-        a.tenantId === tenantId &&
-        a.channel === ref.channel &&
-        sameValue(a.value, ref.value) &&
-        isValidAt(a, at),
-    );
+  findAddress(ref: AddressRef, at?: string): Address | undefined {
+    return this.seed.addresses.find((a) => a.channel === ref.channel && sameValue(a.value, ref.value) && isValidAt(a, at));
   }
 
-  partyIdOfAddress(tenantId: string, ref: AddressRef, at?: string): string | null {
-    return this.findAddress(tenantId, ref, at)?.partyId ?? null;
+  partyIdOfAddress(ref: AddressRef, at?: string): string | null {
+    return this.findAddress(ref, at)?.partyId ?? null;
   }
 
   addressesOfParty(partyId: string, channel?: Channel, at?: string): Address[] {
@@ -98,6 +84,7 @@ function isValidAt(a: Address, at?: string): boolean {
 
 /**
  * マスタの整合性（H3 の前提）。問題の一覧を返す（空なら整合している）。
+ * - User の Party は 1 つまで（1 デプロイ = 1 チーム、0020・0021）
  * - データソース 1 つにリスト 1 つ
  * - 個人のメモのリストの読者は本人だけ
  * - 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない。共有のデータソースは組織の資格情報（0013）
@@ -105,19 +92,19 @@ function isValidAt(a: Address, at?: string): boolean {
 export function seedProblems(seed: Seed): string[] {
   const dir = new Directory(seed);
   const problems: string[] = [];
-  const tenants = new Set(seed.tenants.map((t) => t.id));
+  for (const u of seed.users) {
+    const parties = seed.parties.filter((p) => p.userId === u.id);
+    if (parties.length > 1) problems.push(`user ${u.id}: Party が ${parties.length} 個（1 個まで）`);
+  }
   for (const ds of seed.dataSources) {
-    if (!tenants.has(ds.tenantId)) problems.push(`data source ${ds.id}: tenant ${ds.tenantId} がない`);
     const lists = seed.lists.filter((l) => l.dataSourceId === ds.id);
     if (lists.length !== 1) {
       problems.push(`data source ${ds.id}: リストが ${lists.length} 個（1 個のはず）`);
       continue;
     }
     const list = lists[0]!;
-    if (list.tenantId !== ds.tenantId) problems.push(`list ${list.id}: data source とテナントが違う`);
     const readers = dir.readersOfList(list.id);
     for (const r of readers) {
-      if (r.tenantId !== ds.tenantId) problems.push(`list ${list.id}: 読者 ${r.id} が別テナント`);
       if (!r.userId) problems.push(`list ${list.id}: 読者 ${r.id} がゴースト（User を持たない）`);
     }
     if (ds.kind === 'notes') {
@@ -127,11 +114,9 @@ export function seedProblems(seed: Seed): string[] {
       continue;
     }
     const cred = seed.credentialRefs.find((c) => c.id === ds.credentialRefId);
-    if (!cred || cred.tenantId !== ds.tenantId) {
+    if (!cred) {
       problems.push(`data source ${ds.id}: 資格情報 ${ds.credentialRefId} がない`);
-    } else if (cred.principal.kind === 'organization') {
-      if (cred.principal.tenantId !== ds.tenantId) problems.push(`data source ${ds.id}: 別テナントの組織の資格情報`);
-    } else {
+    } else if (cred.principal.kind === 'user') {
       const owner = readers[0];
       if (readers.length !== 1 || owner?.userId !== cred.principal.userId) {
         problems.push(`data source ${ds.id}: 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない`);
@@ -139,7 +124,7 @@ export function seedProblems(seed: Seed): string[] {
     }
     for (const id of ds.selfAddressIds) {
       const a = dir.address(id);
-      if (!a || a.tenantId !== ds.tenantId || a.channel !== ds.channel) problems.push(`data source ${ds.id}: 送信元のアドレス ${id} が不正`);
+      if (!a || a.channel !== ds.channel) problems.push(`data source ${ds.id}: 送信元のアドレス ${id} が不正`);
     }
   }
   for (const l of seed.lists) {

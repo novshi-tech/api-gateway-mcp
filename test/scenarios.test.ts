@@ -21,17 +21,17 @@ describe.each(names)('シナリオ %s', (name) => {
 
   it('H1 投影を全削除してリプレイしてもスレッドの投影のハッシュが一致し、Postgres でも同じになる', async () => {
     const mem = await runScenario(scenario);
-    const memHash = await sha256(canonicalJson((await mem.service.state(scenario.config.tenant)).threads));
-    const rebuilt = await mem.service.rebuild(scenario.config.tenant);
+    const memHash = await sha256(canonicalJson((await mem.service.state()).threads));
+    const rebuilt = await mem.service.rebuild();
     expect(await sha256(canonicalJson(rebuilt.threads))).toBe(memHash);
 
     const { db, close } = await pgliteDb();
     try {
       const pg = await runScenario(scenario, { repo: pgRepo(db) });
-      const pgState = await pg.service.state(scenario.config.tenant);
+      const pgState = await pg.service.state();
       expect(await sha256(canonicalJson(pgState.threads))).toBe(memHash);
-      await pg.repo.projections.clear(scenario.config.tenant);
-      const pgRebuilt = await pg.service.state(scenario.config.tenant);
+      await pg.repo.projections.clear();
+      const pgRebuilt = await pg.service.state();
       expect(await sha256(canonicalJson(pgRebuilt.threads))).toBe(memHash);
       expect(canonicalJson(pgRebuilt)).toBe(canonicalJson(pgState));
     } finally {
@@ -41,18 +41,17 @@ describe.each(names)('シナリオ %s', (name) => {
 
   it('H1 fold は決定的（同じイベント列から何度でも同じ投影、1 件ずつ畳んでも同じ）', async () => {
     const run = await runScenario(scenario);
-    const events = await run.repo.events.read(scenario.config.tenant);
+    const events = await run.repo.events.read();
     const whole = canonicalJson(fold(events));
     expect(canonicalJson(fold(events))).toBe(whole);
-    const stepwise = events.reduce((p, e) => fold([e], p), emptyProjections(scenario.config.tenant));
+    const stepwise = events.reduce((p, e) => fold([e], p), emptyProjections());
     expect(canonicalJson(stepwise)).toBe(whole);
   });
 
   it('H1 fold は 1 段: 各スレッドの投影は、そのスレッドに綴じたものだけから決まる', async () => {
     const run = await runScenario(scenario);
-    const tenant = scenario.config.tenant;
-    const p = await run.service.state(tenant);
-    const events = await run.repo.events.read(tenant);
+    const p = await run.service.state();
+    const events = await run.repo.events.read();
     for (const t of Object.values(p.threads)) {
       // スレッドのログだけからボールが同じに導出できる
       const { ball, dismissed, lastInboundAt, lastOutboundAt } = deriveComm(t.log);
@@ -60,7 +59,7 @@ describe.each(names)('シナリオ %s', (name) => {
       // 他のスレッドだけに関わるイベントを抜いて畳んでも、このスレッドの投影は変わらない
       // （seq は抜けがあってよい。単調であればよい）
       const mine = events.filter((e) => touches(e, t.id, events));
-      expect(canonicalJson(fold(mine, emptyProjections(tenant)).threads[t.id])).toBe(canonicalJson(t));
+      expect(canonicalJson(fold(mine, emptyProjections()).threads[t.id])).toBe(canonicalJson(t));
     }
   });
 });
@@ -105,9 +104,9 @@ describe('H6 Ingest', () => {
       const run = await runScenario(loadScenario(name));
       const m = ingestMetrics(run);
       expect(m.structural.correct).toBe(m.structural.total);
-      const p = await run.service.state(run.scenario.config.tenant);
+      const p = await run.service.state();
       for (const s of Object.values(p.signals)) expect(s.threadId).not.toBeNull();
-      const events = await run.repo.events.read(run.scenario.config.tenant);
+      const events = await run.repo.events.read();
       for (const e of events) if (e.type === 'SignalThreaded') expect(e.payload.reason.trim()).not.toBe('');
     }
   });

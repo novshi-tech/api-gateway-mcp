@@ -40,8 +40,8 @@ export type MirrorPlan =
  */
 export function planMirror(p: Projections, ctx: CoreContext, m: InboundMirror): MirrorPlan {
   const ds = ctx.dir.dataSource(m.dataSourceId);
-  if (!ds || ds.tenantId !== p.tenantId || ds.kind !== 'service') {
-    throw new DomainError('invalid', `data source ${m.dataSourceId} is not a service data source of tenant ${p.tenantId}`);
+  if (!ds || ds.kind !== 'service') {
+    throw new DomainError('invalid', `data source ${m.dataSourceId} is not a service data source`);
   }
   if (ds.channel !== m.channel) throw new DomainError('invalid', `data source ${ds.id} is ${ds.channel}, not ${m.channel}`);
   const threadId = threadOfSourceKey(p, ds.id, m.threadKey);
@@ -58,8 +58,8 @@ export function planMirror(p: Projections, ctx: CoreContext, m: InboundMirror): 
     else if (def.type === 'party') {
       if (typeof raw !== 'string') throw new DomainError('invalid', `attribute ${name} (party): not an address`);
       // 知らないアカウントは誰の番にもならないので空として写す
-      value = ctx.dir.partyIdOfAddress(p.tenantId, { channel: ds.channel, value: raw }, ctx.now);
-    } else value = checkAttribute(ctx.dir, p.tenantId, def, raw);
+      value = ctx.dir.partyIdOfAddress({ channel: ds.channel, value: raw }, ctx.now);
+    } else value = checkAttribute(ctx.dir, def, raw);
     if ((t.attributes[name] ?? null) !== value) changed[name] = value;
   }
   if (Object.keys(changed).length === 0) return { kind: 'unchanged', threadId };

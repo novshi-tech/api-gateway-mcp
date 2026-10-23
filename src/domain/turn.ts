@@ -94,7 +94,7 @@ export function linkedActiveSinceDismissed(viewer: Viewer, p: Projections, t: Th
 function visibleLinked(viewer: Viewer, p: Projections, t: Thread): Thread[] {
   return t.links
     .map((l) => p.threads[l.threadId])
-    .filter((x): x is Thread => x !== undefined && canReadDataSource(viewer, p.tenantId, x.dataSourceId));
+    .filter((x): x is Thread => x !== undefined && canReadDataSource(viewer, x.dataSourceId));
 }
 
 // ---- 結び候補 ----
@@ -132,7 +132,7 @@ export function linkCandidates(viewer: Viewer, p: Projections, t: Thread): LinkC
   const linked = new Set(t.links.map((l) => l.threadId));
   const out: LinkCandidate[] = [];
   for (const u of Object.values(p.threads)) {
-    if (u.id === t.id || linked.has(u.id) || !canReadDataSource(viewer, p.tenantId, u.dataSourceId)) continue;
+    if (u.id === t.id || linked.has(u.id) || !canReadDataSource(viewer, u.dataSourceId)) continue;
     const keys = crossKeys(p, u).filter((k) => mine.has(k));
     if (keys.length > 0) out.push({ threadId: u.id, dataSourceId: u.dataSourceId, title: u.title, keys });
   }

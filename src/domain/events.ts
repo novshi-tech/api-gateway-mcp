@@ -200,15 +200,15 @@ export type PayloadOf<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;
 export type DraftEvent = { [T in EventType]: { type: T; payload: PayloadOf<T> } }[EventType];
 
 /** 保存済みイベント */
-export type DomainEvent = DraftEvent & { tenantId: string; seq: number; at: string };
+export type DomainEvent = DraftEvent & { seq: number; at: string };
 
 export const EventTypeSchema = z.enum(Object.keys(EventPayloads) as [EventType, ...EventType[]]);
 
 /** DB などから読んだ生の行をイベントとして検証する */
-export function parseEvent(raw: { tenantId: string; seq: number; at: string; type: string; payload: unknown }): DomainEvent {
+export function parseEvent(raw: { seq: number; at: string; type: string; payload: unknown }): DomainEvent {
   const type = EventTypeSchema.parse(raw.type);
   const payload = EventPayloads[type].parse(raw.payload);
-  return { tenantId: raw.tenantId, seq: raw.seq, at: raw.at, type, payload } as DomainEvent;
+  return { seq: raw.seq, at: raw.at, type, payload } as DomainEvent;
 }
 
 export function draft<T extends EventType>(type: T, payload: z.input<(typeof EventPayloads)[T]>): DraftEvent {

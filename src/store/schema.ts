@@ -2,22 +2,24 @@ import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, time
 
 // ---- イベントストア（正） ----
 
+// 1 デプロイ = 1 チームなので、テナントの列は持たない（0021）
+
 export const events = pgTable(
   'events',
   {
-    tenantId: text('tenant_id').notNull(),
-    seq: integer('seq').notNull(),
+    seq: integer('seq').primaryKey(),
     type: text('type').notNull(),
     payload: jsonb('payload').notNull(),
     at: timestamp('at', { withTimezone: true, mode: 'string' }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.tenantId, t.seq] }), index('events_type_idx').on(t.tenantId, t.type)],
+  (t) => [index('events_type_idx').on(t.type)],
 );
 
 // ---- 投影（いつでも消してイベントから作り直せる） ----
 
+/** 1 行だけ（id = 1） */
 export const projectionMeta = pgTable('projection_meta', {
-  tenantId: text('tenant_id').primaryKey(),
+  id: integer('id').primaryKey(),
   lastSeq: integer('last_seq').notNull(),
   /** 重複排除とアンカー解決の索引 */
   idx: jsonb('idx').notNull(),
@@ -27,29 +29,23 @@ export const projectionMeta = pgTable('projection_meta', {
 export const threads = pgTable(
   'threads',
   {
-    tenantId: text('tenant_id').notNull(),
-    id: text('id').notNull(),
+    id: text('id').primaryKey(),
     dataSourceId: text('data_source_id').notNull(),
     data: jsonb('data').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.tenantId, t.id] }), index('threads_data_source_idx').on(t.tenantId, t.dataSourceId)],
+  (t) => [index('threads_data_source_idx').on(t.dataSourceId)],
 );
 
-export const signals = pgTable(
-  'signals',
-  {
-    tenantId: text('tenant_id').notNull(),
-    id: text('id').notNull(),
-    dataSourceId: text('data_source_id').notNull(),
-    threadId: text('thread_id'),
-    data: jsonb('data').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.tenantId, t.id] })],
-);
+export const signals = pgTable('signals', {
+  id: text('id').primaryKey(),
+  dataSourceId: text('data_source_id').notNull(),
+  threadId: text('thread_id'),
+  data: jsonb('data').notNull(),
+});
 
 // ---- マスタ ----
 
-/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = tenants / users / parties ...） */
+/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / parties ...） */
 export const master = pgTable(
   'master',
   {
@@ -66,7 +62,6 @@ export const master = pgTable(
 /** ダミーコネクタの受信キュー（データソースごとに pull で返す） */
 export const dummyQueue = pgTable('dummy_queue', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  tenantId: text('tenant_id').notNull(),
   dataSourceId: text('data_source_id').notNull(),
   message: jsonb('message').notNull(),
   consumed: boolean('consumed').notNull().default(false),

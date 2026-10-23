@@ -21,9 +21,9 @@ describe.each([
   it('pull はデータソースごとに、キューから一度だけ返す', async () => {
     const backend = await make();
     const c = new DummyConnector('email', backend);
-    await backend.enqueue('ubs', sig('1'));
-    await backend.enqueue('ubs', sig('2', 'ds_alice'));
-    await backend.enqueue('ubs', sig('3'));
+    await backend.enqueue(sig('1'));
+    await backend.enqueue(sig('2', 'ds_alice'));
+    await backend.enqueue(sig('3'));
     expect((await c.pull(dir.dataSource('ds_support')!, null)).items.map((s) => ('sourceRef' in s ? s.sourceRef : ''))).toEqual(['1', '3']);
     expect((await c.pull(dir.dataSource('ds_support')!, null)).items).toEqual([]);
     expect((await c.pull(dir.dataSource('ds_alice')!, null)).items.map((s) => ('sourceRef' in s ? s.sourceRef : ''))).toEqual(['2']);

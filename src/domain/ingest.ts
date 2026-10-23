@@ -44,8 +44,8 @@ export type Prepared =
  */
 export function prepareInbound(p: Projections, ctx: CoreContext, inbound: InboundSignal): Prepared {
   const ds = ctx.dir.dataSource(inbound.dataSourceId);
-  if (!ds || ds.tenantId !== p.tenantId || ds.kind !== 'service') {
-    throw new DomainError('invalid', `data source ${inbound.dataSourceId} is not a service data source of tenant ${p.tenantId}`);
+  if (!ds || ds.kind !== 'service') {
+    throw new DomainError('invalid', `data source ${inbound.dataSourceId} is not a service data source`);
   }
   if (ds.channel !== inbound.channel) throw new DomainError('invalid', `data source ${ds.id} is ${ds.channel}, not ${inbound.channel}`);
 
@@ -63,9 +63,9 @@ export function prepareInbound(p: Projections, ctx: CoreContext, inbound: Inboun
     channel: inbound.channel,
     from: inbound.from,
     to: inbound.to,
-    fromPartyId: ctx.dir.partyIdOfAddress(p.tenantId, inbound.from, ctx.now),
+    fromPartyId: ctx.dir.partyIdOfAddress(inbound.from, ctx.now),
     toPartyIds: inbound.to
-      .map((a) => ctx.dir.partyIdOfAddress(p.tenantId, a, ctx.now))
+      .map((a) => ctx.dir.partyIdOfAddress(a, ctx.now))
       .filter((x): x is string => x !== null),
     subject: inbound.subject,
     body: inbound.body,
@@ -227,7 +227,6 @@ function toCandidate(p: Projections, t: Thread): Candidate {
 export type IngestMode = 'choose' | 'new' | 'fixed';
 
 export interface IngestRequest {
-  tenantId: string;
   mode: IngestMode;
   signal: SignalPayload;
   dataSource: { id: string; name: string; description: string; channel: Channel; group: boolean };
@@ -281,7 +280,6 @@ export function planIngest(
   return {
     kind: 'needs_decision',
     request: {
-      tenantId: p.tenantId,
       mode,
       signal: sig,
       dataSource: { id: ds.id, name: ds.name, description: ds.description, channel: ds.channel, group: ds.group },

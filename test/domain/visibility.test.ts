@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveViewer, getListView, getThreadView, listLists, listThreads, visibleSignals } from '../../src/domain';
-import { alice, answer, bob, dir, email, eve, EventLog, ingestPure, line, makeCtx } from '../helpers/world';
+import { alice, answer, bob, dir, email, eve, EventLog, ingestPure, line, makeCtx, mallory } from '../helpers/world';
 
 // クエリ層の可視性（H3）: 見えるのはリストの読者だけ。個人のメールボックスや個人のメモは本人だけ。テナント外は 0 件
 
@@ -20,17 +20,17 @@ function world() {
 describe('可視性', () => {
   it('H3 listThreads は読者になっているデータソースのスレッドだけを返す', () => {
     const { p, shared, personal, line: l } = world();
-    expect(listThreads(dir, alice, [p], { filter: 'all' }).map((t) => t.id)).toEqual([personal, shared]);
-    expect(listThreads(dir, bob, [p], { filter: 'all' }).map((t) => t.id)).toEqual([l, shared]);
-    expect(listThreads(dir, eve, [p], { filter: 'all' })).toEqual([]);
-    expect(listThreads(dir, alice, [p], { filter: 'all', dataSourceId: 'ds_alice' }).map((t) => t.id)).toEqual([personal]);
-    expect(listThreads(dir, alice, [p], { filter: 'all', tenantId: 'nvt' })).toEqual([]);
+    expect(listThreads(dir, alice, p, { filter: 'all' }).map((t) => t.id)).toEqual([personal, shared]);
+    expect(listThreads(dir, bob, p, { filter: 'all' }).map((t) => t.id)).toEqual([l, shared]);
+    expect(listThreads(dir, eve, p, { filter: 'all' })).toEqual([]);
+    expect(listThreads(dir, alice, p, { filter: 'all', dataSourceId: 'ds_alice' }).map((t) => t.id)).toEqual([personal]);
+    expect(listThreads(dir, mallory, p, { filter: 'all' })).toEqual([]);
   });
 
   it('H3 仕分け待ちはボールがこちらで片付けていないもの。open は片付けていないもの', () => {
     const { p, shared, line: l } = world();
-    expect(listThreads(dir, bob, [p], { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
-    expect(listThreads(dir, bob, [p], { filter: 'open' }).map((t) => t.id)).toEqual([l, shared]);
+    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, bob, p, { filter: 'open' }).map((t) => t.id)).toEqual([l, shared]);
   });
 
   it('H3 getThreadView は読者にだけ生の中身を返す', () => {
@@ -65,16 +65,16 @@ describe('可視性', () => {
   it('H3 listLists は読者になっているリストだけを返す', () => {
     expect(listLists(dir, alice).map((l) => l.id)).toContain('l_notes_alice');
     expect(listLists(dir, bob).map((l) => l.id)).not.toContain('l_notes_alice');
-    expect(listLists(dir, alice, { tenantId: 'nvt' }).every((l) => l.tenantId === 'nvt')).toBe(true);
-    expect(listLists(dir, eve).every((l) => l.tenantId !== 'ubs')).toBe(true);
+    expect(listLists(dir, eve).map((l) => l.id)).toEqual(['l_slack']);
+    expect(listLists(dir, mallory)).toEqual([]);
     expect(listLists(dir, deriveViewer(dir, 'u_nobody'))).toEqual([]);
   });
 
   it('H3 listThreads の since はそれより後に動いたスレッドだけ', () => {
     const { p, shared, personal, line: l } = world();
-    expect(listThreads(dir, alice, [p], { filter: 'all', since: '2026-10-16T09:30:00.000Z' }).map((t) => t.id)).toEqual([personal]);
-    expect(listThreads(dir, bob, [p], { filter: 'all', since: '2026-10-16T10:30:00.000Z' }).map((t) => t.id)).toEqual([l]);
-    expect(listThreads(dir, bob, [p], { filter: 'all', since: '2026-10-16T12:00:00.000Z' })).toEqual([]);
-    expect(listThreads(dir, alice, [p], { filter: 'all', since: '2026-01-01T00:00:00.000Z' }).map((t) => t.id)).toEqual([personal, shared]);
+    expect(listThreads(dir, alice, p, { filter: 'all', since: '2026-10-16T09:30:00.000Z' }).map((t) => t.id)).toEqual([personal]);
+    expect(listThreads(dir, bob, p, { filter: 'all', since: '2026-10-16T10:30:00.000Z' }).map((t) => t.id)).toEqual([l]);
+    expect(listThreads(dir, bob, p, { filter: 'all', since: '2026-10-16T12:00:00.000Z' })).toEqual([]);
+    expect(listThreads(dir, alice, p, { filter: 'all', since: '2026-01-01T00:00:00.000Z' }).map((t) => t.id)).toEqual([personal, shared]);
   });
 });

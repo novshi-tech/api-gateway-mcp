@@ -90,10 +90,10 @@ describe('HTTP API', () => {
 
   it('/me・スレッドの一覧と詳細・片付け・開き直し・移し替え・リストの一通り', async () => {
     const { call, service } = await app();
-    expect((await call('GET', '/api/me', 'u_alice')).body.parties).toHaveLength(2);
+    expect((await call('GET', '/api/me', 'u_alice')).body.party.partyId).toBe('p_alice');
 
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
-    const r2 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r2 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
     const threads = (await call('GET', '/api/threads?filter=triage', 'u_alice')).body as { id: string }[];
     expect(threads).toHaveLength(1);
     const threadId = threads[0]!.id;
@@ -122,7 +122,7 @@ describe('HTTP API', () => {
 
   it('H8 メモ・持ち主・リンク・属性・自分の番・タイムラインの since の一通り', async () => {
     const { call, service, clock } = await app();
-    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r1 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     const threadId = r1.status === 'threaded' ? r1.threadId : '';
     expect((await call('GET', '/api/threads?filter=triage', 'u_bob')).body).toHaveLength(1);
 
@@ -159,7 +159,7 @@ describe('HTTP API', () => {
 
     // list_threads の since: メモのスレッドは、結んだ先が動けば差分に入る（オフセット付きの時刻も受ける）
     clock.set('2026-10-16T11:00:00.000Z');
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
     const changed = await call('GET', '/api/threads?filter=mine&since=2026-10-16T19:30:00%2B09:00', 'u_alice');
     expect(changed.body.map((t: { id: string }) => t.id)).toEqual([noteId]);
     expect((await call('GET', '/api/threads?filter=mine&since=2026-10-16T12:00:00Z', 'u_alice')).body).toEqual([]);
@@ -171,7 +171,7 @@ describe('HTTP API', () => {
 
   it('H4 record_sent: 送ったスレッドを返し、返事期待はオフセット付きでも UTC にそろえる。期限を過ぎると overdue に出る', async () => {
     const { call, service, clock } = await app();
-    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
+    const r1 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     const threadId = r1.status === 'threaded' ? r1.threadId : '';
     const res = await call('POST', '/api/sent', 'u_alice', {
       data_source: 'ds_support',
@@ -201,19 +201,19 @@ describe('HTTP API', () => {
   it('Webhook は署名が合うときだけ取り込む', async () => {
     const { http, service } = await app();
     const body = JSON.stringify([email({ from: 'carol@example.com', sourceRef: 'w1' })]);
-    const bad = await http.request('/webhooks/dummy/ubs', { method: 'POST', body, headers: { 'x-murmur-signature': '00' } });
+    const bad = await http.request('/webhooks/dummy', { method: 'POST', body, headers: { 'x-murmur-signature': '00' } });
     expect(bad.status).toBe(401);
-    const ok = await http.request('/webhooks/dummy/ubs', { method: 'POST', body, headers: { 'x-murmur-signature': await signWebhook(body, 'whsec') } });
+    const ok = await http.request('/webhooks/dummy', { method: 'POST', body, headers: { 'x-murmur-signature': await signWebhook(body, 'whsec') } });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject([{ status: 'threaded', newThread: true }]);
-    expect(Object.keys((await service.state('ubs')).threads)).toHaveLength(1);
+    expect(Object.keys((await service.state()).threads)).toHaveLength(1);
   });
 
   it('H9 Webhook は状態の写しも受け、シグナルと同じ順に処理する（課題のスレッドがまだなければ写さない）', async () => {
     const { http } = await app();
     const mirror = (threadKey: string) => ({ kind: 'mirror', dataSourceId: 'ds_support', channel: 'email', threadKey, fields: {}, sourceRef: `m-${threadKey}` });
     const body = JSON.stringify([mirror('K-1'), email({ from: 'carol@example.com', sourceRef: 'w1', anchors: { threadKey: 'K-1' } }), mirror('K-1')]);
-    const res = await http.request('/webhooks/dummy/ubs', { method: 'POST', body, headers: { 'x-murmur-signature': await signWebhook(body, 'whsec') } });
+    const res = await http.request('/webhooks/dummy', { method: 'POST', body, headers: { 'x-murmur-signature': await signWebhook(body, 'whsec') } });
     expect(res.status).toBe(200);
     const [before, sig, after] = (await res.json()) as { status: string; threadId?: string }[];
     expect(before).toEqual({ status: 'no_thread', threadKey: 'K-1' });
@@ -223,9 +223,9 @@ describe('HTTP API', () => {
 
   it('timeline.html はトークンを知っている人にだけ、エスケープして返す', async () => {
     const { http, service } = await app();
-    await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', body: '<script>alert(1)</script>' }));
-    expect((await http.request('/timeline.html?tenant=ubs')).status).toBe(404);
-    const res = await http.request('/timeline.html?tenant=ubs&token=tok');
+    await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', body: '<script>alert(1)</script>' }));
+    expect((await http.request('/timeline.html')).status).toBe(404);
+    const res = await http.request('/timeline.html?token=tok');
     const html = await res.text();
     expect(res.status).toBe(200);
     expect(html).toContain('雨漏り');
@@ -235,7 +235,7 @@ describe('HTTP API', () => {
 
   it('管理画面はトークンを知っている人にだけ、リスト一覧 → スレッドの一覧とリンク → 詳細を返す', async () => {
     const { http, service, call } = await app();
-    const r1 = await service.ingest('ubs', email({ from: 'carol@example.com', sourceRef: 'r1', body: '<img src=x onerror=alert(1)>', anchors: { messageId: '<m1>' } }));
+    const r1 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', body: '<img src=x onerror=alert(1)>', anchors: { messageId: '<m1>' } }));
     const threadId = r1.status === 'threaded' ? r1.threadId : '';
     const note = await call('POST', '/api/notes', 'u_alice', { body: 'Carol さんの件' });
     await call('POST', `/api/threads/${note.body.thread.id}/links`, 'u_alice', { thread_id: threadId });

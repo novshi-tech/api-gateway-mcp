@@ -9,7 +9,6 @@ import {
   GetThreadQuery,
   InboundItemBody,
   LinkBody,
-  ListListsQuery,
   ListThreadsQuery,
   MoveSignalBody,
   RecordSentBody,
@@ -75,7 +74,7 @@ export function createApp(opts: HttpOptions) {
 
   api.get('/threads', async (c) => {
     const q = ListThreadsQuery.parse(c.req.query());
-    return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, tenantId: q.tenant, dataSourceId: q.data_source, since: q.since }));
+    return c.json(await c.var.service.listThreads(c.var.userId, { filter: q.filter, dataSourceId: q.data_source, since: q.since }));
   });
 
   api.get('/threads/:id', async (c) => {
@@ -85,7 +84,7 @@ export function createApp(opts: HttpOptions) {
 
   api.post('/notes', async (c) => {
     const b = AddNoteBody.parse(await json(c));
-    return c.json(await c.var.service.addNote(c.var.userId, { threadId: b.thread_id, title: b.title, body: b.body, tenantId: b.tenant }));
+    return c.json(await c.var.service.addNote(c.var.userId, { threadId: b.thread_id, title: b.title, body: b.body }));
   });
 
   api.post('/threads/:id/claim', async (c) => {
@@ -153,10 +152,7 @@ export function createApp(opts: HttpOptions) {
     );
   });
 
-  api.get('/lists', async (c) => {
-    const q = ListListsQuery.parse(c.req.query());
-    return c.json(await c.var.service.listLists(c.var.userId, { tenantId: q.tenant }));
-  });
+  api.get('/lists', async (c) => c.json(await c.var.service.listLists(c.var.userId)));
 
   api.get('/lists/:id', async (c) => c.json(await c.var.service.getList(c.var.userId, c.req.param('id'))));
 
@@ -164,13 +160,13 @@ export function createApp(opts: HttpOptions) {
 
   // ---- 公開ルート: Webhook と、TIMELINE_TOKEN で守る参照専用の画面（timeline.html・/admin）だけ ----
 
-  app.post('/webhooks/dummy/:tenantId', async (c) => {
+  app.post('/webhooks/dummy', async (c) => {
     const raw = await c.req.text();
     const sig = c.req.header('x-murmur-signature') ?? '';
     if (!(await opts.webhookVerify(raw, sig))) return c.json({ error: 'bad signature' }, 401);
     const parsed = InboundItemBody.array().parse(JSON.parse(raw));
     const results = [];
-    for (const item of parsed) results.push(await c.var.service.ingestItem(c.req.param('tenantId'), item));
+    for (const item of parsed) results.push(await c.var.service.ingestItem(item));
     return c.json(results);
   });
 
@@ -179,38 +175,32 @@ export function createApp(opts: HttpOptions) {
 
   app.get('/timeline.html', async (c) => {
     if (!operatorOnly(c)) return c.text('not found', 404);
-    const tenantId = c.req.query('tenant') ?? '';
     const service = c.var.service;
-    const [p, dir] = await Promise.all([service.state(tenantId), service.directory()]);
+    const [p, dir] = await Promise.all([service.state(), service.directory()]);
     return c.html(renderTimeline(dir, p));
   });
 
   app.get('/admin', async (c) => {
     if (!operatorOnly(c)) return c.text('not found', 404);
     const service = c.var.service;
-    const dir = await service.directory();
-    const states = await Promise.all(dir.tenantIds().map((id) => service.state(id)));
-    return c.html(renderAdminIndex(dir, states, adminHref(opts.timelineToken!)));
+    const [p, dir] = await Promise.all([service.state(), service.directory()]);
+    return c.html(renderAdminIndex(dir, p, adminHref(opts.timelineToken!)));
   });
 
   app.get('/admin/lists/:id', async (c) => {
     if (!operatorOnly(c)) return c.text('not found', 404);
     const service = c.var.service;
-    const dir = await service.directory();
-    const list = dir.list(c.req.param('id'));
-    const html = list ? renderAdminList(dir, await service.state(list.tenantId), list.id, adminHref(opts.timelineToken!)) : null;
+    const [p, dir] = await Promise.all([service.state(), service.directory()]);
+    const html = renderAdminList(dir, p, c.req.param('id'), adminHref(opts.timelineToken!));
     return html ? c.html(html) : c.text('not found', 404);
   });
 
   app.get('/admin/threads/:id', async (c) => {
     if (!operatorOnly(c)) return c.text('not found', 404);
     const service = c.var.service;
-    const dir = await service.directory();
-    for (const tenantId of dir.tenantIds()) {
-      const html = renderAdminThread(dir, await service.state(tenantId), c.req.param('id'), adminHref(opts.timelineToken!));
-      if (html) return c.html(html);
-    }
-    return c.text('not found', 404);
+    const [p, dir] = await Promise.all([service.state(), service.directory()]);
+    const html = renderAdminThread(dir, p, c.req.param('id'), adminHref(opts.timelineToken!));
+    return html ? c.html(html) : c.text('not found', 404);
   });
 
   return app;

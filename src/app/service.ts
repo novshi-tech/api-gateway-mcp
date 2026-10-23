@@ -19,7 +19,6 @@ import {
   listLists,
   listThreads,
   moveSignal,
-  notesDataSourceOf,
   planIngest,
   prepareInbound,
   reopenThread,
@@ -86,10 +85,10 @@ export class MurmurService {
   }
 
   /** 投影を読み、取りこぼしたイベントがあれば追いつく */
-  async state(tenantId: string): Promise<Projections> {
+  async state(): Promise<Projections> {
     const { repo } = this.deps;
-    const saved = (await repo.projections.load(tenantId)) ?? emptyProjections(tenantId);
-    const missing = await repo.events.read(tenantId, saved.lastSeq);
+    const saved = (await repo.projections.load()) ?? emptyProjections();
+    const missing = await repo.events.read(saved.lastSeq);
     if (missing.length === 0) return saved;
     const next = fold(missing, saved);
     await repo.projections.save(next);
@@ -97,9 +96,9 @@ export class MurmurService {
   }
 
   /** 投影を消してイベントから作り直す（H1 の検証にも使う） */
-  async rebuild(tenantId: string): Promise<Projections> {
-    await this.deps.repo.projections.clear(tenantId);
-    return this.state(tenantId);
+  async rebuild(): Promise<Projections> {
+    await this.deps.repo.projections.clear();
+    return this.state();
   }
 
   private context(dir: Directory): CoreContext {
@@ -111,16 +110,15 @@ export class MurmurService {
    * 追記が競合したら読み直してやり直す（楽観ロック）。
    */
   private async run<T>(
-    tenantId: string,
     decide: (p: Projections, ctx: CoreContext) => Promise<{ events: DraftEvent[]; result: T }> | { events: DraftEvent[]; result: T },
   ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
-      const p = await this.state(tenantId);
+      const p = await this.state();
       const ctx = this.context(await this.directory());
       const { events, result } = await decide(p, ctx);
       if (events.length === 0) return result;
       try {
-        const stored = await this.deps.repo.events.append(tenantId, p.lastSeq, events, ctx.now);
+        const stored = await this.deps.repo.events.append(p.lastSeq, events, ctx.now);
         await this.deps.repo.projections.save(fold(stored, p));
         return result;
       } catch (err) {
@@ -135,17 +133,10 @@ export class MurmurService {
     return { viewer: deriveViewer(dir, userId), dir };
   }
 
-  private async tenantOf(viewer: Viewer, pick: (p: Projections) => boolean, what: string): Promise<string> {
-    for (const m of viewer.memberships) {
-      if (pick(await this.state(m.tenantId))) return m.tenantId;
-    }
-    throw new DomainError('not_found', `${what} not found`);
-  }
-
   // ---- Ingest ----
 
-  async ingest(tenantId: string, inbound: InboundSignal): Promise<IngestResult> {
-    return this.run<IngestResult>(tenantId, async (p, ctx) => {
+  async ingest(inbound: InboundSignal): Promise<IngestResult> {
+    return this.run<IngestResult>(async (p, ctx) => {
       const prepared = prepareInbound(p, ctx, inbound);
       if (prepared.kind === 'duplicate') return { events: [], result: { status: 'duplicate', signalId: prepared.signalId } };
       // 記録した送信の観測（記録が先に届いた順）。シグナルは 1 本のまま、イベントは出さない（H5）
@@ -154,7 +145,7 @@ export class MurmurService {
       const { payload, dataSource } = prepared;
       const sigEvent = signalEvent(payload);
       // シグナルを先に畳み込んだ状態で判断する（索引に入るだけで、どのスレッドにもまだ入っていない）
-      const withSignal = fold([{ ...sigEvent, tenantId, seq: p.lastSeq + 1, at: ctx.now }], p);
+      const withSignal = fold([{ ...sigEvent, seq: p.lastSeq + 1, at: ctx.now }], p);
       const plan = planIngest(withSignal, ctx, dataSource, payload, this.deps.policy);
       let decided;
       if (plan.kind === 'decided') decided = plan;
@@ -170,8 +161,8 @@ export class MurmurService {
   }
 
   /** 状態の写し（Jira の課題の状態など）。変わった属性だけを ThreadMirrored で写す */
-  async mirror(tenantId: string, inbound: InboundMirror): Promise<MirrorResult> {
-    return this.run<MirrorResult>(tenantId, (p, ctx) => {
+  async mirror(inbound: InboundMirror): Promise<MirrorResult> {
+    return this.run<MirrorResult>((p, ctx) => {
       const plan = planMirror(p, ctx, inbound);
       if (plan.kind === 'no_thread') return { events: [], result: { status: 'no_thread', threadKey: plan.threadKey } };
       if (plan.kind === 'unchanged') return { events: [], result: { status: 'unchanged', threadId: plan.threadId } };
@@ -180,8 +171,8 @@ export class MurmurService {
   }
 
   /** コネクタ・Webhook から来た 1 件（シグナルか状態の写し） */
-  async ingestItem(tenantId: string, item: InboundItem): Promise<IngestResult | MirrorResult> {
-    return isMirror(item) ? this.mirror(tenantId, item) : this.ingest(tenantId, item);
+  async ingestItem(item: InboundItem): Promise<IngestResult | MirrorResult> {
+    return isMirror(item) ? this.mirror(item) : this.ingest(item);
   }
 
   // ---- 定期処理（Cron） ----
@@ -195,22 +186,17 @@ export class MurmurService {
       const connector = this.deps.connectors[ds.channel];
       if (!connector) continue;
       const { items } = await connector.pull(ds, null);
-      for (const item of items) results.push(await this.ingestItem(ds.tenantId, item));
+      for (const item of items) results.push(await this.ingestItem(item));
     }
     return results;
   }
 
   /** 期限の見回り。返事期待の期限を過ぎたスレッドに ReplyOverdue を出す（冪等） */
   async checkOverdue(): Promise<number> {
-    const dir = await this.directory();
-    let n = 0;
-    for (const tenantId of dir.tenantIds()) {
-      n += await this.run(tenantId, (p, ctx) => {
-        const events = planOverdue(p, ctx.now);
-        return { events, result: events.length };
-      });
-    }
-    return n;
+    return this.run((p, ctx) => {
+      const events = planOverdue(p, ctx.now);
+      return { events, result: events.length };
+    });
   }
 
   async tick(): Promise<{ ingested: number; overdue: number }> {
@@ -226,50 +212,36 @@ export class MurmurService {
     if (!user) throw new DomainError('not_found', `user ${userId} not found`);
     return {
       user,
-      parties: viewer.memberships.map((m) => ({
-        tenantId: m.tenantId,
-        tenantName: dir.seed.tenants.find((t) => t.id === m.tenantId)?.name ?? m.tenantId,
-        partyId: m.partyId,
-        name: dir.party(m.partyId)?.name ?? '',
-        lists: m.listIds.map((id) => {
-          const ds = dir.dataSource(dir.list(id)?.dataSourceId ?? '');
-          return { id, dataSourceId: ds?.id ?? '', name: ds?.name ?? id, kind: ds?.kind ?? 'service' };
-        }),
-      })),
+      party:
+        viewer.partyId === null
+          ? null
+          : {
+              partyId: viewer.partyId,
+              name: dir.party(viewer.partyId)?.name ?? '',
+              lists: viewer.listIds.map((id) => {
+                const ds = dir.dataSource(dir.list(id)?.dataSourceId ?? '');
+                return { id, dataSourceId: ds?.id ?? '', name: ds?.name ?? id, kind: ds?.kind ?? 'service' };
+              }),
+            },
     };
   }
 
-  async listThreads(userId: string, opts: { filter?: ThreadFilter; tenantId?: string; dataSourceId?: string; since?: string } = {}) {
+  async listThreads(userId: string, opts: { filter?: ThreadFilter; dataSourceId?: string; since?: string } = {}) {
     const { viewer, dir } = await this.viewer(userId);
-    const states = await Promise.all(viewer.memberships.map((m) => this.state(m.tenantId)));
-    return listThreads(dir, viewer, states, opts);
+    return listThreads(dir, viewer, await this.state(), opts);
   }
 
   async getThread(userId: string, threadId: string, opts: { since?: string } = {}) {
     const { viewer, dir } = await this.viewer(userId);
-    for (const m of viewer.memberships) {
-      const view = getThreadView(dir, viewer, await this.state(m.tenantId), threadId, opts);
-      if (view) return view;
-    }
-    throw new DomainError('not_found', `thread ${threadId} not found`);
+    const view = getThreadView(dir, viewer, await this.state(), threadId, opts);
+    if (!view) throw new DomainError('not_found', `thread ${threadId} not found`);
+    return view;
   }
 
-  private async threadTenant(viewer: Viewer, threadId: string): Promise<string> {
-    return this.tenantOf(viewer, (p) => !!p.threads[threadId], `thread ${threadId}`);
-  }
-
-  /** 個人のメモ。thread_id がなければ新しいスレッド。テナントは thread_id か tenant から、なければ自分のメモが 1 つだけのテナント */
-  async addNote(userId: string, input: { threadId?: string; title?: string; body: string; tenantId?: string }) {
-    const { viewer, dir } = await this.viewer(userId);
-    let tenantId: string;
-    if (input.threadId !== undefined) tenantId = await this.threadTenant(viewer, input.threadId);
-    else if (input.tenantId !== undefined) tenantId = input.tenantId;
-    else {
-      const withNotes = viewer.memberships.filter((m) => notesDataSourceOf(dir, viewer, m.tenantId));
-      if (withNotes.length !== 1) throw new DomainError('invalid', 'tenant is required (notes in several tenants)');
-      tenantId = withNotes[0]!.tenantId;
-    }
-    const threadId = await this.run(tenantId, (p, ctx) => {
+  /** 個人のメモ。thread_id がなければ新しいスレッド */
+  async addNote(userId: string, input: { threadId?: string; title?: string; body: string }) {
+    const { viewer } = await this.viewer(userId);
+    const threadId = await this.run((p, ctx) => {
       const { events, threadId } = addNote(p, viewer, ctx, input);
       return { events, result: threadId };
     });
@@ -278,22 +250,19 @@ export class MurmurService {
 
   async claimThread(userId: string, input: { threadId: string; userId: string | null; reason?: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.threadTenant(viewer, input.threadId);
-    await this.run(tenantId, (p, ctx) => ({ events: claimThread(p, viewer, ctx.dir, input), result: undefined }));
+    await this.run((p, ctx) => ({ events: claimThread(p, viewer, ctx.dir, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
   async linkThreads(userId: string, input: { threadId: string; otherThreadId: string; reason?: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.threadTenant(viewer, input.threadId);
-    await this.run(tenantId, (p) => ({ events: linkThreads(p, viewer, input), result: undefined }));
+    await this.run((p) => ({ events: linkThreads(p, viewer, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
   async unlinkThreads(userId: string, input: { threadId: string; otherThreadId: string; reason?: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.threadTenant(viewer, input.threadId);
-    await this.run(tenantId, (p) => ({ events: unlinkThreads(p, viewer, input), result: undefined }));
+    await this.run((p) => ({ events: unlinkThreads(p, viewer, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
@@ -301,10 +270,10 @@ export class MurmurService {
   async recordSent(userId: string, input: RecordSentInput) {
     const { viewer, dir } = await this.viewer(userId);
     const ds = dir.dataSource(input.dataSourceId);
-    if (!ds || !viewer.memberships.some((m) => m.dataSourceIds.includes(ds.id))) {
+    if (!ds || !viewer.dataSourceIds.includes(ds.id)) {
       throw new DomainError('not_found', `data source ${input.dataSourceId} not found`);
     }
-    const threadId = await this.run(ds.tenantId, (p, ctx) => {
+    const threadId = await this.run((p, ctx) => {
       const { events, threadId } = recordSent(p, viewer, ctx, input);
       return { events, result: threadId };
     });
@@ -313,38 +282,34 @@ export class MurmurService {
 
   async setAttribute(userId: string, input: { threadId: string; name: string; value: unknown }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.threadTenant(viewer, input.threadId);
-    await this.run(tenantId, (p, ctx) => ({ events: setAttribute(p, viewer, ctx.dir, input), result: undefined }));
+    await this.run((p, ctx) => ({ events: setAttribute(p, viewer, ctx.dir, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
   async dismissThread(userId: string, input: { threadId: string; reason: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOf(viewer, (p) => !!p.threads[input.threadId], `thread ${input.threadId}`);
-    await this.run(tenantId, (p) => ({ events: dismissThread(p, viewer, input), result: undefined }));
+    await this.run((p) => ({ events: dismissThread(p, viewer, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
   async reopenThread(userId: string, input: { threadId: string; reason?: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOf(viewer, (p) => !!p.threads[input.threadId], `thread ${input.threadId}`);
-    await this.run(tenantId, (p) => ({ events: reopenThread(p, viewer, input), result: undefined }));
+    await this.run((p) => ({ events: reopenThread(p, viewer, input), result: undefined }));
     return this.getThread(userId, input.threadId);
   }
 
   async moveSignal(userId: string, input: { signalId: string; to: MoveTarget; needsResponse?: boolean; reason: string }) {
     const { viewer } = await this.viewer(userId);
-    const tenantId = await this.tenantOf(viewer, (p) => !!p.signals[input.signalId], `signal ${input.signalId}`);
-    const threadId = await this.run(tenantId, (p, ctx) => {
+    const threadId = await this.run((p, ctx) => {
       const { events, threadId } = moveSignal(p, viewer, ctx, input);
       return { events, result: threadId };
     });
     return this.getThread(userId, threadId);
   }
 
-  async listLists(userId: string, opts: { tenantId?: string } = {}) {
+  async listLists(userId: string) {
     const { viewer, dir } = await this.viewer(userId);
-    return listLists(dir, viewer, opts);
+    return listLists(dir, viewer);
   }
 
   async getList(userId: string, listId: string) {
