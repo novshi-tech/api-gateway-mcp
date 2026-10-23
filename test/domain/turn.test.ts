@@ -25,9 +25,9 @@ describe('誰の番か（turnOf）', () => {
     expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'triage' });
     expect(turnOf(dir, p, p.threads[addressed]!)).toEqual({ kind: 'user', userIds: ['u_alice'], by: 'addressed' });
     expect(turnOf(dir, p, p.threads[l]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'reader' });
-    expect(listThreads(dir, alice, [p], { filter: 'my_turn' }).map((t) => t.id)).toEqual([addressed]);
-    expect(listThreads(dir, bob, [p], { filter: 'my_turn' }).map((t) => t.id)).toEqual([l]);
-    expect(listThreads(dir, bob, [p], { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, alice, p, { filter: 'my_turn' }).map((t) => t.id)).toEqual([addressed]);
+    expect(listThreads(dir, bob, p, { filter: 'my_turn' }).map((t) => t.id)).toEqual([l]);
+    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
   });
 
   it('H8 持ち主の操作が構造より優先する。手放すと仕分け待ちに戻る', () => {
@@ -35,11 +35,11 @@ describe('誰の番か（turnOf）', () => {
     log.push(claimThread(log.state(), bob, dir, { threadId: shared, userId: 'u_bob' }), '2026-10-16T10:00:00.000Z');
     let p = log.state();
     expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'owner' });
-    expect(listThreads(dir, alice, [p], { filter: 'triage' })).toEqual([]);
-    expect(listThreads(dir, bob, [p], { filter: 'my_turn' }).map((t) => t.id)).toContain(shared);
+    expect(listThreads(dir, alice, p, { filter: 'triage' })).toEqual([]);
+    expect(listThreads(dir, bob, p, { filter: 'my_turn' }).map((t) => t.id)).toContain(shared);
     log.push(claimThread(p, bob, dir, { threadId: shared, userId: null }), '2026-10-16T11:00:00.000Z');
     p = log.state();
-    expect(listThreads(dir, alice, [p], { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, alice, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
   });
 
   it('H8 相手待ち・なし・片付けたスレッドは誰の番でもない', () => {

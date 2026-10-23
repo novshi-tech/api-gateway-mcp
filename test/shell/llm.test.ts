@@ -95,7 +95,6 @@ describe('AnthropicLlm', () => {
 
 describe('AiDecider', () => {
   const request: IngestRequest = {
-    tenantId: 'ubs',
     mode: 'new',
     signal: {
       signalId: 's',

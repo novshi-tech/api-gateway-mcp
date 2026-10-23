@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { loadScenario, type Scenario, type Step } from './lib/scenario';
 
 // WEBHOOK_SECRET=... pnpm send <scenario> <signal の id>... [--url <本体の URL>] [--sent-ref <ref>]
-// fixtures/<scenario>/signals.jsonl の signal 行（と状態の写しの mirror 行）を、実環境の Webhook（POST /webhooks/dummy/{tenant}）に 1 件ずつ流す（H7）。
+// fixtures/<scenario>/signals.jsonl の signal 行（と状態の写しの mirror 行）を、実環境の Webhook（POST /webhooks/dummy）に 1 件ずつ流す（H7）。
 // record_sent の action 行で echo のものは、その送信がデータソースで観測された分（H5 の統合を確かめる）を流す。
 // sent_ref はシナリオの値か、スタンドが記録したときの値を --sent-ref で渡す。
 // ほかの action 行と cron 行は流さない（スタンドの操作と見回りは実環境で起こす）。受信時刻は本体の時計になる
@@ -34,7 +34,7 @@ async function main() {
             : undefined;
     if (!signal) throw new Error(`${name}: ${id} は signal 行・mirror 行でも、echo の record_sent でもない`);
     const body = JSON.stringify([signal]);
-    const res = await fetch(`${base}/webhooks/dummy/${scenario.config.tenant}`, {
+    const res = await fetch(`${base}/webhooks/dummy`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-murmur-signature': createHmac('sha256', secret).update(body).digest('hex') },
       body,

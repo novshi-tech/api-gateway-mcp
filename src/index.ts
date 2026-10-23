@@ -1,19 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { Pool } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
+import { drizzle } from 'drizzle-orm/d1';
 import { MurmurService, randomIds, systemClock } from './app/service';
 import { DEFAULT_POLICY } from './domain';
 import { verifyIdentity, verifyWebhookSignature } from './auth/identity';
 import { DummyConnector } from './connectors/dummy/connector';
-import { PgDummyBackend } from './connectors/dummy/pg-backend';
+import { D1DummyBackend } from './connectors/dummy/d1-backend';
 import type { Connectors } from './connectors/types';
 import { AiDecider } from './ingest/deciders';
 import { AnthropicLlm } from './ingest/llm';
 import { createApp } from './http/app';
-import { pgRepo, type Db } from './store/drizzle';
+import { d1Repo } from './store/d1';
 
 export interface Env {
-  DATABASE_URL: string;
+  /** 本体の D1（0021） */
+  DB: D1Database;
   ANTHROPIC_API_KEY: string;
   WEBHOOK_SECRET: string;
   TIMELINE_TOKEN?: string;
@@ -29,17 +29,16 @@ export interface Env {
 
 const CHANNELS = ['email', 'slack', 'line', 'jira', 'bitbucket'] as const;
 
-/** 組み立て（IO の配線）。Neon への接続はリクエスト・Cron 実行ごとに張る */
-function build(env: Env): { service: MurmurService; close: () => Promise<void> } {
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
-  const db = drizzle(pool) as unknown as Db;
+/** 組み立て（IO の配線）。D1 はバインディングなので接続を張ったり閉じたりしない */
+function build(env: Env): MurmurService {
+  const db = drizzle(env.DB);
   const llm = new AnthropicLlm(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }));
-  const backend = new PgDummyBackend(db);
+  const backend = new D1DummyBackend(db);
   const connectors: Connectors = Object.fromEntries(
     CHANNELS.map((ch) => [ch, new DummyConnector(ch, backend)]),
   );
-  const service = new MurmurService({
-    repo: pgRepo(db),
+  return new MurmurService({
+    repo: d1Repo(db),
     clock: systemClock,
     newId: randomIds,
     decider: new AiDecider(llm, env.CLAUDE_MODEL),
@@ -48,12 +47,11 @@ function build(env: Env): { service: MurmurService; close: () => Promise<void> }
       recentThreadLimit: Number(env.RECENT_THREAD_LIMIT ?? DEFAULT_POLICY.recentThreadLimit),
     },
   });
-  return { service, close: () => pool.end() };
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const { service, close } = build(env);
+    const service = build(env);
     const app = createApp({
       service: () => service,
       authenticate: async (token) => {
@@ -69,21 +67,12 @@ export default {
       webhookVerify: (body, sig) => (env.WEBHOOK_SECRET ? verifyWebhookSignature(body, sig, env.WEBHOOK_SECRET) : Promise.resolve(false)),
       timelineToken: env.TIMELINE_TOKEN,
     });
-    try {
-      return await app.fetch(request, env, ctx);
-    } finally {
-      ctx.waitUntil(close());
-    }
+    return app.fetch(request, env, ctx);
   },
 
-  /** 取り込みのポーリング（期限の見回りはステップ 4 で戻す） */
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const { service, close } = build(env);
-    try {
-      const r = await service.tick();
-      console.log(JSON.stringify({ msg: 'tick', ...r }));
-    } finally {
-      ctx.waitUntil(close());
-    }
+  /** 取り込みのポーリングと期限の見回り */
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const r = await build(env).tick();
+    console.log(JSON.stringify({ msg: 'tick', ...r }));
   },
 } satisfies ExportedHandler<Env>;

@@ -1,53 +1,45 @@
 {
-  "tenants": [
-    { "id": "ubs", "name": "アーバンビルシステム" },
-    { "id": "other", "name": "別テナント" }
-  ],
   "users": [
     { "id": "u_sato", "name": "佐藤（窓口）" },
     { "id": "u_suzuki", "name": "鈴木（工事部）" },
-    { "id": "u_outsider", "name": "別テナントの人" }
+    { "id": "u_outsider", "name": "チームの外の人（このデプロイに Party がない）" }
   ],
   "parties": [
-    { "id": "p_ubs", "tenantId": "ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
-    { "id": "p_sato", "tenantId": "ubs", "name": "佐藤", "kind": "person", "userId": "u_sato", "internal": true },
-    { "id": "p_suzuki", "tenantId": "ubs", "name": "鈴木", "kind": "person", "userId": "u_suzuki", "internal": true },
-    { "id": "p_takahashi", "tenantId": "ubs", "name": "グランメゾン管理組合 高橋理事長", "kind": "person", "externalRefs": { "bm-next": "customer-1203" } },
-    { "id": "p_yamada", "tenantId": "ubs", "name": "山田工務店", "kind": "organization", "externalRefs": { "board": "vendor-88" } },
-    { "id": "p_outsider", "tenantId": "other", "name": "別テナントの人", "kind": "person", "userId": "u_outsider", "internal": true }
+    { "id": "p_ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
+    { "id": "p_sato", "name": "佐藤", "kind": "person", "userId": "u_sato", "internal": true },
+    { "id": "p_suzuki", "name": "鈴木", "kind": "person", "userId": "u_suzuki", "internal": true },
+    { "id": "p_takahashi", "name": "グランメゾン管理組合 高橋理事長", "kind": "person", "externalRefs": { "bm-next": "customer-1203" } },
+    { "id": "p_yamada", "name": "山田工務店", "kind": "organization", "externalRefs": { "board": "vendor-88" } }
   ],
   "addresses": [
-    { "id": "a_support", "tenantId": "ubs", "channel": "email", "value": "support@ubs.example", "partyId": "p_ubs" },
-    { "id": "a_sato", "tenantId": "ubs", "channel": "email", "value": "sato@ubs.example", "partyId": "p_sato" },
-    { "id": "a_suzuki", "tenantId": "ubs", "channel": "email", "value": "suzuki@ubs.example", "partyId": "p_suzuki" },
-    { "id": "a_takahashi", "tenantId": "ubs", "channel": "email", "value": "takahashi@grandmaison.example", "partyId": "p_takahashi" },
-    { "id": "a_yamada", "tenantId": "ubs", "channel": "email", "value": "mitsumori@yamada-koumuten.example", "partyId": "p_yamada" }
+    { "id": "a_support", "channel": "email", "value": "support@ubs.example", "partyId": "p_ubs" },
+    { "id": "a_sato", "channel": "email", "value": "sato@ubs.example", "partyId": "p_sato" },
+    { "id": "a_suzuki", "channel": "email", "value": "suzuki@ubs.example", "partyId": "p_suzuki" },
+    { "id": "a_takahashi", "channel": "email", "value": "takahashi@grandmaison.example", "partyId": "p_takahashi" },
+    { "id": "a_yamada", "channel": "email", "value": "mitsumori@yamada-koumuten.example", "partyId": "p_yamada" }
   ],
   "credentialRefs": [
-    { "id": "c_support", "tenantId": "ubs", "principal": { "kind": "organization", "tenantId": "ubs" }, "addressId": "a_support" },
-    { "id": "c_suzuki", "tenantId": "ubs", "principal": { "kind": "user", "userId": "u_suzuki" }, "addressId": "a_suzuki" }
+    { "id": "c_support", "principal": { "kind": "organization" }, "addressId": "a_support" },
+    { "id": "c_suzuki", "principal": { "kind": "user", "userId": "u_suzuki" }, "addressId": "a_suzuki" }
   ],
   "dataSources": [
-    { "kind": "service", "id": "ds_support", "tenantId": "ubs", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客からの問い合わせの窓口", "credentialRefId": "c_support", "selfAddressIds": ["a_support"] },
-    { "kind": "service", "id": "ds_suzuki_mail", "tenantId": "ubs", "channel": "email", "name": "鈴木のメールボックス", "description": "鈴木の個人のメールボックス", "credentialRefId": "c_suzuki", "selfAddressIds": ["a_suzuki"] },
-    { "kind": "notes", "id": "ds_notes_sato", "tenantId": "ubs", "name": "佐藤のメモ", "ownerPartyId": "p_sato" },
-    { "kind": "notes", "id": "ds_notes_suzuki", "tenantId": "ubs", "name": "鈴木のメモ", "ownerPartyId": "p_suzuki" },
-    { "kind": "notes", "id": "ds_notes_outsider", "tenantId": "other", "name": "別テナントの人のメモ", "ownerPartyId": "p_outsider" }
+    { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客からの問い合わせの窓口", "credentialRefId": "c_support", "selfAddressIds": ["a_support"] },
+    { "kind": "service", "id": "ds_suzuki_mail", "channel": "email", "name": "鈴木のメールボックス", "description": "鈴木の個人のメールボックス", "credentialRefId": "c_suzuki", "selfAddressIds": ["a_suzuki"] },
+    { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerPartyId": "p_sato" },
+    { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerPartyId": "p_suzuki" }
   ],
   "lists": [
-    { "id": "l_support", "tenantId": "ubs", "dataSourceId": "ds_support" },
-    { "id": "l_suzuki_mail", "tenantId": "ubs", "dataSourceId": "ds_suzuki_mail" },
-    { "id": "l_notes_sato", "tenantId": "ubs", "dataSourceId": "ds_notes_sato" },
-    { "id": "l_notes_suzuki", "tenantId": "ubs", "dataSourceId": "ds_notes_suzuki" },
-    { "id": "l_notes_outsider", "tenantId": "other", "dataSourceId": "ds_notes_outsider" }
+    { "id": "l_support", "dataSourceId": "ds_support" },
+    { "id": "l_suzuki_mail", "dataSourceId": "ds_suzuki_mail" },
+    { "id": "l_notes_sato", "dataSourceId": "ds_notes_sato" },
+    { "id": "l_notes_suzuki", "dataSourceId": "ds_notes_suzuki" }
   ],
   "listMembers": [
     { "listId": "l_support", "partyId": "p_sato" },
     { "listId": "l_support", "partyId": "p_suzuki" },
     { "listId": "l_suzuki_mail", "partyId": "p_suzuki" },
     { "listId": "l_notes_sato", "partyId": "p_sato" },
-    { "listId": "l_notes_suzuki", "partyId": "p_suzuki" },
-    { "listId": "l_notes_outsider", "partyId": "p_outsider" }
+    { "listId": "l_notes_suzuki", "partyId": "p_suzuki" }
   ],
   "attributeDefs": []
 }

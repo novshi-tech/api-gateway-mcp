@@ -37,14 +37,13 @@ describe('prepareInbound', () => {
     expect(staff.kind === 'signal' && staff.payload.direction).toBe('inbound');
   });
 
-  it('H3 取り込めるのは自テナントの外のサービスのデータソースだけ', () => {
+  it('H3 取り込めるのは外のサービスのデータソースだけ', () => {
     const p = new EventLog().state();
     const ctx = makeCtx();
     const bad = (over: Partial<Parameters<typeof email>[0]>) => () => prepareInbound(p, ctx, email({ from: 'a@x', sourceRef: 'r', ...over }));
     expect(bad({ dataSourceId: 'ds_nope' })).toThrow(DomainError);
     expect(bad({ dataSourceId: 'ds_notes_alice' })).toThrow(/not a service data source/);
-    expect(bad({ dataSourceId: 'ds_slack' })).toThrow(/not a service data source of tenant ubs/);
-    expect(bad({ dataSourceId: 'ds_line' })).toThrow(/is line, not email/);
+    expect(bad({ dataSourceId: 'ds_slack' })).toThrow(/is slack, not email/);
   });
 });
 
@@ -81,12 +80,12 @@ describe('区切り（H6）', () => {
     const quoted = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l2', anchors: { messageId: 'm2', quotedMessageId: 'm1' } }), () => answer({ thread: null }));
     expect(quoted.outcome).toMatchObject({ threadId: 'thr_2', by: 'anchor' });
 
-    const slack = new EventLog('nvt');
+    const slack = new EventLog();
     const sctx = { ...makeCtx() };
     const msg = (sourceRef: string, anchors: Record<string, string>) => ({
       dataSourceId: 'ds_slack',
       channel: 'slack' as const,
-      from: { channel: 'slack' as const, value: 'T_NVT/U_EVE' },
+      from: { channel: 'slack' as const, value: 'T_UBS/U_EVE' },
       to: [],
       body: 'x',
       anchors,
@@ -180,7 +179,7 @@ describe('区切り（H6）', () => {
   });
 
   it('H6 グループのチャネルは「同じ相手」がチャネル全体になる', () => {
-    const log = new EventLog('nvt');
+    const log = new EventLog();
     const ctx = makeCtx();
     const msg = (sourceRef: string, from: string) => ({
       dataSourceId: 'ds_slack',

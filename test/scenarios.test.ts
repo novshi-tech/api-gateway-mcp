@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { canonicalJson, deriveComm, emptyProjections, fold, type DomainEvent } from '../src/domain';
-import { pgRepo } from '../src/store/drizzle';
-import { pgliteDb } from '../scripts/lib/pglite';
+import { canonicalJson, deriveComm, emptyProjections, fold, foldChanges, type DomainEvent } from '../src/domain';
+import { d1Repo } from '../src/store/d1';
+import { localD1 } from '../scripts/lib/d1';
 import { FsRecordingStore } from '../scripts/lib/recordings';
 import { addMetrics, emptyMetrics, ingestMetrics, listScenarios, loadScenario, runScenario, sha256, verifyScenario } from '../scripts/lib/scenario';
 
@@ -19,21 +19,21 @@ describe.each(names)('シナリオ %s', (name) => {
     expect(v.errors).toEqual([]);
   });
 
-  it('H1 投影を全削除してリプレイしてもスレッドの投影のハッシュが一致し、Postgres でも同じになる', async () => {
+  it('H1 投影を全削除してリプレイしてもスレッドの投影のハッシュが一致し、D1 でも同じになる', async () => {
     const mem = await runScenario(scenario);
-    const memHash = await sha256(canonicalJson((await mem.service.state(scenario.config.tenant)).threads));
-    const rebuilt = await mem.service.rebuild(scenario.config.tenant);
+    const memHash = await sha256(canonicalJson((await mem.service.state()).threads));
+    const rebuilt = await mem.service.rebuild();
     expect(await sha256(canonicalJson(rebuilt.threads))).toBe(memHash);
 
-    const { db, close } = await pgliteDb();
+    const { db, close } = await localD1();
     try {
-      const pg = await runScenario(scenario, { repo: pgRepo(db) });
-      const pgState = await pg.service.state(scenario.config.tenant);
-      expect(await sha256(canonicalJson(pgState.threads))).toBe(memHash);
-      await pg.repo.projections.clear(scenario.config.tenant);
-      const pgRebuilt = await pg.service.state(scenario.config.tenant);
-      expect(await sha256(canonicalJson(pgRebuilt.threads))).toBe(memHash);
-      expect(canonicalJson(pgRebuilt)).toBe(canonicalJson(pgState));
+      const d1 = await runScenario(scenario, { repo: d1Repo(db) });
+      const d1State = await d1.service.state();
+      expect(await sha256(canonicalJson(d1State.threads))).toBe(memHash);
+      await d1.repo.projections.clear();
+      const d1Rebuilt = await d1.service.state();
+      expect(await sha256(canonicalJson(d1Rebuilt.threads))).toBe(memHash);
+      expect(canonicalJson(d1Rebuilt)).toBe(canonicalJson(d1State));
     } finally {
       await close();
     }
@@ -41,18 +41,37 @@ describe.each(names)('シナリオ %s', (name) => {
 
   it('H1 fold は決定的（同じイベント列から何度でも同じ投影、1 件ずつ畳んでも同じ）', async () => {
     const run = await runScenario(scenario);
-    const events = await run.repo.events.read(scenario.config.tenant);
+    const events = await run.repo.events.read();
     const whole = canonicalJson(fold(events));
     expect(canonicalJson(fold(events))).toBe(whole);
-    const stepwise = events.reduce((p, e) => fold([e], p), emptyProjections(scenario.config.tenant));
+    const stepwise = events.reduce((p, e) => fold([e], p), emptyProjections());
     expect(canonicalJson(stepwise)).toBe(whole);
+  });
+
+  it('H1 fold の差分は、base から実際に変わったスレッド・シグナル・索引を必ず含む（差分だけ保存しても投影が欠けない）', async () => {
+    const run = await runScenario(scenario);
+    const events = await run.repo.events.read();
+    let base = emptyProjections();
+    // 1 件ずつと、2 件ずつ（1 回の操作で複数のイベントを書くのと同じ）の両方で確かめる
+    for (const size of [1, 2]) {
+      base = emptyProjections();
+      for (let i = 0; i < events.length; i += size) {
+        const { projections: next, changes } = foldChanges(events.slice(i, i + size), base);
+        const changed = <T,>(a: Record<string, T>, b: Record<string, T>) =>
+          Object.keys(b).filter((id) => canonicalJson(a[id] ?? null) !== canonicalJson(b[id]));
+        expect(changes.threadIds).toEqual(expect.arrayContaining(changed(base.threads, next.threads)));
+        expect(changes.signalIds).toEqual(expect.arrayContaining(changed(base.signals, next.signals)));
+        if (canonicalJson(base.index) !== canonicalJson(next.index)) expect(changes.index).toBe(true);
+        base = next;
+      }
+      expect(canonicalJson(base)).toBe(canonicalJson(fold(events)));
+    }
   });
 
   it('H1 fold は 1 段: 各スレッドの投影は、そのスレッドに綴じたものだけから決まる', async () => {
     const run = await runScenario(scenario);
-    const tenant = scenario.config.tenant;
-    const p = await run.service.state(tenant);
-    const events = await run.repo.events.read(tenant);
+    const p = await run.service.state();
+    const events = await run.repo.events.read();
     for (const t of Object.values(p.threads)) {
       // スレッドのログだけからボールが同じに導出できる
       const { ball, dismissed, lastInboundAt, lastOutboundAt } = deriveComm(t.log);
@@ -60,7 +79,7 @@ describe.each(names)('シナリオ %s', (name) => {
       // 他のスレッドだけに関わるイベントを抜いて畳んでも、このスレッドの投影は変わらない
       // （seq は抜けがあってよい。単調であればよい）
       const mine = events.filter((e) => touches(e, t.id, events));
-      expect(canonicalJson(fold(mine, emptyProjections(tenant)).threads[t.id])).toBe(canonicalJson(t));
+      expect(canonicalJson(fold(mine, emptyProjections()).threads[t.id])).toBe(canonicalJson(t));
     }
   });
 });
@@ -105,9 +124,9 @@ describe('H6 Ingest', () => {
       const run = await runScenario(loadScenario(name));
       const m = ingestMetrics(run);
       expect(m.structural.correct).toBe(m.structural.total);
-      const p = await run.service.state(run.scenario.config.tenant);
+      const p = await run.service.state();
       for (const s of Object.values(p.signals)) expect(s.threadId).not.toBeNull();
-      const events = await run.repo.events.read(run.scenario.config.tenant);
+      const events = await run.repo.events.read();
       for (const e of events) if (e.type === 'SignalThreaded') expect(e.payload.reason.trim()).not.toBe('');
     }
   });

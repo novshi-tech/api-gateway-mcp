@@ -4,7 +4,7 @@ import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoice, type ThreadedBy } from './events';
 import { defaultTitle, resolveAnchors, type SignalPayload } from './ingest';
 import { indexKey, type Projections } from './projections';
-import { canReadDataSource, membership, type Viewer } from './viewer';
+import { canReadDataSource, type Viewer } from './viewer';
 
 // 送信の記録（0012）と期限の見回り。本体は外に何も書かない。送信・起票・コメントはスタンドがゲートウェイ経由で行い、
 // 送った直後に record_sent で事実だけを記録する。
@@ -43,7 +43,7 @@ export function recordSent(
   input: RecordSentInput,
 ): { events: DraftEvent[]; threadId: string; signalId: string } {
   const ds = ctx.dir.dataSource(input.dataSourceId);
-  if (!ds || ds.tenantId !== p.tenantId || !canReadDataSource(viewer, p.tenantId, ds.id)) {
+  if (!ds || !canReadDataSource(viewer, ds.id)) {
     throw new DomainError('not_found', `data source ${input.dataSourceId} not found`);
   }
   if (ds.kind !== 'service') throw new DomainError('invalid', 'record_sent is for a service data source (use add_note for notes)');
@@ -52,17 +52,15 @@ export function recordSent(
 
   const to: AddressRef[] = input.to.map((value) => ({ channel: ds.channel, value }));
   for (const partyId of input.toPartyIds) {
-    const party = ctx.dir.party(partyId);
-    const address = party?.tenantId === p.tenantId ? ctx.dir.addressesOfParty(partyId, ds.channel, ctx.now)[0] : undefined;
+    const address = ctx.dir.party(partyId) ? ctx.dir.addressesOfParty(partyId, ds.channel, ctx.now)[0] : undefined;
     if (!address) throw new DomainError('invalid', `party ${partyId} has no ${ds.channel} address`);
     if (!to.some((a) => a.value === address.value)) to.push({ channel: ds.channel, value: address.value });
   }
   if (to.length === 0) throw new DomainError('invalid', 'to or to_party_ids is required');
-  const toPartyIds = [...new Set(to.map((a) => ctx.dir.partyIdOfAddress(p.tenantId, a, ctx.now)).filter((x): x is string => x !== null))];
+  const toPartyIds = [...new Set(to.map((a) => ctx.dir.partyIdOfAddress(a, ctx.now)).filter((x): x is string => x !== null))];
   // 送った人のアドレスがデータソースの送信元にあればそれ（Jira のアカウントなど）、なければデータソースの代表
-  const m = membership(viewer, p.tenantId);
   const fromAddress =
-    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && m !== undefined && a.partyId === m.partyId) ??
+    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && a.partyId === viewer.partyId) ??
     ctx.dir.address(ds.selfAddressIds[0]!)!;
   const from: AddressRef = { channel: ds.channel, value: fromAddress.value };
 

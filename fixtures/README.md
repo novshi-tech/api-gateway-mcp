@@ -2,8 +2,8 @@
 
 ```
 fixtures/<scenario>/
-  scenario.json    # タイトル・テナント・検証する仮説・状態（desk-checked / draft / stand-recorded）
-  seed.json        # Tenant / User / Party / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
+  scenario.json    # タイトル・検証する仮説・状態（desk-checked / draft / stand-recorded）
+  seed.json        # User / Party / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
   signals.jsonl    # 時刻順のステップ（観測されたシグナル・スタンドの操作・Cron）。// で始まる行はコメント
   expected.json    # シグナルごとの区切りと「返事や対応を求めているか」の正解ラベル、各時点のスレッドの状態、可視性
   recordings/      # Claude 呼び出しの入出力（再生モード用）。pnpm scenario verify <name> --ai record で作る

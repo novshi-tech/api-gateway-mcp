@@ -1,6 +1,6 @@
 # 0021 マルチテナントの概念を本体から外し、ストレージを Cloudflare の中（D1 か Durable Object の SQLite）に移す
 
-- 状態: 採用（方向。2026-10-23、直樹）。D1 と Durable Object の SQLite のどちらにするかは未決（着手するときに決める）。着手の時期は 0016 の段取りと並べて決める
+- 状態: 採用（2026-10-23、直樹）。**D1 にした**（2026-10-23、直樹。「D1 に移して差分の upsert まで入れ、足りなくなったら Durable Object を考える」の順）。決定の 1〜3 は実装済み（下の「実装の記録」）。4（ゲートウェイと一緒にデプロイ）は未着手
 - 関連: 0020（チーム単位でセルフホストする）、0004（投影の保存の仕方。丸ごと入れ替えるトレードオフ）、0013（テナント境界は秘匿の境界）、0018（1 つの接続 = 1 つの組織）、0003（JWKS を設定値で持つか取りに行くか）、0002（テストランナー）、0001（FC-IS）
 
 ## 背景
@@ -88,13 +88,32 @@ SQLite を裏に持つ Durable Object は、1 つごとに専用の SQLite を�
 
 どちらでも FC-IS（0001）は変わらない。D1 でも Durable Object でもシェルの側で、`src/domain/` は純関数のまま。
 
+## 実装の記録（2026-10-23、クラウドセッション）
+
+3 つのコミットに分けた（マルチテナントを外す → 投影を差分で書く → D1 に移す）。決定から外れたところと、決めた細部:
+
+- **テナント**: イベントの payload にはテナントがなかったので、封筒（`DomainEvent`）・投影・スレッドから外すだけで済み、AI の記録のキーも変わらない（再生で 4 本とも一致）。
+  User の Party は 1 つまで（`seedProblems`）、Party のない User は何も見えない。fixtures の別テナントは Party・データソース・リストを外して User だけ残し、「チームの外の人は何も見えない」の確かめに読み替えた。
+  API は `/me` が `party`（なければ `null`）を返し、`list_threads`・`list_lists`・`add_note` の `tenant` を外した。Webhook は `/webhooks/dummy`
+- **差分**: `foldChanges` が、base から変わったスレッド（`recompute` を通ったもの）・シグナル・索引を返す。`ProjectionStore.save(p, changes)` は変わった行だけ upsert し、`changes` がなければ丸ごと入れ替える（作り直し）。
+  メモリ実装も差分を当てるので、取りこぼしはシナリオの H1 比較で見つかる。全シナリオのイベント列で「差分は実際に変わったものを必ず含む」をテストしている
+- **追記の楽観ロック**: 「主キー `(seq)` の一意制約だけで足りる」と書いたが、それだけでは期待より先の seq（飛び）を弾けない。
+  各文を `INSERT ... SELECT ... WHERE (SELECT coalesce(max(seq), 0) FROM events) = <期待>` にし、batch の最初の文が 0 行なら `ConcurrencyError` にした
+- **drizzle の batch はパラメータ付きの生 SQL を扱えない**（`db.run(sql...)` を batch に入れると落ちる。drizzle-orm 0.45.4）。追記だけ D1 の API（`db.$client`）を直に使う
+- **ダミー上流のキュー**は `UPDATE ... RETURNING` で取り出しと消費を 1 文にした
+- **テスト**: `@cloudflare/vitest-pool-workers` には移さず、Node の vitest のまま Miniflare の D1（`scripts/lib/d1.ts`、本物と同じ workerd の実装）を使う。0002 の逸脱（pglite）はこれで解消。
+  Miniflare 5（beta、wrangler 4.151 が使う版）は設定の形が変わったので `convertV4MiniflareOptions` で旧い形を渡している
+- **seed**: `pnpm seed <scenario> --env dev` は SQL を作って `wrangler d1 execute` で流す（Cloudflare の認証は wrangler のもの）
+- **まだのこと**: `wrangler.jsonc` の prod の `database_id` は仮の値（dev は作成済み）。
+  `projection_meta.idx` が何件で 2 MB に届くかは測っていない。決定の 4（ゲートウェイの `deploy` スキルで一緒にデプロイ、Service Binding で JWKS を取る）は未着手
+
 ## 未決
 
-1. **D1 か Durable Object の SQLite か**。判断の材料: セルフホストする人が中を覗いて直す場面を重く見るなら D1。トランザクションと速さ、個人の Murmur（0022）との相性を重く見るなら Durable Object。
+1. ~~**D1 か Durable Object の SQLite か**~~ → D1（2026-10-23、直樹）。以下は決める前の材料。判断の材料: セルフホストする人が中を覗いて直す場面を重く見るなら D1。トランザクションと速さ、個人の Murmur（0022）との相性を重く見るなら Durable Object。
    D1 に移して差分の upsert まで入れ、足りなくなったら Durable Object を考える、という順もある
 2. **1 チームが上限を超えたとき**: Durable Object 1 つ（または D1 1 つ）の容量か速さを超えたら、データソースごとに分ける（リストはもともとデータソースごと）。
    ただし「自分の番」のようにデータソースをまたぐクエリは、複数に聞いて束ねる形になる。チームの規模の前提（0020）なら当面は要らない
-3. **着手の時期**: 0016 の実データの試用は今の構成（Neon）でも回せる。配る（セルフホストの手順を整える）前には要る
+3. ~~**着手の時期**~~ → 2026-10-23 に着手して、決定の 1〜3 を実装した
 
 ## 代案
 

@@ -1,73 +1,68 @@
-import { bigint, boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
+import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+
+// D1（SQLite）のスキーマ（0021）。1 デプロイ = 1 チームなので、テナントの列は持たない。
+// JSON は TEXT に入れ（drizzle が読み書きで変換する）、時刻は ISO 8601 の文字列で持つ。
 
 // ---- イベントストア（正） ----
 
-export const events = pgTable(
+export const events = sqliteTable(
   'events',
   {
-    tenantId: text('tenant_id').notNull(),
-    seq: integer('seq').notNull(),
+    seq: integer('seq').primaryKey(),
     type: text('type').notNull(),
-    payload: jsonb('payload').notNull(),
-    at: timestamp('at', { withTimezone: true, mode: 'string' }).notNull(),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    at: text('at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.tenantId, t.seq] }), index('events_type_idx').on(t.tenantId, t.type)],
+  (t) => [index('events_type_idx').on(t.type)],
 );
 
 // ---- 投影（いつでも消してイベントから作り直せる） ----
 
-export const projectionMeta = pgTable('projection_meta', {
-  tenantId: text('tenant_id').primaryKey(),
+/** 1 行だけ（id = 1） */
+export const projectionMeta = sqliteTable('projection_meta', {
+  id: integer('id').primaryKey(),
   lastSeq: integer('last_seq').notNull(),
   /** 重複排除とアンカー解決の索引 */
-  idx: jsonb('idx').notNull(),
+  idx: text('idx', { mode: 'json' }).notNull(),
 });
 
 /** スレッド（エンティティはスレッドの 1 種類、0014） */
-export const threads = pgTable(
+export const threads = sqliteTable(
   'threads',
   {
-    tenantId: text('tenant_id').notNull(),
-    id: text('id').notNull(),
+    id: text('id').primaryKey(),
     dataSourceId: text('data_source_id').notNull(),
-    data: jsonb('data').notNull(),
+    data: text('data', { mode: 'json' }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.tenantId, t.id] }), index('threads_data_source_idx').on(t.tenantId, t.dataSourceId)],
+  (t) => [index('threads_data_source_idx').on(t.dataSourceId)],
 );
 
-export const signals = pgTable(
-  'signals',
-  {
-    tenantId: text('tenant_id').notNull(),
-    id: text('id').notNull(),
-    dataSourceId: text('data_source_id').notNull(),
-    threadId: text('thread_id'),
-    data: jsonb('data').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.tenantId, t.id] })],
-);
+export const signals = sqliteTable('signals', {
+  id: text('id').primaryKey(),
+  dataSourceId: text('data_source_id').notNull(),
+  threadId: text('thread_id'),
+  data: text('data', { mode: 'json' }).notNull(),
+});
 
 // ---- マスタ ----
 
-/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = tenants / users / parties ...） */
-export const master = pgTable(
+/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / parties ...） */
+export const master = sqliteTable(
   'master',
   {
     kind: text('kind').notNull(),
     ord: integer('ord').notNull(),
-    data: jsonb('data').notNull(),
+    data: text('data', { mode: 'json' }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.kind, t.ord] })],
 );
 
-
 // ---- ダミー上流 ----
 
 /** ダミーコネクタの受信キュー（データソースごとに pull で返す） */
-export const dummyQueue = pgTable('dummy_queue', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
-  tenantId: text('tenant_id').notNull(),
+export const dummyQueue = sqliteTable('dummy_queue', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
   dataSourceId: text('data_source_id').notNull(),
-  message: jsonb('message').notNull(),
-  consumed: boolean('consumed').notNull().default(false),
+  message: text('message', { mode: 'json' }).notNull(),
+  consumed: integer('consumed', { mode: 'boolean' }).notNull().default(false),
 });

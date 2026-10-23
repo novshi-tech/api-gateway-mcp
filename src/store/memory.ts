@@ -1,43 +1,47 @@
-import { parseEvent, Seed, type DomainEvent, type DraftEvent, type Projections } from '../domain';
+import { parseEvent, Seed, type DomainEvent, type DraftEvent, type ProjectionChanges, type Projections } from '../domain';
 import { ConcurrencyError, type EventStore, type MasterStore, type ProjectionStore, type Repo } from './types';
 
 /** テスト・CLI 用のインメモリ実装 */
 export class MemoryEventStore implements EventStore {
-  private readonly byTenant = new Map<string, DomainEvent[]>();
+  private events: DomainEvent[] = [];
 
-  async append(tenantId: string, expectedLastSeq: number, drafts: readonly DraftEvent[], at: string): Promise<DomainEvent[]> {
-    const list = this.byTenant.get(tenantId) ?? [];
-    const last = list.at(-1)?.seq ?? 0;
-    if (last !== expectedLastSeq) throw new ConcurrencyError(tenantId, expectedLastSeq);
-    const stored = drafts.map((d, i) =>
-      parseEvent({ tenantId, seq: last + i + 1, at, type: d.type, payload: structuredClone(d.payload) }),
-    );
-    this.byTenant.set(tenantId, [...list, ...stored]);
+  async append(expectedLastSeq: number, drafts: readonly DraftEvent[], at: string): Promise<DomainEvent[]> {
+    const last = this.events.at(-1)?.seq ?? 0;
+    if (last !== expectedLastSeq) throw new ConcurrencyError(expectedLastSeq);
+    const stored = drafts.map((d, i) => parseEvent({ seq: last + i + 1, at, type: d.type, payload: structuredClone(d.payload) }));
+    this.events = [...this.events, ...stored];
     return stored;
   }
 
-  async read(tenantId: string, afterSeq = 0): Promise<DomainEvent[]> {
-    return (this.byTenant.get(tenantId) ?? []).filter((e) => e.seq > afterSeq).map((e) => structuredClone(e));
+  async read(afterSeq = 0): Promise<DomainEvent[]> {
+    return this.events.filter((e) => e.seq > afterSeq).map((e) => structuredClone(e));
   }
 }
 
 export class MemoryProjectionStore implements ProjectionStore {
-  private readonly byTenant = new Map<string, Projections>();
-  async load(tenantId: string) {
-    const p = this.byTenant.get(tenantId);
-    return p ? structuredClone(p) : null;
+  private saved: Projections | null = null;
+  async load() {
+    return this.saved ? structuredClone(this.saved) : null;
   }
-  async save(p: Projections) {
-    this.byTenant.set(p.tenantId, structuredClone(p));
+  /** 差分は保存済みのものに当てる（差分の取りこぼしがあれば、読み出した投影がリプレイと食い違って H1 で見つかる） */
+  async save(p: Projections, changes?: ProjectionChanges) {
+    if (!changes || !this.saved) {
+      this.saved = structuredClone(p);
+      return;
+    }
+    const saved = this.saved;
+    saved.lastSeq = p.lastSeq;
+    if (changes.index) saved.index = structuredClone(p.index);
+    for (const id of changes.threadIds) saved.threads[id] = structuredClone(p.threads[id]!);
+    for (const id of changes.signalIds) saved.signals[id] = structuredClone(p.signals[id]!);
   }
-  async clear(tenantId: string) {
-    this.byTenant.delete(tenantId);
+  async clear() {
+    this.saved = null;
   }
 }
 
 export class MemoryMasterStore implements MasterStore {
   private seed: Seed = Seed.parse({
-    tenants: [],
     users: [],
     parties: [],
     addresses: [],

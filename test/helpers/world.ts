@@ -21,81 +21,75 @@ import {
 
 /**
  * コアのユニットテスト用の小さな世界。
- * テナント ubs:
+ * 1 デプロイ = 1 チーム（UBS）:
  *   ds_support   support@（組織の資格情報、読者は Alice と Bob）
  *   ds_alice     Alice の個人のメールボックス（読者は Alice だけ）
  *   ds_line      LINE 公式アカウント（組織、読者は Bob だけ）
- *   ds_notes_*   個人のメモ
- * テナント nvt: 別テナント（Eve と、もう 1 人の Alice）
+ *   ds_notes_*   個人のメモ（Alice と Bob）
+ *   ds_slack     Slack の #general（グループ、組織の資格情報、読者は Eve だけ。Eve はメモを持たない）
+ * u_mallory: ゲートウェイの User だが、このデプロイに Party がない（チームの外）
  */
 export const seed = Seed.parse({
-  tenants: [
-    { id: 'ubs', name: 'UBS' },
-    { id: 'nvt', name: 'ノブシテック' },
-  ],
   users: [
     { id: 'u_alice', name: 'Alice' },
     { id: 'u_bob', name: 'Bob' },
     { id: 'u_eve', name: 'Eve' },
+    { id: 'u_mallory', name: 'Mallory（チームの外）' },
   ],
   parties: [
-    { id: 'p_ubs', tenantId: 'ubs', name: 'UBS', kind: 'organization', internal: true },
-    { id: 'p_alice', tenantId: 'ubs', name: 'Alice', kind: 'person', userId: 'u_alice', internal: true },
-    { id: 'p_bob', tenantId: 'ubs', name: 'Bob', kind: 'person', userId: 'u_bob', internal: true },
-    { id: 'p_carol', tenantId: 'ubs', name: 'Carol（顧客）', kind: 'person' },
-    { id: 'p_dave', tenantId: 'ubs', name: 'Dave 工務店', kind: 'organization' },
-    { id: 'p_nvt', tenantId: 'nvt', name: 'ノブシテック', kind: 'organization', internal: true },
-    { id: 'p_eve', tenantId: 'nvt', name: 'Eve', kind: 'person', userId: 'u_eve', internal: true },
-    { id: 'p_alice_nvt', tenantId: 'nvt', name: 'Alice', kind: 'person', userId: 'u_alice', internal: true },
+    { id: 'p_ubs', name: 'UBS', kind: 'organization', internal: true },
+    { id: 'p_alice', name: 'Alice', kind: 'person', userId: 'u_alice', internal: true },
+    { id: 'p_bob', name: 'Bob', kind: 'person', userId: 'u_bob', internal: true },
+    { id: 'p_carol', name: 'Carol（顧客）', kind: 'person' },
+    { id: 'p_dave', name: 'Dave 工務店', kind: 'organization' },
+    { id: 'p_eve', name: 'Eve', kind: 'person', userId: 'u_eve', internal: true },
   ],
   addresses: [
-    { id: 'a_support', tenantId: 'ubs', channel: 'email', value: 'support@ubs.example', partyId: 'p_ubs' },
-    { id: 'a_alice', tenantId: 'ubs', channel: 'email', value: 'alice@ubs.example', partyId: 'p_alice' },
-    { id: 'a_carol', tenantId: 'ubs', channel: 'email', value: 'carol@example.com', partyId: 'p_carol' },
-    { id: 'a_dave', tenantId: 'ubs', channel: 'email', value: 'info@dave.example', partyId: 'p_dave' },
+    { id: 'a_support', channel: 'email', value: 'support@ubs.example', partyId: 'p_ubs' },
+    { id: 'a_alice', channel: 'email', value: 'alice@ubs.example', partyId: 'p_alice' },
+    { id: 'a_carol', channel: 'email', value: 'carol@example.com', partyId: 'p_carol' },
+    { id: 'a_dave', channel: 'email', value: 'info@dave.example', partyId: 'p_dave' },
     {
       id: 'a_dave_old',
-      tenantId: 'ubs',
       channel: 'email',
       value: 'old@dave.example',
       partyId: 'p_dave',
       validTo: '2026-01-01T00:00:00.000Z',
     },
-    { id: 'a_oa', tenantId: 'ubs', channel: 'line', value: '@ubs', partyId: 'p_ubs' },
-    { id: 'a_carol_line', tenantId: 'ubs', channel: 'line', value: 'U_carol', partyId: 'p_carol' },
-    { id: 'a_nvt_slack', tenantId: 'nvt', channel: 'slack', value: 'T_NVT/C_GENERAL', partyId: 'p_nvt' },
-    { id: 'a_eve', tenantId: 'nvt', channel: 'slack', value: 'T_NVT/U_EVE', partyId: 'p_eve' },
+    { id: 'a_oa', channel: 'line', value: '@ubs', partyId: 'p_ubs' },
+    { id: 'a_carol_line', channel: 'line', value: 'U_carol', partyId: 'p_carol' },
+    { id: 'a_slack', channel: 'slack', value: 'T_UBS/C_GENERAL', partyId: 'p_ubs' },
+    { id: 'a_eve', channel: 'slack', value: 'T_UBS/U_EVE', partyId: 'p_eve' },
   ],
   credentialRefs: [
-    { id: 'c_support', tenantId: 'ubs', principal: { kind: 'organization', tenantId: 'ubs' }, addressId: 'a_support' },
-    { id: 'c_alice', tenantId: 'ubs', principal: { kind: 'user', userId: 'u_alice' }, addressId: 'a_alice' },
-    { id: 'c_oa', tenantId: 'ubs', principal: { kind: 'organization', tenantId: 'ubs' }, addressId: 'a_oa' },
-    { id: 'c_nvt_slack', tenantId: 'nvt', principal: { kind: 'organization', tenantId: 'nvt' }, addressId: 'a_nvt_slack' },
+    { id: 'c_support', principal: { kind: 'organization' }, addressId: 'a_support' },
+    { id: 'c_alice', principal: { kind: 'user', userId: 'u_alice' }, addressId: 'a_alice' },
+    { id: 'c_oa', principal: { kind: 'organization' }, addressId: 'a_oa' },
+    { id: 'c_slack', principal: { kind: 'organization' }, addressId: 'a_slack' },
   ],
   dataSources: [
-    { kind: 'service', id: 'ds_support', tenantId: 'ubs', channel: 'email', name: 'support@', credentialRefId: 'c_support', selfAddressIds: ['a_support'] },
-    { kind: 'service', id: 'ds_alice', tenantId: 'ubs', channel: 'email', name: 'Alice のメールボックス', credentialRefId: 'c_alice', selfAddressIds: ['a_alice'] },
-    { kind: 'service', id: 'ds_line', tenantId: 'ubs', channel: 'line', name: 'LINE 公式アカウント', credentialRefId: 'c_oa', selfAddressIds: ['a_oa'] },
-    { kind: 'notes', id: 'ds_notes_alice', tenantId: 'ubs', name: 'Alice のメモ', ownerPartyId: 'p_alice' },
-    { kind: 'notes', id: 'ds_notes_bob', tenantId: 'ubs', name: 'Bob のメモ', ownerPartyId: 'p_bob' },
+    { kind: 'service', id: 'ds_support', channel: 'email', name: 'support@', credentialRefId: 'c_support', selfAddressIds: ['a_support'] },
+    { kind: 'service', id: 'ds_alice', channel: 'email', name: 'Alice のメールボックス', credentialRefId: 'c_alice', selfAddressIds: ['a_alice'] },
+    { kind: 'service', id: 'ds_line', channel: 'line', name: 'LINE 公式アカウント', credentialRefId: 'c_oa', selfAddressIds: ['a_oa'] },
+    { kind: 'notes', id: 'ds_notes_alice', name: 'Alice のメモ', ownerPartyId: 'p_alice' },
+    { kind: 'notes', id: 'ds_notes_bob', name: 'Bob のメモ', ownerPartyId: 'p_bob' },
     {
       kind: 'service',
       id: 'ds_slack',
-      tenantId: 'nvt',
       channel: 'slack',
       name: '#general',
-      credentialRefId: 'c_nvt_slack',
-      selfAddressIds: ['a_nvt_slack'],
+      credentialRefId: 'c_slack',
+      selfAddressIds: ['a_slack'],
       group: true,
     },
   ],
   lists: [
-    { id: 'l_support', tenantId: 'ubs', dataSourceId: 'ds_support' },
-    { id: 'l_alice', tenantId: 'ubs', dataSourceId: 'ds_alice' },
-    { id: 'l_line', tenantId: 'ubs', dataSourceId: 'ds_line' },
-    { id: 'l_notes_alice', tenantId: 'ubs', dataSourceId: 'ds_notes_alice' },
-    { id: 'l_notes_bob', tenantId: 'ubs', dataSourceId: 'ds_notes_bob' },
-    { id: 'l_slack', tenantId: 'nvt', dataSourceId: 'ds_slack' },
+    { id: 'l_support', dataSourceId: 'ds_support' },
+    { id: 'l_alice', dataSourceId: 'ds_alice' },
+    { id: 'l_line', dataSourceId: 'ds_line' },
+    { id: 'l_notes_alice', dataSourceId: 'ds_notes_alice' },
+    { id: 'l_notes_bob', dataSourceId: 'ds_notes_bob' },
+    { id: 'l_slack', dataSourceId: 'ds_slack' },
   ],
   listMembers: [
     { listId: 'l_support', partyId: 'p_alice' },
@@ -113,6 +107,7 @@ export const dir = new Directory(seed);
 export const alice = deriveViewer(dir, 'u_alice');
 export const bob = deriveViewer(dir, 'u_bob');
 export const eve = deriveViewer(dir, 'u_eve');
+export const mallory = deriveViewer(dir, 'u_mallory');
 
 /** 決定的な ID と時刻 */
 export function makeCtx(now = '2026-10-16T09:00:00.000Z'): CoreContext & { setNow(n: string): void } {
@@ -131,18 +126,15 @@ export function makeCtx(now = '2026-10-16T09:00:00.000Z'): CoreContext & { setNo
 /** ドラフトを seq・at 付きのイベントにする */
 export class EventLog {
   readonly events: DomainEvent[] = [];
-  constructor(readonly tenantId = 'ubs') {}
 
   push(drafts: readonly DraftEvent[], at: string): DomainEvent[] {
-    const stored = drafts.map(
-      (d, i) => ({ ...d, tenantId: this.tenantId, seq: this.events.length + i + 1, at }) as DomainEvent,
-    );
+    const stored = drafts.map((d, i) => ({ ...d, seq: this.events.length + i + 1, at }) as DomainEvent);
     this.events.push(...stored);
     return stored;
   }
 
   state(): Projections {
-    return fold(this.events, emptyProjections(this.tenantId));
+    return fold(this.events, emptyProjections());
   }
 }
 
@@ -196,7 +188,7 @@ export function ingestPure(
   const prepared = prepareInbound(p, ctx, inbound);
   if (prepared.kind !== 'signal') return { duplicate: true, events: [], signalId: prepared.signalId };
   const sig = signalEvent(prepared.payload);
-  const withSignal = fold([{ ...sig, tenantId: log.tenantId, seq: p.lastSeq + 1, at: ctx.now } as DomainEvent], p);
+  const withSignal = fold([{ ...sig, seq: p.lastSeq + 1, at: ctx.now } as DomainEvent], p);
   const plan = planIngest(withSignal, ctx, prepared.dataSource, prepared.payload, policy);
   const decided =
     plan.kind === 'decided' ? plan : finalizeIngest(ctx, plan.request, decide(plan.request), 'ai');

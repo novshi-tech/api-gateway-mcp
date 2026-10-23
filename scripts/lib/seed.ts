@@ -1,4 +1,5 @@
 import type { Seed } from '../../src/domain/entities';
+import { SEED_KINDS } from '../../src/store/d1';
 
 /**
  * seed の User ID を付け替える（仮の u_xxx → ゲートウェイの User ID）。
@@ -28,4 +29,22 @@ export function parseUserMap(args: string[]): Record<string, string> {
     map[from] = to;
   }
   return map;
+}
+
+/** 本体のデータを全部消してから入れる（イベント・投影・ダミーのキューも消す。マスタが変わればイベントは意味を失うため） */
+const CLEARED_TABLES = ['events', 'projection_meta', 'threads', 'signals', 'dummy_queue', 'master'];
+
+/**
+ * D1 に流す seed の SQL（wrangler d1 execute --file）。マスタの行は D1MasterStore と同じ形（kind・ord・JSON）。
+ * 文字列は SQL のリテラルにする（' を重ねる）
+ */
+export function seedSql(seed: Seed): string {
+  const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
+  const lines = CLEARED_TABLES.map((t) => `DELETE FROM ${t};`);
+  for (const kind of SEED_KINDS) {
+    (seed[kind] as unknown[]).forEach((data, ord) => {
+      lines.push(`INSERT INTO master (kind, ord, data) VALUES (${literal(kind)}, ${ord}, ${literal(JSON.stringify(data))});`);
+    });
+  }
+  return `${lines.join('\n')}\n`;
 }

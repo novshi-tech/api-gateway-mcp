@@ -9,7 +9,6 @@ export const Instant = z.iso.datetime({ offset: true }).transform((s) => new Dat
 
 export const ListThreadsQuery = z.object({
   filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'),
-  tenant: z.string().optional(),
   data_source: z.string().optional(),
   /** 前回見た時刻。それより後に動いたスレッドだけ */
   since: Instant.optional(),
@@ -17,15 +16,12 @@ export const ListThreadsQuery = z.object({
 
 export const GetThreadQuery = z.object({ since: Instant.optional() });
 
-export const ListListsQuery = z.object({ tenant: z.string().optional() });
-
 export const AddNoteBody = z.object({
   /** 足す先の自分のメモのスレッド。省略すれば新しいスレッド（「この件」） */
   thread_id: z.string().optional(),
   /** 新しいスレッドの件名。省略すれば本文の最初の行 */
   title: z.string().min(1).optional(),
   body: z.string().min(1),
-  tenant: z.string().optional(),
 });
 
 export const ClaimBody = z

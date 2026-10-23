@@ -151,13 +151,13 @@ describe('期限の見回り', () => {
     log.push(due, T(13));
     expect(log.state().threads[cust]).toMatchObject({ overdue: true });
     expect(planOverdue(log.state(), T(14))).toEqual([]);
-    expect(listThreads(dir, alice, [log.state()], { filter: 'overdue' }).map((t) => t.id)).toEqual([cust]);
+    expect(listThreads(dir, alice, log.state(), { filter: 'overdue' }).map((t) => t.id)).toEqual([cust]);
     expect(getThreadView(dir, alice, log.state(), cust)!.timeline.at(-1)).toMatchObject({ kind: 'overdue', replyExpectedBy: T(12) });
 
     ctx.setNow(T(15));
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }), () => answer({ thread: null }));
     expect(log.state().threads[cust]).toMatchObject({ overdue: false, replyExpectedBy: null });
-    expect(listThreads(dir, alice, [log.state()], { filter: 'overdue' })).toEqual([]);
+    expect(listThreads(dir, alice, log.state(), { filter: 'overdue' })).toEqual([]);
   });
 
   it('H4 返事期待のない送信・片付けたスレッドは期限超過にならない', () => {

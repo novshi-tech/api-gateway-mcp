@@ -1,8 +1,17 @@
 # 申し送り
 
-最終更新: 2026-10-23。**計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
+最終更新: 2026-10-23。**計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
 
 ## いまの状態
+
+**2026-10-23（後半）: 0021 の決定 1〜3 を実装した（クラウドセッション、ブランチ `claude/adoring-noether-yjejoy`。main には未反映）。ストレージは D1 に決めた（直樹）。** 詳細は 0021 の「実装の記録」。要点:
+- マルチテナントを外した（24e666c）: マスタ・イベントの封筒・投影・API からテナントを外し、1 デプロイ = 1 チーム。User の Party は 1 つまで、Party のない User は何も見えない。
+  API が変わった: `/me` は `party`（なければ `null`）、`list_threads`・`list_lists`・`add_note` の `tenant` を外した、Webhook は `POST /webhooks/dummy`、`timeline.html` の `tenant` を外した。
+  **nvt-api-gateway-skills の `murmur` スキルの API の表を直す必要がある**（このリポの下書き `docs/stand/skill-murmur.md` は直した。スキルのリポはこのセッションの範囲外）
+- 投影を差分で書くようにした（74c55d6）: `foldChanges` が変わったスレッド・シグナル・索引を返し、ストアはそれだけ upsert する（0004 のトレードオフの解消）
+- D1 に移した（03f9ef2）: スキーマは SQLite、マイグレーションは `drizzle/` を作り直した（Postgres の 0000〜0003 は消した）。Postgres の実装・Neon・pglite の依存を消した。テストは Miniflare の D1
+- テスト: `pnpm test` で 199 件が全部緑。`pnpm scenario verify all`（`--db d1`・`--ai replay` も）は 4 本とも一致（AI の記録はそのまま当たる）。`wrangler dev --env dev --local` で Webhook の取り込み・重複排除・管理画面も確かめた
+- 途中で見つけた既存の穴: Postgres の追記が payload の検証より先に挿入していた（直してから D1 に移した。D1 版も検証してから書く）
 
 **2026-10-23: Murmur の立ち位置とセルフホストの方向を決めた（クラウドセッション、ブランチ `claude/adoring-noether-yjejoy`。api-gateway-mcp を汎用の製品として広げる議論から）。ADR だけでコードは変えていない。** 要点:
 - **`docs/adr/0020`（採用）**: Murmur は 1 チーム（会社・部署・プロジェクトなど、緊密なタスクの共有とディスパッチが要るグループ）に 1 つセルフホストする。ゲートウェイとは 1 対 1。novshi はコードとスキルを配るだけで、資格情報も連絡の中身も預からない。
@@ -143,7 +152,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 3. **個人のメモとリンク**（済み。2026-10-21 に H1・H2・H8 が緑） 4. **送信の記録**（済み。2026-10-21 に H4・H5 が緑） 5. **API・スキル・管理 UI**（済み。ゲートウェイ経由の書き込みも H7 で確かめた） 6. **H7・H10**（済み、2026-10-21。H7 は緑、H10 は省いた） 7. **状態の写しを持つデータソース**（済み、2026-10-21。H9 が緑） 8. **振り返り**（済み、2026-10-21。`docs/retrospective-v2.md`。直樹のレビュー済み）
 - 並行トラック: ステップ 2 のあと、0007 の実データでの試用（読み取り専用の Gmail を読者 1 人のデータソースとして）。前提は 0007 の 6（記録の置き場所）を決めること
 
-実環境の控え（v1 で設定済み、v2 でも使う）:
+実環境の控え（v1 で設定済み、v2 でも使う。**D1 に移したので、ブランチを main に入れたあとは Neon と `DATABASE_URL` を使わない**）:
 - Neon プロジェクト `murmur`（quiet-dust-32237629、aws-ap-southeast-1、組織 株式会社ノブシテック）の `dev` ブランチ。v2 ではスキーマが変わるので、マイグレーションを作り直して当て直す
 - murmur-dev（https://murmur-dev.nose-0d2.workers.dev）。secrets は `DATABASE_URL`・`ANTHROPIC_API_KEY`・`WEBHOOK_SECRET`・`TIMELINE_TOKEN`、vars は `GATEWAY_JWKS`・`IDENTITY_ISSUER`
 - ゲートウェイの本番に `MURMUR`（→ murmur-dev）の Service Binding と `SERVICES.murmur`。Cowork に `api-gateway` と `nvt-api-gateway` を入れてある（Cowork は 0.3.0。最新は 0.4.0）
@@ -157,6 +166,13 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 ## 次のセッションでやること
 
 0. 2026-10-23 の ADR（0020・0021・0022、0016 の書き直し）を直樹がレビューする
+0. **0021 の実装（ブランチ `claude/adoring-noether-yjejoy`）を main に入れる前に**、直樹が手でやること（main への push で CI が murmur-dev にデプロイするので、先に済ませないとデプロイが落ちる）:
+   1. ~~D1 を作って `database_id` を書く~~ → dev は済み（2026-10-23、直樹が作成。`c74085ea-ccd1-4779-871a-b585afd7624d` を `wrangler.jsonc` に書いた）。prod（`murmur`）は仮の値のまま（タグを打たないので当面は要らない）
+   2. `pnpm db:migrate dev`（`wrangler d1 migrations apply DB --remote --env dev`）
+   3. `pnpm seed absence --env dev --user u_kimura=<直樹のゲートウェイの User ID>`（dev の Neon のイベントは移さない。seed から入れ直す）
+   4. `wrangler secret delete DATABASE_URL --env dev`（任意）。そのあと main に入れる
+   5. nvt-api-gateway-skills の `murmur` スキルの API の表を直す（上の「いまの状態」）。Cowork のプラグインも入れ直す
+0. 0021 の残り: 決定の 4（ゲートウェイの `deploy` スキルで Murmur も一緒にデプロイし、Service Binding・JWKS・シークレットの配線を自動にする）。api-gateway-mcp の側の作業。`projection_meta.idx` が何件で 2 MB に届くかの計測
 1. ~~複数の組織にまたがる認証と接続の設計（`docs/adr/0017`）~~ → 2026-10-22 に結論（`docs/adr/0018`）: やらない。組織の切り替えはスタンドで行う。設計はしない
 2. **次の段階（`docs/adr/0016`）**: 自社向けに実コネクタを作り、実データで Ingest が使えるかを確かめる。振り返りの持ち越しの順に
    1 相手を引く API → 2 件名を属性として畳む → 3 スキルの片付けの説明 → 4 写しが課題のスレッドより先に届いたとき → 5 実データの試用（本題）→ 6 LINE が自分の push を webhook で返すか（LINE をつなぐ前に）。
@@ -200,8 +216,8 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 直樹に判断してもらうこと
 
-- **0021 の未決**: ストレージを D1 にするか Durable Object の SQLite にするか。着手の時期（0016 の試用は今の Neon でも回せる。配る前には要る）
-- **0020 の定義の単語**: 0012 の定義文の「テナントで 1 つの共有の実体」を、0021 の実装のときに「デプロイで 1 つの共有の実体」に読み替える。単語は直樹が練る
+- ~~**0021 の未決**: D1 か Durable Object の SQLite か~~ → D1（2026-10-23、直樹）。実装した
+- **0020 の定義の単語**: 0012 の定義文の「テナントで 1 つの共有の実体」を「デプロイで 1 つの共有の実体」に読み替える。0021 を実装したので、単語を直樹が練る
 - **0016 の最初のデータソース（UBS の Outlook に決まった。2026-10-22）**: どのメールボックスとフォルダから始めるか。段階 5 の前に決める
 - **LINE の受け口（0019）**: 受け口は送信もサポートし、人の返事も受け口から送る方向（直樹）。送った分は観測された送信として Murmur に流す。設計に入るとき、返信の画面をどこまで作るか、push と reply の使い分け、LINE の userId と人（従業員・応募者・顧客・入居者）の紐づけ方を決める。
   その前に、UBS のアカウントの応答設定でチャットと Webhook を両方オンにできるか、既に Webhook URL を使うツールがないかを画面で確かめる

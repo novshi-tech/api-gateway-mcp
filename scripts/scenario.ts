@@ -1,13 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicLlm } from '../src/ingest/llm';
-import { pgRepo } from '../src/store/drizzle';
-import { pgliteDb } from './lib/pglite';
+import { d1Repo } from '../src/store/d1';
+import { localD1 } from './lib/d1';
 import { listScenarios, loadScenario, runScenario, verifyScenario, type DeciderMode } from './lib/scenario';
 
-// pnpm scenario run <name|all> [--ai replay|record|rerecord] [--db memory|pglite]
+// pnpm scenario run <name|all> [--ai replay|record|rerecord] [--db memory|d1]
 // pnpm scenario verify <name|all> [...]   expected.json と比較し、H1 のリプレイ比較も行う
 
-const USAGE = 'usage: pnpm scenario <run|verify> <name|all> [--ai replay|record|rerecord] [--db memory|pglite] [--model <id>]';
+const USAGE = 'usage: pnpm scenario <run|verify> <name|all> [--ai replay|record|rerecord] [--db memory|d1] [--model <id>]';
 
 async function main() {
   const [cmd, target, ...rest] = process.argv.slice(2);
@@ -33,13 +33,13 @@ async function main() {
     const scenario = loadScenario(name);
     let close: (() => Promise<void>) | undefined;
     let repo;
-    if (flag('db') === 'pglite') {
-      const db = await pgliteDb();
+    if (flag('db') === 'd1') {
+      const db = await localD1();
       close = db.close;
-      repo = pgRepo(db.db);
+      repo = d1Repo(db.db);
     }
     const run = await runScenario(scenario, { repo, decider });
-    const p = await run.service.state(scenario.config.tenant);
+    const p = await run.service.state();
     console.log(`\n# ${name}（${scenario.config.title}） ${scenario.config.hypotheses.join(' ')} [${scenario.config.status}]`);
     console.log(`  steps=${scenario.steps.length} events=${p.lastSeq} threads=${Object.keys(p.threads).length}`);
     if (cmd === 'verify') {

@@ -15,7 +15,9 @@
     // GATEWAY_JWKS はゲートウェイの <PUBLIC_URL>/.well-known/jwks.json の中身、IDENTITY_ISSUER はゲートウェイの PUBLIC_URL。
     // 秘密ではないが env ごとに違うので env 側で設定する
   },
-  // secrets: ANTHROPIC_API_KEY, DATABASE_URL, WEBHOOK_SECRET, TIMELINE_TOKEN
+  // secrets: ANTHROPIC_API_KEY, WEBHOOK_SECRET, TIMELINE_TOKEN
+  // D1（0021）: d1_databases は env ごとに書く（env に継承されない）。database_id は
+  //   wrangler d1 create murmur-dev --location apac の出力。マイグレーションは pnpm db:migrate <env>（drizzle/ を当てる）
   "env": {
     "dev": {
       "name": "murmur-dev",
@@ -28,6 +30,9 @@
         "IDENTITY_ISSUER": "https://api-gateway-mcp.nose-0d2.workers.dev",
         "GATEWAY_JWKS": "{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"MiS4fsNuFhRhzlIQVbAX3623EaYblKi4uXkaeAPBhrw\",\"kid\":\"KNBlv8ntIyJzelvRChDnIPMD9d1Eavr1BoXeJE7gYq0\",\"alg\":\"EdDSA\",\"use\":\"sig\"}]}"
       },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "murmur-dev", "database_id": "c74085ea-ccd1-4779-871a-b585afd7624d", "migrations_dir": "drizzle" }
+      ],
       "triggers": { "crons": ["*/5 * * * *"] }
     },
     "prod": {
@@ -38,6 +43,10 @@
         "IDENTITY_ISSUER": "",
         "GATEWAY_JWKS": ""
       },
+      "d1_databases": [
+        // TODO: wrangler d1 create murmur --location apac の database_id に置き換える
+        { "binding": "DB", "database_name": "murmur", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }
+      ],
       "triggers": { "crons": ["*/5 * * * *"] }
     }
   }
