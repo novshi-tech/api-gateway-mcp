@@ -1,6 +1,6 @@
 # 0002 テストは Node の vitest と pglite で回す（vitest-pool-workers は保留）
 
-- 状態: 提案（直樹の判断待ち）
+- 状態: 提案（直樹の判断待ち）。0021 で Postgres をやめ、pglite を Miniflare の D1 に置き換えた（Node の vitest のまま。vitest-pool-workers には移していない）
 - 関連: 計画「テスト: vitest + @cloudflare/vitest-pool-workers、Cron をローカル再現」
 
 ## 背景
