@@ -1,6 +1,6 @@
-import { oauthClient, publicUrl, type ServiceConfig, type Services } from "../config";
+import { publicUrl, type ServiceConfig, type Services } from "../config";
 import { randomToken, s256 } from "../crypto";
-import { getServices, getUpstream } from "../services";
+import { getServices, getUpstream, isAvailable } from "../services";
 import { signToken, verifyToken } from "../tokens";
 import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "../upstream-oauth";
 import { vaultFor, type CredentialInfo } from "../vault";
@@ -28,10 +28,7 @@ function howToConnect(config: ServiceConfig): string {
 // Services a user can add from the picker: identity services need nothing, and an
 // OAuth service is offered only once the gateway has its client.
 function addable(env: Env, services: Services): [string, ServiceConfig][] {
-  return Object.entries(services).filter(([name, config]) => {
-    if (config.auth.type === "identity") return false;
-    return config.auth.type !== "oauth2" || oauthClient(env, name) !== null;
-  });
+  return Object.entries(services).filter(([name, config]) => config.auth.type !== "identity" && isAvailable(env, name, config));
 }
 
 function masthead(user: Session): Html {

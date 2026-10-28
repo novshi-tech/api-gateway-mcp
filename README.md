@@ -14,7 +14,7 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
 ```
 
 - **Claude は認証情報を見ません。** API キーや OAuth のトークンは、ユーザーがゲートウェイの Web 画面で登録し、暗号化して保存されます。Claude が受け取るのは、寿命 15 分のゲートウェイのトークンだけです。
-- **サービスは設定で足せます。** 連携先は `wrangler.jsonc` の `SERVICES` に、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書くだけです。OAuth のトークンの更新もゲートウェイが受け持ちます。
+- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは `wrangler.jsonc` の `SERVICES` に、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
 - **使い方はスキルで配ります。** API の呼び方は、Claude のスキル(プラグイン)にまとめて配布します。コネクタの URL を含めていないので、どのデプロイでも同じプラグインを使えます。
 
 Claude の Cowork で動作を確認しています。MCP の OAuth に従っているので、ほかの Claude のクライアントや ChatGPT のコネクタにも対応する設計ですが、まだ確認していません。設計の詳細は [docs/concept.md](docs/concept.md) と [docs/auth-design.md](docs/auth-design.md) にあります。
@@ -87,7 +87,7 @@ Entra ID はシングルテナントのアプリとして登録し、`OIDC_ISSUE
 
 ### 2. 設定してデプロイする
 
-`wrangler.example.jsonc` を `wrangler.jsonc` にコピーし(git の管理外です)、`vars` に `PUBLIC_URL`、IdP の設定、`SERVICES`(使う連携先)を書きます。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+`wrangler.example.jsonc` を `wrangler.jsonc` にコピーし(git の管理外です)、`vars` に `PUBLIC_URL`、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
 
 ```sh
 npm ci
@@ -107,14 +107,16 @@ npx wrangler deploy
 
 ### 3. 連携先を設定する
 
-ヘッダーで認証するサービス(`gbizinfo` など)は、`SERVICES` に書くだけです。ユーザーが Web 画面で API キーやトークンを登録します。
+ヘッダーで認証するサービス(組み込みの `board`・`gbizinfo`・`serper` など)は、設定は要りません。ユーザーが Web 画面で API キーやトークンを登録します。
 
-OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、サービス名を大文字にした名前で登録します(ハイフンは `_` に)。
+OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、クライアントの名前を大文字にした名前で登録します(ハイフンは `_` に)。組み込みのサービスのクライアントは `FREEE`・`GOOGLE`・`MICROSOFT` の 3 つで、Google の 6 つのサービスは 1 組を共有します。`SERVICES` に足したサービスは、`auth.client` に書いた名前か、なければサービス名がクライアントの名前です。
 
 ```sh
-npx wrangler secret put OAUTH_<SERVICE>_CLIENT_ID
-npx wrangler secret put OAUTH_<SERVICE>_CLIENT_SECRET
+npx wrangler secret put OAUTH_<CLIENT>_CLIENT_ID
+npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 ```
+
+クライアントが登録されていない OAuth のサービスは、Web 画面にも `list_credentials` にも出ません。以前のサービスごとの名前(`OAUTH_GMAIL_CLIENT_ID` など)も、移行のあいだは読みます。
 
 アクセストークンは、期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、Web 画面に「再接続」が出ます。
 
@@ -143,28 +145,18 @@ freee のアプリ管理でアプリを作成し、コールバック URL を設
 
 #### Microsoft Graph(`graph`)
 
-サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`wrangler.example.jsonc` の `scope` にある委任のアクセス許可を付けて、管理者の同意を与えます。`authorization_url` と `token_url` のテナント ID を書き換えます。シークレットは `OAUTH_GRAPH_CLIENT_ID` / `OAUTH_GRAPH_CLIENT_SECRET` です。
+サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`src/catalog.ts` の `GRAPH_SCOPE` にある委任のアクセス許可を付けて、管理者の同意を与えます。`wrangler.jsonc` の `MICROSOFT_TENANT_ID` にテナント ID を書きます。シークレットは `OAUTH_MICROSOFT_CLIENT_ID` / `OAUTH_MICROSOFT_CLIENT_SECRET` です。
 
 #### Google(`gmail`・`drive`・`calendar`・`docs`・`analytics`・`analytics-admin`)
 
-Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API、Google Analytics Data API、Google Analytics Admin API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `wrangler.example.jsonc` のスコープを追加します。同じ OAuth クライアントを複数のサービスで共有できますが、シークレットはサービスごとに登録します。
+Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API、Google Analytics Data API、Google Analytics Admin API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `src/catalog.ts` のスコープを追加します。6 つのサービスで 1 つの OAuth クライアントを共有します。
 
 ```sh
-npx wrangler secret put OAUTH_GMAIL_CLIENT_ID
-npx wrangler secret put OAUTH_GMAIL_CLIENT_SECRET
-npx wrangler secret put OAUTH_DRIVE_CLIENT_ID
-npx wrangler secret put OAUTH_DRIVE_CLIENT_SECRET
-npx wrangler secret put OAUTH_CALENDAR_CLIENT_ID
-npx wrangler secret put OAUTH_CALENDAR_CLIENT_SECRET
-npx wrangler secret put OAUTH_DOCS_CLIENT_ID
-npx wrangler secret put OAUTH_DOCS_CLIENT_SECRET
-npx wrangler secret put OAUTH_ANALYTICS_CLIENT_ID
-npx wrangler secret put OAUTH_ANALYTICS_CLIENT_SECRET
-npx wrangler secret put OAUTH_ANALYTICS_ADMIN_CLIENT_ID
-npx wrangler secret put OAUTH_ANALYTICS_ADMIN_CLIENT_SECRET
+npx wrangler secret put OAUTH_GOOGLE_CLIENT_ID
+npx wrangler secret put OAUTH_GOOGLE_CLIENT_SECRET
 ```
 
-- スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書き、Analytics の `analytics.readonly` は GA4 のレポートとプロパティの読み取りに使います(Data API と Admin API はホストが別なので、サービスも 2 つに分けています)。読み取り専用にするなら `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
+- スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書き、Analytics の `analytics.readonly` は GA4 のレポートとプロパティの読み取りに使います(Data API と Admin API はホストが別なので、サービスも 2 つに分けています)。読み取り専用にするなら、`SERVICES` に同じ名前でサービスを書いて、スコープを `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
 - `authorize_params` の `access_type: offline` と `prompt: consent` は、リフレッシュトークンを受け取るための設定です。
 - REST の呼び出し先の例: `/api/gmail/gmail/v1/users/me/messages`、`/api/drive/drive/v3/files`(アップロードは `/api/drive/upload/drive/v3/files`)、`/api/calendar/calendar/v3/calendars/primary/events`、`/api/docs/v1/documents/{id}`、`/api/analytics/v1beta/properties/{id}:runReport`、`/api/analytics-admin/v1beta/accountSummaries`
 

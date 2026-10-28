@@ -15,15 +15,15 @@ description: api-gateway-mcp を自分の Cloudflare アカウントにセルフ
 2. ユーザーに決めてもらう。推測で埋めない。
    - 公開 URL(`PUBLIC_URL`)。workers.dev なら `https://api-gateway-mcp.<サブドメイン>.workers.dev`。独自ドメインなら、その設定もする。
    - IdP: Microsoft 365 の組織なら Entra ID、Google Workspace なら Google。
-   - 最初に使うサービス。`wrangler.example.jsonc` の `SERVICES` から、要らないものを消す。例にないサービスは、デプロイのあとで add-service スキルで足す。
+   - 最初に使うサービス。組み込み(`src/catalog.ts`)のうち OAuth のもの(freee、Google、Microsoft Graph)は、クライアントを登録したものだけが使えるようになるので、どれを使うかを決める。組み込みにないサービスは、デプロイのあとで add-service スキルで足す。
 3. IdP にアプリを登録してもらう。Claude が IdP の管理画面を操作することはできないので、README の手順を示して、ユーザーにやってもらう。
    - リダイレクト URI: `<PUBLIC_URL>/oauth/callback` と `<PUBLIC_URL>/login/callback`
    - 受け取るもの: クライアント ID と、Entra ならテナント ID。クライアントシークレットは会話に貼らせず、手順 4 で直接 `wrangler secret put` に入れてもらう。
 4. 設定とシークレット。
-   - `cp wrangler.example.jsonc wrangler.jsonc` して、`PUBLIC_URL`、`IDP_TYPE`、`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`ALLOWED_TENANTS` / `ALLOWED_DOMAINS`、`SERVICES` を書く。Google では `ALLOWED_DOMAINS` を必ず指定する(空だと誰でもサインインできてしまう)。
+   - `cp wrangler.example.jsonc wrangler.jsonc` して、`PUBLIC_URL`、`IDP_TYPE`、`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`ALLOWED_TENANTS` / `ALLOWED_DOMAINS` を書く。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID`。`SERVICES` は組み込みにないサービスがあるときだけ。Google では `ALLOWED_DOMAINS` を必ず指定する(空だと誰でもサインインできてしまう)。
    - `npx wrangler kv namespace create OAUTH_KV` の結果の ID を `kv_namespaces` に書く。
    - シークレット: `OIDC_CLIENT_SECRET` はユーザーに対話で入れてもらう。`SIGNING_KEY` と `ENCRYPTION_KEY` は `openssl rand -base64 32 | npx wrangler secret put <名前>` で作る。値を表示したり、ファイルに残したりしない。
-   - OAuth の連携先(freee、Google、Microsoft Graph など)は、サービスごとに `OAUTH_<SERVICE>_CLIENT_ID` / `_CLIENT_SECRET` が要る。README の「OAuth の連携先」に従う。
+   - OAuth の連携先は、クライアントごとに `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET` が要る: `FREEE`、`GOOGLE`(Google の 6 サービスで共通)、`MICROSOFT`(Graph)。README の「連携先を設定する」に従う。
 5. デプロイする。
    - 先に `npm ci`、`npm run typecheck`、`npm test` を通す。
    - `npx wrangler deploy --dry-run --outdir <一時ディレクトリ>` で、ビルドと `wrangler.jsonc` の読み込みを先に確かめる(アップロードはしない)。

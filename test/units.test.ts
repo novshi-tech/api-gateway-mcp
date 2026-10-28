@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseServices } from "../src/config";
+import { catalog } from "../src/catalog";
+import { oauthClient, parseServices } from "../src/config";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
+import { getServices } from "../src/services";
 import { signToken, verifyToken } from "../src/tokens";
 import { html, Html } from "../src/web/html";
 
@@ -129,5 +131,57 @@ describe("html", () => {
 
   it("passes Html built on purpose through unchanged", () => {
     expect(html`${new Html("<style>a > b {}</style>")}`.value).toBe("<style>a > b {}</style>");
+  });
+});
+
+describe("oauthClient", () => {
+  const env = {
+    OAUTH_GOOGLE_CLIENT_ID: "shared",
+    OAUTH_GOOGLE_CLIENT_SECRET: "shared-secret",
+    OAUTH_GMAIL_CLIENT_ID: "old",
+    OAUTH_GMAIL_CLIENT_SECRET: "old-secret",
+    OAUTH_ANALYTICS_ADMIN_CLIENT_ID: "admin",
+    OAUTH_ANALYTICS_ADMIN_CLIENT_SECRET: "admin-secret",
+  } as unknown as Env;
+
+  it("prefers the shared client over the per-service names", () => {
+    expect(oauthClient(env, "gmail", "google")).toEqual({ id: "shared", secret: "shared-secret" });
+  });
+
+  it("falls back to the per-service names, then to nothing", () => {
+    expect(oauthClient({ ...env, OAUTH_GOOGLE_CLIENT_SECRET: "" } as Env, "gmail", "google")).toEqual({ id: "old", secret: "old-secret" });
+    expect(oauthClient(env, "analytics-admin")).toEqual({ id: "admin", secret: "admin-secret" });
+    expect(oauthClient(env, "freee", "freee")).toBeNull();
+  });
+});
+
+describe("catalog", () => {
+  it("offers Graph only with a tenant, and puts the tenant in its sign-in URLs", () => {
+    expect(catalog({} as Env)).not.toHaveProperty("graph");
+    const graph = catalog({ MICROSOFT_TENANT_ID: "t-1" } as unknown as Env).graph;
+    expect(graph.auth).toMatchObject({
+      client: "microsoft",
+      authorization_url: "https://login.microsoftonline.com/t-1/oauth2/v2.0/authorize",
+      token_url: "https://login.microsoftonline.com/t-1/oauth2/v2.0/token",
+    });
+  });
+
+  it("passes the same checks as SERVICES", () => {
+    expect(() => parseServices(catalog({ MICROSOFT_TENANT_ID: "t-1" } as unknown as Env))).not.toThrow();
+  });
+
+  it("lets SERVICES add services and replace a built-in one by name", async () => {
+    const auth = { type: "headers", headers: [{ name: "x-key", label: "key" }] };
+    const services = await getServices({
+      SERVICES: { board: { base_url: "https://board.example", auth }, mine: { base_url: "https://mine.example", auth } },
+    } as unknown as Env);
+    expect(services.board.base_url).toBe("https://board.example");
+    expect(services.mine.display_name).toBe("mine");
+    expect(services.gmail.provider).toBe("Google");
+  });
+
+  it("rejects an OAuth client name that cannot be a secret name", () => {
+    const auth = { type: "oauth2", client: "Bad Name", authorization_url: "https://a.example", token_url: "https://a.example" };
+    expect(() => parseServices({ x: { base_url: "https://a.example", auth } })).toThrow("invalid client name");
   });
 });
