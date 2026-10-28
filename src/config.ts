@@ -83,14 +83,10 @@ function requireHttps(service: string, field: string, value: string): void {
 
 export function oauthClient(env: Env, service: string, client?: string): { id: string; secret: string } | null {
   const vars = env as unknown as Record<string, unknown>;
-  // The per-service names predate shared clients; they are read until deployments move over.
-  for (const name of client ? [client, service] : [service]) {
-    const prefix = `OAUTH_${name.toUpperCase().replace(/-/g, "_")}_CLIENT_`;
-    const id = vars[`${prefix}ID`];
-    const secret = vars[`${prefix}SECRET`];
-    if (typeof id === "string" && id && typeof secret === "string" && secret) return { id, secret };
-  }
-  return null;
+  const prefix = `OAUTH_${(client ?? service).toUpperCase().replace(/-/g, "_")}_CLIENT_`;
+  const id = vars[`${prefix}ID`];
+  const secret = vars[`${prefix}SECRET`];
+  return typeof id === "string" && id && typeof secret === "string" && secret ? { id, secret } : null;
 }
 
 export function splitList(value: string | undefined): string[] {
