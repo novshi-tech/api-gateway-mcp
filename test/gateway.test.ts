@@ -244,7 +244,8 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    expect(listed.services).toEqual(["board", "gbizinfo", "serper", "freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "graph", "murmur"]);
+    // Gmail, Drive and Calendar have no OAuth client in the tests, so they are not offered.
+    expect(listed.services).toEqual(["freee", "docs", "analytics", "analytics-admin", "board", "gbizinfo", "serper", "graph", "murmur"]);
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },

@@ -1,3 +1,4 @@
+import { catalog } from "./catalog";
 import { oauthClient, parseServices, type ServiceConfig, type Services } from "./config";
 import type { OAuthClient } from "./upstream-oauth";
 
@@ -8,10 +9,11 @@ export interface Upstream {
   client: OAuthClient | null;
 }
 
-// The one place service definitions are read from. Today that is SERVICES;
-// the built-in catalog and admin-registered services join here (docs/redesign.md).
+// The one place service definitions are read from: the built-in catalog, then
+// SERVICES, which adds services and overrides catalog ones of the same name.
+// Admin-registered services join here later (docs/redesign.md).
 export async function getServices(env: Env): Promise<Services> {
-  return parseServices(env.SERVICES);
+  return { ...parseServices(catalog(env)), ...parseServices(env.SERVICES ?? {}) };
 }
 
 export async function getService(env: Env, name: string): Promise<ServiceConfig | null> {
@@ -19,8 +21,16 @@ export async function getService(env: Env, name: string): Promise<ServiceConfig 
   return Object.hasOwn(services, name) ? services[name] : null;
 }
 
+export function clientFor(env: Env, service: string, config: ServiceConfig): OAuthClient | null {
+  return config.auth.type === "oauth2" ? oauthClient(env, service, config.auth.client) : null;
+}
+
+// An OAuth service is usable only once the gateway has its client.
+export function isAvailable(env: Env, service: string, config: ServiceConfig): boolean {
+  return config.auth.type !== "oauth2" || clientFor(env, service, config) !== null;
+}
+
 export async function getUpstream(env: Env, service: string): Promise<Upstream | null> {
   const config = await getService(env, service);
-  if (!config) return null;
-  return { service, config, client: config.auth.type === "oauth2" ? oauthClient(env, service) : null };
+  return config ? { service, config, client: clientFor(env, service, config) } : null;
 }

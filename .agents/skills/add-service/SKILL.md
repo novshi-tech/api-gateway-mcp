@@ -5,7 +5,9 @@ description: API ゲートウェイに、新しい連携先サービス(外部�
 
 # サービスを足す
 
-サービスを 1 つ足すには、次の 3 つをそろえる。
+freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は組み込み(`src/catalog.ts`)なので、足す必要はない。OAuth のものはクライアントのシークレットを登録すれば使える(README の「連携先を設定する」)。
+
+それ以外のサービスを 1 つ足すには、次の 3 つをそろえる。
 
 1. ゲートウェイの設定: `wrangler.jsonc` の `vars.SERVICES` にサービスの定義を書く(OAuth ならシークレットも)。
 2. デプロイ: `npx wrangler deploy`(deploy スキルの手順 5)。
@@ -25,7 +27,7 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 | API の認証 | `auth` |
 | --- | --- |
 | 固定の API キーやトークンをヘッダーで送る | `headers`。ヘッダーごとに `name` と、Web 画面に出す `label`。`Authorization: Bearer <トークン>` なら `"prefix": "Bearer "` |
-| OAuth 2.0 の認可コード | `oauth2`。`authorization_url`、`token_url`、必要なら `scope` と `authorize_params` |
+| OAuth 2.0 の認可コード | `oauth2`。`authorization_url`、`token_url`、必要なら `scope` と `authorize_params`。同じ OAuth アプリを複数のサービスで使うなら `client` に共通の名前 |
 | 自社の API で、ゲートウェイのサインインを信頼する(ユーザーごとの認証情報がない) | `identity`。`audience` を書く。ゲートウェイがユーザー ID を Ed25519 で署名して `Authorization: Bearer` で送り、上流は `/.well-known/jwks.json` で検証する。署名鍵 `IDENTITY_SIGNING_KEY` が要る(README の「連携先を設定する」) |
 
 公開ルートを持たない Worker が上流なら、サービスに `"binding": "<BINDING 名>"` を書き、`wrangler.jsonc` の `services` に Service Binding を足す。
@@ -39,11 +41,13 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 
 ## 2. SERVICES に書く
 
-定義の形は `src/config.ts` の `ServiceConfig`。`wrangler.example.jsonc` に、ヘッダー型(`gbizinfo`)と OAuth 型(`freee`、`gmail`、`graph` など)の例がある。
+定義の形は `src/config.ts` の `ServiceConfig`。組み込みのサービスの定義(`src/catalog.ts`)が、ヘッダー型(`gbizinfo`、`board`)と OAuth 型(`freee`、`gmail`、`graph` など)の例になる。組み込みと同じ名前で書くと、そのサービスの定義を置き換える(スコープを絞るときなど)。
 
 ```jsonc
 "<service>": {
   "display_name": "Web 画面での表示名",
+  // 接続を追加する画面で、この名前ごとにまとめて並ぶ。なければ「その他」
+  "provider": "提供元",
   "base_url": "https://api.example.com",
   "auth": { "type": "headers", "headers": [{ "name": "x-api-key", "label": "API キー" }] }
 }
@@ -52,11 +56,11 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 - サービス名は小文字の英数字とハイフン(`^[a-z0-9][a-z0-9-]*$`)。REST のパス `/api/<service>/...` と、スキルでの呼び名になる。
 - `base_url` には、API のパスの共通部分を含めてもよい。上流のパスがそのあとにつながる。
 - OAuth では、連携先にアプリを登録してもらい、コールバック URL に `<PUBLIC_URL>/connect/callback` を指定してもらう。リフレッシュトークンを出すのに特別なパラメータが要るサービスがある(Google は `access_type: offline` と `prompt: consent`、Entra は `offline_access` のスコープ)。
-- OAuth のクライアント ID とシークレットは、サービス名を大文字にしてハイフンを `_` にした名前で登録する。値はユーザーに直接入れてもらい、会話に貼らせない。
+- OAuth のクライアント ID とシークレットは、`auth.client` の名前(なければサービス名)を大文字にしてハイフンを `_` にした名前で登録する。値はユーザーに直接入れてもらい、会話に貼らせない。クライアントが登録されるまで、そのサービスは Web 画面にも `list_credentials` にも出ない。
 
 ```sh
-npx wrangler secret put OAUTH_<SERVICE>_CLIENT_ID
-npx wrangler secret put OAUTH_<SERVICE>_CLIENT_SECRET
+npx wrangler secret put OAUTH_<CLIENT>_CLIENT_ID
+npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 ```
 
 書いたら `npm run typecheck` と `npm test` を通して、ユーザーに確認してからデプロイする。デプロイのあと、ユーザーに Web 画面で認証情報を登録(OAuth なら接続)してもらい、`api-gateway` スキルの `gw_request.py` で 1 回呼んで確かめる。
@@ -66,7 +70,7 @@ npx wrangler secret put OAUTH_<SERVICE>_CLIENT_SECRET
 スキルの置き場所をユーザーと決める。
 
 - 自分だけ・自社だけで使うサービス: ユーザー自身のプラグイン(別リポジトリ)に置く。このリポジトリには入れない。
-- 誰でも使えそうな汎用のサービスで、このリポジトリに取り込んでほしい場合: `plugins/api-gateway/skills/<skill>/` に置き、`wrangler.example.jsonc` にも定義を足す。
+- 誰でも使えそうな汎用のサービスで、このリポジトリに取り込んでほしい場合: 定義は `SERVICES` ではなく `src/catalog.ts` に足し、スキルは `plugins/api-gateway/skills/<skill>/` に置く。テストと README も足して PR にする。
 
 スキルは、既存の `plugins/api-gateway/skills/gbizinfo`(小さい例)や `freee`(ページングのスクリプトつき)をまねる。
 

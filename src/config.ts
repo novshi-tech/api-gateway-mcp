@@ -9,9 +9,12 @@ export interface HeadersAuth {
   headers: HeaderField[];
 }
 
-// The client ID and secret come from OAUTH_<SERVICE>_CLIENT_ID / _CLIENT_SECRET.
+// The client ID and secret come from OAUTH_<CLIENT>_CLIENT_ID / _CLIENT_SECRET, where
+// <CLIENT> is `client` (one client can serve many services, e.g. "google"), or the
+// service name when `client` is not set.
 export interface OAuth2Auth {
   type: "oauth2";
+  client?: string;
   authorization_url: string;
   token_url: string;
   scope?: string;
@@ -53,6 +56,7 @@ export function parseServices(raw: unknown): Services {
     if (auth?.type === "oauth2") {
       requireHttps(name, "authorization_url", auth.authorization_url);
       requireHttps(name, "token_url", auth.token_url);
+      if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);
     } else if (auth?.type === "identity") {
       if (typeof auth.audience !== "string" || !auth.audience) throw new Error(`service ${name}: identity needs an audience`);
     } else if (auth?.type !== "headers" || !Array.isArray(auth.headers) || auth.headers.length === 0) {
@@ -77,12 +81,16 @@ function requireHttps(service: string, field: string, value: string): void {
   }
 }
 
-export function oauthClient(env: Env, service: string): { id: string; secret: string } | null {
-  const prefix = `OAUTH_${service.toUpperCase().replace(/-/g, "_")}_CLIENT_`;
+export function oauthClient(env: Env, service: string, client?: string): { id: string; secret: string } | null {
   const vars = env as unknown as Record<string, unknown>;
-  const id = vars[`${prefix}ID`];
-  const secret = vars[`${prefix}SECRET`];
-  return typeof id === "string" && id && typeof secret === "string" && secret ? { id, secret } : null;
+  // The per-service names predate shared clients; they are read until deployments move over.
+  for (const name of client ? [client, service] : [service]) {
+    const prefix = `OAUTH_${name.toUpperCase().replace(/-/g, "_")}_CLIENT_`;
+    const id = vars[`${prefix}ID`];
+    const secret = vars[`${prefix}SECRET`];
+    if (typeof id === "string" && id && typeof secret === "string" && secret) return { id, secret };
+  }
+  return null;
 }
 
 export function splitList(value: string | undefined): string[] {

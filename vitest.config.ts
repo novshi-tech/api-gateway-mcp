@@ -6,21 +6,10 @@ import { defineConfig } from "vitest/config";
 import { experimental_readRawConfig } from "wrangler";
 
 const CONFIG = "./wrangler.example.jsonc";
-// The example's services, plus "board" for tests of a service that takes two
-// headers, one with a prefix. Board itself is no longer in the example.
+// Services beyond the built-in catalog: the example's own, plus an upstream that
+// trusts the gateway's sign-in (auth type "identity").
 const SERVICES = {
-  board: {
-    base_url: "https://api.the-board.jp",
-    auth: {
-      type: "headers",
-      headers: [
-        { name: "x-api-key", label: "API キー" },
-        { name: "authorization", label: "API トークン", prefix: "Bearer " },
-      ],
-    },
-  },
   ...(experimental_readRawConfig({ config: CONFIG }).rawConfig.vars?.SERVICES as object),
-  // An upstream that trusts the gateway's sign-in (auth type "identity").
   murmur: {
     display_name: "Murmur",
     base_url: "https://murmur.example/api",
@@ -72,7 +61,7 @@ const FREEE_ACCOUNTS = "https://accounts.secure.freee.co.jp";
 const FREEE = { tokenPath: "/public_api/token", client: { id: "freee-client", secret: "freee-secret" } };
 const ENTRA = "https://login.microsoftonline.com";
 const GRAPH = {
-  tokenPath: "/REPLACE_WITH_TENANT_ID/oauth2/v2.0/token",
+  tokenPath: "/tenant-1/oauth2/v2.0/token",
   client: { id: "graph-client", secret: "graph-secret" },
   requireScope: true,
 };
@@ -160,8 +149,11 @@ export default defineConfig({
           ALLOWED_TENANTS: "tenant-1",
           OAUTH_FREEE_CLIENT_ID: FREEE.client.id,
           OAUTH_FREEE_CLIENT_SECRET: FREEE.client.secret,
-          OAUTH_GRAPH_CLIENT_ID: GRAPH.client.id,
-          OAUTH_GRAPH_CLIENT_SECRET: GRAPH.client.secret,
+          MICROSOFT_TENANT_ID: "tenant-1",
+          OAUTH_MICROSOFT_CLIENT_ID: GRAPH.client.id,
+          OAUTH_MICROSOFT_CLIENT_SECRET: GRAPH.client.secret,
+          // Google services use the older per-service names here, with no OAUTH_GOOGLE_*,
+          // so Gmail, Drive and Calendar stay without a client.
           OAUTH_DOCS_CLIENT_ID: DOCS.client.id,
           OAUTH_DOCS_CLIENT_SECRET: DOCS.client.secret,
           OAUTH_ANALYTICS_CLIENT_ID: DOCS.client.id,
