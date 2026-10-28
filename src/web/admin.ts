@@ -207,7 +207,7 @@ ${!creating && html`<p class="hint">ベース URL のホスト、トークンの
 <label class="choice"><input type="radio" name="auth_type" value="oauth2"${form.auth_type === "oauth2" ? " checked" : ""}> OAuth 2.0(認可コード + PKCE)</label>
 </fieldset>
 <fieldset data-auth="headers"><legend>API キーの場合: 送るヘッダー</legend>
-<p class="hint">利用者が「画面での名前」の欄に値を入れ、ゲートウェイがこのヘッダーで送ります。使わない行は空のままにします。</p>
+<p class="hint">利用者が「画面での名前」の欄に値を入れ、ゲートウェイがこのヘッダーで送ります。使わない行は空のままにします。${!creating && "ヘッダー名を変えたり足したりすると、今ある接続には値がないので使えなくなります(元の名前に戻せば使えます)。"}</p>
 ${headerRows}
 </fieldset>
 <fieldset data-auth="oauth2"><legend>OAuth 2.0 の場合</legend>

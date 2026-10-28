@@ -66,6 +66,13 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
     if (result.error === "forbidden") return denied(403, `token does not cover service: ${service}`);
     if (result.error === "unconfigured") return denied(502, "the gateway has no identity signing key");
     if (result.error === "missing") return denied(403, "credential no longer exists");
+    if (result.error === "no_value") {
+      return denied(
+        502,
+        `credential has no value for header ${result.header}: the service's headers changed. ` +
+          `An admin can restore the header name, or the user can delete the credential and add it again at ${publicUrl(env)}/`,
+      );
+    }
     if (result.error === "reconnect") {
       return denied(403, `credential must be reconnected by the user at ${publicUrl(env)}/`);
     }
