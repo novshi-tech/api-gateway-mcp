@@ -1,6 +1,4 @@
-export function escape(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-}
+import { html, Html } from "./html";
 
 // Key tags on a steel key cabinet: quiet slate chrome, one colored tag per service.
 const STYLE = `
@@ -139,14 +137,14 @@ form { margin: 0; }
 }
 `;
 
-export function page(title: string, body: string, headers?: HeadersInit, status = 200): Response {
-  const html = `<!doctype html>
+export function page(title: string, body: Html, headers?: HeadersInit, status = 200): Response {
+  const document = html`<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escape(title)}</title>
-<style>${STYLE}</style>
+<title>${title}</title>
+<style>${new Html(STYLE)}</style>
 </head>
 <body>
 <main>
@@ -159,5 +157,5 @@ ${body}
   h.set("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https:; frame-ancestors 'none'");
   h.set("x-frame-options", "DENY");
   h.set("cache-control", "no-store");
-  return new Response(html, { status, headers: h });
+  return new Response(document.value, { status, headers: h });
 }

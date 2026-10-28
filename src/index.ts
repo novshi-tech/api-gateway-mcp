@@ -4,44 +4,56 @@ import { publicUrl } from "./config";
 import { jwks, JWKS_PATH } from "./identity";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
-import {
-  addCredential,
-  CONNECT_CALLBACK_PATH,
-  connectCallback,
-  connectStart,
-  deleteCredential,
-  home,
-  login,
-  LOGIN_CALLBACK_PATH,
-  loginCallback,
-  logout,
-} from "./ui";
+import { addCredential, CONNECT_CALLBACK_PATH, connectCallback, connectStart, deleteCredential, home } from "./web/connections";
+import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 
 export { UserVault } from "./vault";
 
 const DAY = 24 * 60 * 60;
 
+type RouteEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
+type Route = [
+  method: string,
+  path: string | RegExp,
+  handler: (request: Request, env: RouteEnv, params: string[]) => Response | Promise<Response>,
+];
+
+// Everything but the MCP endpoint and the token proxy. A RegExp path passes its groups as params.
+const ROUTES: Route[] = [
+  ["GET", JWKS_PATH, (_, env) => jwks(env)],
+  ["GET", "/authorize", authorizeGet],
+  ["POST", "/authorize", authorizePost],
+  ["GET", MCP_CALLBACK_PATH, authorizeCallback],
+  ["GET", "/", home],
+  ["GET", "/login", login],
+  ["GET", LOGIN_CALLBACK_PATH, loginCallback],
+  ["POST", "/logout", logout],
+  ["POST", "/credentials", addCredential],
+  ["POST", /^\/credentials\/([0-9a-f-]+)\/delete$/, (request, env, [id]) => deleteCredential(request, env, id)],
+  ["POST", "/connect", connectStart],
+  ["GET", CONNECT_CALLBACK_PATH, connectCallback],
+];
+
+function route(method: string, pathname: string): { route: Route; params: string[] } | null {
+  for (const r of ROUTES) {
+    if (r[0] !== method) continue;
+    if (typeof r[1] === "string") {
+      if (r[1] === pathname) return { route: r, params: [] };
+    } else {
+      const match = pathname.match(r[1]);
+      if (match) return { route: r, params: match.slice(1) };
+    }
+  }
+  return null;
+}
+
 const defaultHandler: ExportedHandler<Env> = {
   async fetch(request, env) {
-    const e = env as Env & { OAUTH_PROVIDER: OAuthHelpers };
     const { pathname } = new URL(request.url);
-    const method = request.method;
-
     if (pathname.startsWith(API_PREFIX)) return handleProxy(request, env);
-    if (pathname === JWKS_PATH && method === "GET") return jwks(env);
-    if (pathname === "/authorize" && method === "GET") return authorizeGet(request, e);
-    if (pathname === "/authorize" && method === "POST") return authorizePost(request, e);
-    if (pathname === MCP_CALLBACK_PATH && method === "GET") return authorizeCallback(request, e);
-    if (pathname === "/" && method === "GET") return home(request, env);
-    if (pathname === "/login" && method === "GET") return login(request, env);
-    if (pathname === LOGIN_CALLBACK_PATH && method === "GET") return loginCallback(request, env);
-    if (pathname === "/logout" && method === "POST") return logout(request, env);
-    if (pathname === "/credentials" && method === "POST") return addCredential(request, env);
-    if (pathname === "/connect" && method === "POST") return connectStart(request, env);
-    if (pathname === CONNECT_CALLBACK_PATH && method === "GET") return connectCallback(request, env);
-    const del = pathname.match(/^\/credentials\/([0-9a-f-]+)\/delete$/);
-    if (del && method === "POST") return deleteCredential(request, env, del[1]);
-    return new Response("not found", { status: 404 });
+    const found = route(request.method, pathname);
+    if (!found) return new Response("not found", { status: 404 });
+    return found.route[2](request, env as RouteEnv, found.params);
   },
 };
 

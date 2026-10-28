@@ -3,6 +3,7 @@ import { parseServices } from "../src/config";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
 import { signToken, verifyToken } from "../src/tokens";
+import { html, Html } from "../src/web/html";
 
 const SECRET = "unit-test-signing-key-unit-test-signing-key";
 const ISSUER = "https://gw.example.com";
@@ -113,5 +114,20 @@ describe("admit", () => {
     expect(() => admit({ ...google, ALLOWED_DOMAINS: "" } as Env, { sub: "g1", hd: "x.com", email_verified: true })).toThrow(
       SignInError,
     );
+  });
+});
+
+describe("html", () => {
+  it("escapes interpolated strings but not nested html", () => {
+    const inner = html`<b>${"<i>"}</b>`;
+    expect(html`<p title="${`"q"`}">${inner}</p>`.value).toBe('<p title="&#34;q&#34;"><b>&#60;i&#62;</b></p>');
+  });
+
+  it("joins arrays and drops null, undefined and false", () => {
+    expect(html`${["a", html`<br>`, "&"]}|${null}${undefined}${false}|${0}`.value).toBe("a\n<br>\n&#38;||0");
+  });
+
+  it("passes Html built on purpose through unchanged", () => {
+    expect(html`${new Html("<style>a > b {}</style>")}`.value).toBe("<style>a > b {}</style>");
   });
 });

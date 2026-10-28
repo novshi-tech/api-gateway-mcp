@@ -351,6 +351,13 @@ describe("web ui", () => {
     expect(page).toContain("Microsoft Graph");
   });
 
+  it("escapes what the user typed when showing it back", async () => {
+    await addBoard(carol, `<script>alert("x")</script>`);
+    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    expect(page).not.toContain("<script>");
+    expect(page).toContain("&#60;script&#62;alert(&#34;x&#34;)&#60;/script&#62;");
+  });
+
   it("signs out without starting a new sign-in", async () => {
     const res = await SELF.fetch(`${BASE}/logout`, {
       method: "POST",
