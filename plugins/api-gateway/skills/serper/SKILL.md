@@ -11,10 +11,10 @@ Serper は Google の検索結果を JSON で返す API。トークンの発行�
 
 1. `api-gateway` スキルの手順で、サービス `serper` の認証情報を選んでトークンを発行し、`GW_TOKEN` と `GW_BASE_URL` を設定する。
    - 認証情報は Serper の API キー。ユーザーが serper.dev のダッシュボードで発行し、ゲートウェイの画面で登録する。
-2. `api-gateway` スキルの `gw_request.py` で、**POST** で呼び出す。検索条件は JSON の本文で渡す。
+2. このスキルの `scripts/gw_request.py`(共通の `api-gateway` スキルと同じもの) で、**POST** で呼び出す。検索条件は JSON の本文で渡す。
 
 ```sh
-GW=$(ls ${CLAUDE_SKILL_DIR}/../*api-gateway/scripts/gw_request.py)
+GW="${CLAUDE_SKILL_DIR}/scripts/gw_request.py"
 python3 $GW POST serper /search --json '{"q": "api gateway mcp", "gl": "jp", "hl": "ja", "num": 10}'
 python3 $GW POST serper /news --json '{"q": "Cloudflare Workers", "gl": "jp", "hl": "ja", "tbs": "qdr:w"}'
 ```

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Packages a plugin under plugins/ as a zip for uploading to Claude.
 
-Usage: tools/build-plugin-zip.py [plugin-name]   (default: api-gateway)
-Writes dist/<plugin-name>-<version>.zip.
+Usage: tools/build-plugin-zip.py [plugin-name ...]   (default: every plugin)
+Writes dist/<plugin-name>-<version>.zip for each.
 """
 import json
 import os
@@ -13,8 +13,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main():
-    name = sys.argv[1] if len(sys.argv) > 1 else "api-gateway"
     plugins = os.path.join(ROOT, "plugins")
+    for name in sys.argv[1:] or sorted(os.listdir(plugins)):
+        build(plugins, name)
+
+
+def build(plugins, name):
     manifest = os.path.join(plugins, name, ".claude-plugin", "plugin.json")
     with open(manifest, encoding="utf-8") as f:
         version = json.load(f)["version"]

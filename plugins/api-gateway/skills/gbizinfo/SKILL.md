@@ -12,10 +12,10 @@ gBizINFO の REST API(v2)を、API ゲートウェイ経由で呼び出す。ト
 1. `api-gateway` スキルの手順で、サービス `gbizinfo` の認証情報を選んでトークンを発行し、`GW_TOKEN` と `GW_BASE_URL` を設定する。
    - 認証情報は gBizINFO の API トークン。ユーザーが gBizINFO の Web API 利用申請で取得し、ゲートウェイの画面で登録する。公式の仕様書にある動作確認用のトークンは、仕様書のページでの確認専用なので使わない。
 2. エンドポイントと検索条件を [references/endpoints.md](references/endpoints.md) で確かめる。
-3. `api-gateway` スキルの `gw_request.py` で呼び出す。パスは `/hojin/v2/...` で始まる。
+3. このスキルの `scripts/gw_request.py`(共通の `api-gateway` スキルと同じもの) で呼び出す。パスは `/hojin/v2/...` で始まる。
 
 ```sh
-GW=$(ls ${CLAUDE_SKILL_DIR}/../*api-gateway/scripts/gw_request.py)
+GW="${CLAUDE_SKILL_DIR}/scripts/gw_request.py"
 python3 $GW GET gbizinfo /hojin/v2/hojin -q name=ノヴシ -q limit=10
 python3 $GW GET gbizinfo /hojin/v2/hojin/1234567890123
 python3 $GW GET gbizinfo /hojin/v2/hojin/1234567890123/finance
