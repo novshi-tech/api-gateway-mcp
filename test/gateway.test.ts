@@ -459,7 +459,7 @@ describe("web ui", () => {
 
   it("shows the user ID for the admin setting", async () => {
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
-    expect(page).toContain(`<code>${carol}</code>`);
+    expect(page).toMatch(new RegExp(`<details class="account"><summary>アカウントの情報</summary><p>ユーザー ID: <code>${carol}</code>`));
   });
 
   it("asks to delete and add again when an API key no longer fits its service", async () => {
