@@ -6,10 +6,14 @@ import { defineConfig } from "vitest/config";
 import { experimental_readRawConfig } from "wrangler";
 
 const CONFIG = "./wrangler.example.jsonc";
-// Services beyond the built-in catalog: the example's own, plus an upstream that
-// trusts the gateway's sign-in (auth type "identity").
+// Services beyond the built-in catalog: the example's own, an OAuth service whose
+// client is never configured, and an upstream that trusts the gateway's sign-in.
 const SERVICES = {
   ...(experimental_readRawConfig({ config: CONFIG }).rawConfig.vars?.SERVICES as object),
+  unclient: {
+    base_url: "https://api.unclient.example",
+    auth: { type: "oauth2", authorization_url: "https://unclient.example/authorize", token_url: "https://unclient.example/token" },
+  },
   murmur: {
     display_name: "Murmur",
     base_url: "https://murmur.example/api",
@@ -153,14 +157,8 @@ export default defineConfig({
           MICROSOFT_TENANT_ID: "tenant-1",
           OAUTH_MICROSOFT_CLIENT_ID: GRAPH.client.id,
           OAUTH_MICROSOFT_CLIENT_SECRET: GRAPH.client.secret,
-          // Google services use the older per-service names here, with no OAUTH_GOOGLE_*,
-          // so Gmail, Drive and Calendar stay without a client.
-          OAUTH_DOCS_CLIENT_ID: DOCS.client.id,
-          OAUTH_DOCS_CLIENT_SECRET: DOCS.client.secret,
-          OAUTH_ANALYTICS_CLIENT_ID: DOCS.client.id,
-          OAUTH_ANALYTICS_CLIENT_SECRET: DOCS.client.secret,
-          OAUTH_ANALYTICS_ADMIN_CLIENT_ID: DOCS.client.id,
-          OAUTH_ANALYTICS_ADMIN_CLIENT_SECRET: DOCS.client.secret,
+          OAUTH_GOOGLE_CLIENT_ID: DOCS.client.id,
+          OAUTH_GOOGLE_CLIENT_SECRET: DOCS.client.secret,
         },
         outboundService: upstream,
       },

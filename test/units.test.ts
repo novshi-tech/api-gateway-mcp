@@ -142,17 +142,17 @@ describe("oauthClient", () => {
     OAUTH_GOOGLE_CLIENT_SECRET: "shared-secret",
     OAUTH_GMAIL_CLIENT_ID: "old",
     OAUTH_GMAIL_CLIENT_SECRET: "old-secret",
-    OAUTH_ANALYTICS_ADMIN_CLIENT_ID: "admin",
-    OAUTH_ANALYTICS_ADMIN_CLIENT_SECRET: "admin-secret",
+    OAUTH_MY_API_CLIENT_ID: "mine",
+    OAUTH_MY_API_CLIENT_SECRET: "mine-secret",
   } as unknown as Env;
 
-  it("prefers the shared client over the per-service names", () => {
+  it("reads the client the service names, ignoring per-service names", () => {
     expect(oauthClient(env, "gmail", "google")).toEqual({ id: "shared", secret: "shared-secret" });
+    expect(oauthClient({ ...env, OAUTH_GOOGLE_CLIENT_SECRET: "" } as Env, "gmail", "google")).toBeNull();
   });
 
-  it("falls back to the per-service names, then to nothing", () => {
-    expect(oauthClient({ ...env, OAUTH_GOOGLE_CLIENT_SECRET: "" } as Env, "gmail", "google")).toEqual({ id: "old", secret: "old-secret" });
-    expect(oauthClient(env, "analytics-admin")).toEqual({ id: "admin", secret: "admin-secret" });
+  it("uses the service name when no client is named", () => {
+    expect(oauthClient(env, "my-api")).toEqual({ id: "mine", secret: "mine-secret" });
     expect(oauthClient(env, "freee", "freee")).toBeNull();
   });
 });

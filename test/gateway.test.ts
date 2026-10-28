@@ -284,8 +284,8 @@ describe("mcp tools", () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
-    // Gmail, Drive and Calendar have no OAuth client in the tests, so they are not offered.
-    expect(listed.services).toEqual(["freee", "docs", "analytics", "analytics-admin", "board", "gbizinfo", "serper", "graph", "murmur"]);
+    // "unclient" has no OAuth client in the tests, so it is not offered.
+    expect(listed.services).toEqual(["freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "board", "gbizinfo", "serper", "graph", "murmur"]);
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },
@@ -412,7 +412,8 @@ describe("web ui", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(page).toContain(`href="/connections/new/docs"`);
     expect(page).toContain(`href="/connections/new/board"`);
-    expect(page).not.toContain(`href="/connections/new/gmail"`);
+    expect(page).toContain(`href="/connections/new/gmail"`);
+    expect(page).not.toContain(`href="/connections/new/unclient"`);
     expect(page).not.toContain(`href="/connections/new/murmur"`);
     expect(page).toContain(`<script src="/assets/app.js" defer></script>`);
   });
@@ -426,7 +427,7 @@ describe("web ui", () => {
     expect(form).toContain(`name="h:x-api-key"`);
     expect(await (await SELF.fetch(`${BASE}/connections/new/freee`, { headers: { cookie } })).text()).toContain(`action="/connect"`);
     expect((await SELF.fetch(`${BASE}/connections/new/murmur`, { headers: { cookie } })).status).toBe(404);
-    expect((await SELF.fetch(`${BASE}/connections/new/gmail`, { headers: { cookie } })).status).toBe(404);
+    expect((await SELF.fetch(`${BASE}/connections/new/unclient`, { headers: { cookie } })).status).toBe(404);
     expect((await SELF.fetch(`${BASE}/connections/new/constructor`, { headers: { cookie } })).status).toBe(404);
   });
 

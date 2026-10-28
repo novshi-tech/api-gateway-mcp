@@ -116,7 +116,7 @@ npx wrangler secret put OAUTH_<CLIENT>_CLIENT_ID
 npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 ```
 
-クライアントが登録されていない OAuth のサービスは、Web 画面にも `list_credentials` にも出ません。以前のサービスごとの名前(`OAUTH_GMAIL_CLIENT_ID` など)も、移行のあいだは読みます。
+クライアントが登録されていない OAuth のサービスは、Web 画面にも `list_credentials` にも出ません。以前のサービスごとの名前(`OAUTH_GMAIL_CLIENT_ID` など)は読まなくなったので、古いデプロイでは `OAUTH_GOOGLE_*` / `OAUTH_MICROSOFT_*` を登録し直してください。
 
 アクセストークンは、期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、Web 画面に「再接続」が出ます。
 

@@ -55,7 +55,7 @@
   - Google 系の 6 件は 1 組のクライアントを共有する。いまは同じ値のシークレットを 12 個登録している。
   - Microsoft Graph のテナント ID は、URL に直接書かずに変数(`MICROSOFT_TENANT_ID`)から組み立てる。
 - カタログのクライアントは、これまでどおり `wrangler secret` で入れる: `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET`(例: `OAUTH_GOOGLE_CLIENT_ID`)。
-- 移行のあいだは、接続先ごとの古い名前(`OAUTH_GMAIL_CLIENT_ID` など)も読む。自社の移行が終わったら消す。
+- 移行のあいだは、接続先ごとの古い名前(`OAUTH_GMAIL_CLIENT_ID` など)も読んでいた。自社の移行が済んだので、読むのをやめた。
 - 管理画面で登録した OAuth の接続先のクライアントは、接続先ごとに 1 つ、その接続先の画面で入れる。`Registry` に `ENCRYPTION_KEY` で暗号化して保管する。シークレットは画面に二度と表示しない。
 
 ## 認証情報と向き先の結び付け
