@@ -24,6 +24,8 @@
     // Comma-separated. Entra: tenant IDs. Google: Workspace domains (required).
     "ALLOWED_TENANTS": "",
     "ALLOWED_DOMAINS": "",
+    // Comma-separated user IDs (shown on the web UI's home page) who may manage services.
+    "ADMINS": "",
     // Entra tenant ID for Microsoft Graph. Graph is offered only when this is set.
     "MICROSOFT_TENANT_ID": "",
     // Built-in services (src/catalog.ts): freee, Microsoft Graph, Gmail, Google Drive,

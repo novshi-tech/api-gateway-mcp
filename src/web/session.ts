@@ -1,4 +1,4 @@
-import { publicUrl } from "../config";
+import { publicUrl, splitList } from "../config";
 import { randomToken, s256 } from "../crypto";
 import { authorizationUrl, SignInError, signIn } from "../idp";
 import { signToken, verifyToken } from "../tokens";
@@ -32,6 +32,11 @@ export function cookie(name: string, value: string, maxAge: number): string {
 export function redirect(location: string, headers = new Headers()): Response {
   headers.set("location", location);
   return new Response(null, { status: 303, headers });
+}
+
+// Admins are listed by user ID in ADMINS; an email address can change or be reused.
+export function isAdmin(env: Env, user: Session): boolean {
+  return splitList(env.ADMINS).includes(user.sub);
 }
 
 export async function session(request: Request, env: Env): Promise<Session | null> {
