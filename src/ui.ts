@@ -1,6 +1,7 @@
-import { oauthClient, parseServices, publicUrl, type Services } from "./config";
+import { publicUrl, type Services } from "./config";
 import { randomToken, s256 } from "./crypto";
 import { escape, page } from "./html";
+import { getServices, getUpstream } from "./services";
 import { authorizationUrl, SignInError, signIn } from "./idp";
 import { signToken, verifyToken } from "./tokens";
 import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "./upstream-oauth";
@@ -177,7 +178,7 @@ ${auth.headers
 export async function home(request: Request, env: Env): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
-  const services = parseServices(env.SERVICES);
+  const services = await getServices(env);
   const credentials = await vaultFor(env, user.sub).list();
   return page(
     "API ゲートウェイ",
@@ -200,7 +201,10 @@ export async function addCredential(request: Request, env: Env): Promise<Respons
   for (const [key, value] of form) {
     if (key.startsWith("h:") && typeof value === "string") secrets[key.slice(2)] = value;
   }
-  const result = await vaultFor(env, user.sub).add(String(form.get("service") ?? ""), String(form.get("label") ?? ""), secrets);
+  const service = String(form.get("service") ?? "");
+  const upstream = await getUpstream(env, service);
+  if (!upstream) return errorPage("保存できませんでした", `unknown service: ${service}`, 400);
+  const result = await vaultFor(env, user.sub).add(upstream, String(form.get("label") ?? ""), secrets);
   if ("error" in result) {
     return errorPage("保存できませんでした", result.error, 400);
   }
@@ -233,9 +237,10 @@ export async function connectStart(request: Request, env: Env): Promise<Response
   if (!user) return redirect("/login");
   const form = await request.formData();
   const service = String(form.get("service") ?? "");
-  const config = parseServices(env.SERVICES)[service];
-  if (config?.auth.type !== "oauth2") return errorPage("つなげませんでした", `このサービスはサインインでつなぐ方式ではありません: ${service}`, 400);
-  const client = oauthClient(env, service);
+  const upstream = await getUpstream(env, service);
+  const auth = upstream?.config.auth;
+  if (!upstream || auth?.type !== "oauth2") return errorPage("つなげませんでした", `このサービスはサインインでつなぐ方式ではありません: ${service}`, 400);
+  const { config, client } = upstream;
   if (!client) return errorPage("つなげませんでした", `${config.display_name} につなぐための設定がまだありません。管理者に連絡してください。`, 500);
   const credential = String(form.get("credential") ?? "") || undefined;
   if (credential && (await vaultFor(env, user.sub).get(credential))?.service !== service) {
@@ -246,7 +251,7 @@ export async function connectStart(request: Request, env: Env): Promise<Response
   const verifier = randomToken();
   const pending: PendingConnect = { verifier, user: user.sub, service, label: String(form.get("label") ?? ""), credential };
   const { token } = await signToken(env.SIGNING_KEY, publicUrl(env), "connect", state, { ...pending }, LOGIN_TTL_SECONDS);
-  const location = upstreamAuthorizationUrl(config.auth, client, {
+  const location = upstreamAuthorizationUrl(auth, client, {
     redirectUri: `${publicUrl(env)}${CONNECT_CALLBACK_PATH}`,
     state,
     codeChallenge: await s256(verifier),
@@ -265,11 +270,12 @@ export async function connectCallback(request: Request, env: Env): Promise<Respo
     return errorPage("つなげませんでした", "時間がたちすぎたか、別のタブで操作した可能性があります。一覧からもう一度つないでください。", 400);
   }
   const code = params.get("code");
-  const config = parseServices(env.SERVICES)[pending.service];
+  const upstream = await getUpstream(env, pending.service);
+  const config = upstream?.config;
   const displayName = config?.display_name ?? pending.service;
   if (!code) return errorPage("つなげませんでした", `${displayName} で許可されませんでした。つなぐ場合は、もう一度やり直して許可してください。`, 400);
-  const client = oauthClient(env, pending.service);
-  if (config?.auth.type !== "oauth2" || !client) return errorPage("つなげませんでした", `${displayName} の設定が変わりました。管理者に連絡してください。`, 500);
+  const client = upstream?.client;
+  if (!upstream || config?.auth.type !== "oauth2" || !client) return errorPage("つなげませんでした", `${displayName} の設定が変わりました。管理者に連絡してください。`, 500);
 
   try {
     const tokens = await exchangeCode(config.auth, client, {
@@ -277,7 +283,7 @@ export async function connectCallback(request: Request, env: Env): Promise<Respo
       verifier: pending.verifier,
       redirectUri: `${publicUrl(env)}${CONNECT_CALLBACK_PATH}`,
     });
-    const result = await vaultFor(env, user.sub).addOAuth(pending.service, pending.label, tokens, pending.credential);
+    const result = await vaultFor(env, user.sub).addOAuth(upstream, pending.label, tokens, pending.credential);
     if ("error" in result) return errorPage("つなげませんでした", result.error, 400);
   } catch (error) {
     if (!(error instanceof UpstreamOAuthError)) throw error;

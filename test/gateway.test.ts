@@ -6,8 +6,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { handleProxy } from "../src/proxy";
 import { publicUrl } from "../src/config";
 import { buildServer } from "../src/mcp";
+import { getUpstream } from "../src/services";
 import { signToken, verifyToken } from "../src/tokens";
 import { vaultFor } from "../src/vault";
+import { upstream } from "./helpers";
 
 const BASE = publicUrl(env);
 const BOARD = { "x-api-key": "the-key", authorization: "board-token" };
@@ -19,7 +21,7 @@ beforeEach(() => {
 });
 
 async function addBoard(userId: string, label = "main") {
-  const result = await vaultFor(env, userId).add("board", label, BOARD);
+  const result = await vaultFor(env, userId).add(await upstream("board"), label, BOARD);
   if ("error" in result) throw new Error(result.error);
   return result;
 }
@@ -33,13 +35,15 @@ describe("vault", () => {
     const cred = await addBoard(alice);
     expect(await vaultFor(env, alice).list()).toEqual([expect.objectContaining({ id: cred.id, service: "board", label: "main" })]);
     expect(await vaultFor(env, bob).list()).toEqual([]);
-    expect(await vaultFor(env, alice).headers(cred.id)).toEqual({ headers: { "x-api-key": "the-key", authorization: "Bearer board-token" } });
-    expect(await vaultFor(env, bob).headers(cred.id)).toEqual({ error: "missing" });
+    expect(await vaultFor(env, alice).headers(cred.id, await upstream("board"))).toEqual({ headers: { "x-api-key": "the-key", authorization: "Bearer board-token" } });
+    expect(await vaultFor(env, bob).headers(cred.id, await upstream("board"))).toEqual({ error: "missing" });
+    expect(await vaultFor(env, alice).headers(cred.id, await upstream("serper"))).toEqual({ error: "missing" });
   });
 
   it("rejects unknown services and missing fields", async () => {
-    expect(await vaultFor(env, alice).add("nope", "", {})).toEqual({ error: "unknown service: nope" });
-    expect(await vaultFor(env, alice).add("board", "", { "x-api-key": "k" })).toEqual({ error: "missing value for authorization" });
+    expect(await getUpstream(env, "nope")).toBeNull();
+    expect(await getUpstream(env, "constructor")).toBeNull();
+    expect(await vaultFor(env, alice).add(await upstream("board"), "", { "x-api-key": "k" })).toEqual({ error: "missing value for authorization" });
   });
 
   it("removes credentials", async () => {
@@ -51,7 +55,7 @@ describe("vault", () => {
 
 describe("proxy", () => {
   it("sends the gBizINFO API token in its own header", async () => {
-    const cred = await vaultFor(env, alice).add("gbizinfo", "main", { "x-hojininfo-api-token": "gbiz-token" });
+    const cred = await vaultFor(env, alice).add(await upstream("gbizinfo"), "main", { "x-hojininfo-api-token": "gbiz-token" });
     expect("error" in cred).toBe(false);
     const id = (cred as { id: string }).id;
     const res = await SELF.fetch(`${BASE}/api/gbizinfo/hojin/v2/hojin?name=%E3%83%86%E3%82%B9%E3%83%88`, {
@@ -65,7 +69,7 @@ describe("proxy", () => {
   });
 
   it("sends the Serper API key in its own header", async () => {
-    const cred = await vaultFor(env, alice).add("serper", "main", { "x-api-key": "serper-key" });
+    const cred = await vaultFor(env, alice).add(await upstream("serper"), "main", { "x-api-key": "serper-key" });
     expect("error" in cred).toBe(false);
     const id = (cred as { id: string }).id;
     const res = await SELF.fetch(`${BASE}/api/serper/search`, {
@@ -218,7 +222,7 @@ describe("identity upstreams", () => {
   });
 
   it("does not store credentials for identity services", async () => {
-    expect(await vaultFor(env, alice).add("murmur", "", {})).toEqual({ error: "murmur needs no credential" });
+    expect(await vaultFor(env, alice).add(await upstream("murmur"), "", {})).toEqual({ error: "murmur needs no credential" });
   });
 });
 
@@ -339,7 +343,7 @@ describe("web ui", () => {
     expect(res.status).toBe(303);
     const [cred] = await vaultFor(env, carol).list();
     expect(cred).toMatchObject({ service: "board", label: "form" });
-    expect(await vaultFor(env, carol).headers(cred.id)).toEqual({ headers: { "x-api-key": "k", authorization: "Bearer t" } });
+    expect(await vaultFor(env, carol).headers(cred.id, await upstream("board"))).toEqual({ headers: { "x-api-key": "k", authorization: "Bearer t" } });
 
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
     expect(page).toContain(cred.id);

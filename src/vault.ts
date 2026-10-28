@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
-import { oauthClient, parseServices, type OAuth2Auth } from "./config";
 import { decryptJson, encryptJson, importAesKey } from "./crypto";
+import type { Upstream } from "./services";
 import { refreshTokens, UpstreamOAuthError, type TokenSet } from "./upstream-oauth";
 
 export interface CredentialInfo {
@@ -30,6 +30,7 @@ function info({ id, service, label, createdAt, needsReconnect }: StoredCredentia
 
 // One vault per user. A Durable Object runs one request at a time, but another
 // can start while one awaits a fetch, so refreshes are shared per credential.
+// The caller resolves the service and passes it in; the vault reads no service definitions.
 export class UserVault extends DurableObject<Env> {
   private keyPromise?: Promise<CryptoKey>;
   private refreshing = new Map<string, Promise<HeadersResult>>();
@@ -55,9 +56,7 @@ export class UserVault extends DurableObject<Env> {
     return stored ? info(stored) : null;
   }
 
-  async add(service: string, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
-    const config = parseServices(this.env.SERVICES)[service];
-    if (!config) return { error: `unknown service: ${service}` };
+  async add({ service, config }: Upstream, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
     if (config.auth.type === "identity") return { error: `${service} needs no credential` };
     if (config.auth.type !== "headers") return { error: `${service} is connected with OAuth` };
     const values: HeaderSecrets = {};
@@ -75,13 +74,12 @@ export class UserVault extends DurableObject<Env> {
 
   // Stores tokens from an OAuth connection; with `replaceId`, reconnects that credential.
   async addOAuth(
-    service: string,
+    { service, config }: Upstream,
     label: string,
     tokens: TokenSet,
     replaceId?: string,
   ): Promise<CredentialInfo | { error: string }> {
-    const config = parseServices(this.env.SERVICES)[service];
-    if (config?.auth.type !== "oauth2") return { error: `${service} is not an OAuth service` };
+    if (config.auth.type !== "oauth2") return { error: `${service} is not an OAuth service` };
     let record: CredentialInfo;
     if (replaceId) {
       const existing = await this.ctx.storage.get<StoredCredential>(`cred:${replaceId}`);
@@ -99,13 +97,12 @@ export class UserVault extends DurableObject<Env> {
     return this.ctx.storage.delete(`cred:${id}`);
   }
 
-  // Returns the headers to inject into an upstream request.
-  async headers(id: string): Promise<HeadersResult> {
+  // Returns the headers to inject into an upstream request for `upstream`.
+  async headers(id: string, upstream: Upstream): Promise<HeadersResult> {
     const stored = await this.ctx.storage.get<StoredCredential>(`cred:${id}`);
-    if (!stored) return { error: "missing" };
-    const config = parseServices(this.env.SERVICES)[stored.service];
-    if (!config) return { error: "missing" };
-    if (config.auth.type === "oauth2") return this.oauthHeaders(id, stored);
+    if (!stored || stored.service !== upstream.service) return { error: "missing" };
+    const config = upstream.config;
+    if (config.auth.type === "oauth2") return this.oauthHeaders(id, stored, upstream);
     if (config.auth.type !== "headers") return { error: "missing" };
     const values = await decryptJson<HeaderSecrets>(await this.key(), stored.sealed, this.aad(id));
     const headers: Record<string, string> = {};
@@ -116,7 +113,7 @@ export class UserVault extends DurableObject<Env> {
     return { headers };
   }
 
-  private async oauthHeaders(id: string, stored: StoredCredential): Promise<HeadersResult> {
+  private async oauthHeaders(id: string, stored: StoredCredential, upstream: Upstream): Promise<HeadersResult> {
     if (stored.needsReconnect) return { error: "reconnect" };
     const tokens = await decryptJson<TokenSet>(await this.key(), stored.sealed, this.aad(id));
     if (tokens.expires_at === undefined || tokens.expires_at - REFRESH_MARGIN_MS > Date.now()) {
@@ -124,19 +121,17 @@ export class UserVault extends DurableObject<Env> {
     }
     let pending = this.refreshing.get(id);
     if (!pending) {
-      pending = this.refresh(id, stored, tokens).finally(() => this.refreshing.delete(id));
+      pending = this.refresh(id, stored, tokens, upstream).finally(() => this.refreshing.delete(id));
       this.refreshing.set(id, pending);
     }
     return pending;
   }
 
-  private async refresh(id: string, stored: StoredCredential, tokens: TokenSet): Promise<HeadersResult> {
-    const config = parseServices(this.env.SERVICES)[stored.service];
-    const client = oauthClient(this.env, stored.service);
-    if (!client) return { error: "unavailable" };
+  private async refresh(id: string, stored: StoredCredential, tokens: TokenSet, { config, client }: Upstream): Promise<HeadersResult> {
+    if (config.auth.type !== "oauth2" || !client) return { error: "unavailable" };
     let next: TokenSet;
     try {
-      next = await refreshTokens(config.auth as OAuth2Auth, client, tokens);
+      next = await refreshTokens(config.auth, client, tokens);
     } catch (error) {
       if (!(error instanceof UpstreamOAuthError)) throw error;
       console.warn(JSON.stringify({ type: "refresh_failed", credential: id, reason: error.message }));

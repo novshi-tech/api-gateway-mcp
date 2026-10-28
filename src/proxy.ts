@@ -1,5 +1,6 @@
-import { parseServices, publicUrl, type ServiceConfig } from "./config";
+import { publicUrl, type ServiceConfig } from "./config";
 import { IDENTITY_CREDENTIAL, signIdentity } from "./identity";
+import { getUpstream } from "./services";
 import { bearer, verifyToken, type GatewayClaims } from "./tokens";
 import { vaultFor } from "./vault";
 
@@ -51,15 +52,16 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   const claims = await verifyToken<GatewayClaims>(env.SIGNING_KEY, publicUrl(env), "api", token);
   if (!claims) return denied(401, "invalid or expired gateway token");
 
-  const config = parseServices(env.SERVICES)[service];
-  if (!config) return denied(404, `unknown service: ${service}`);
+  const target = await getUpstream(env, service);
+  if (!target) return denied(404, `unknown service: ${service}`);
+  const config = target.config;
   const credentialId = claims.creds?.[service];
   if (!credentialId) return denied(403, `token does not cover service: ${service}`);
 
   const result =
     config.auth.type === "identity"
       ? await identityHeaders(env, claims.sub, credentialId, config.auth.audience)
-      : await vaultFor(env, claims.sub).headers(credentialId);
+      : await vaultFor(env, claims.sub).headers(credentialId, target);
   if ("error" in result) {
     if (result.error === "forbidden") return denied(403, `token does not cover service: ${service}`);
     if (result.error === "unconfigured") return denied(502, "the gateway has no identity signing key");

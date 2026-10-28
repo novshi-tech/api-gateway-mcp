@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import { parseServices, publicUrl } from "./config";
+import { publicUrl } from "./config";
 import { IDENTITY_CREDENTIAL, identityCredentialId, serviceOfIdentityCredential } from "./identity";
+import { getServices } from "./services";
 import { GATEWAY_TOKEN_TTL_SECONDS, signToken } from "./tokens";
 import { vaultFor } from "./vault";
 
@@ -36,7 +37,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
-      const config = parseServices(env.SERVICES);
+      const config = await getServices(env);
       const identity = Object.entries(config)
         .filter(([, c]) => c.auth.type === "identity")
         .map(([service, c]) => ({ id: identityCredentialId(service), service, label: `${c.display_name}(サインイン中のユーザー)` }));
@@ -63,11 +64,11 @@ export function buildServer(env: Env, props: McpProps): McpServer {
     },
     async ({ credential_ids }) => {
       const creds: Record<string, string> = {};
-      const services = parseServices(env.SERVICES);
+      const services = await getServices(env);
       for (const id of new Set(credential_ids)) {
         const identityService = serviceOfIdentityCredential(id);
         if (identityService !== null) {
-          if (services[identityService]?.auth.type !== "identity") return error(`unknown credential: ${id}`);
+          if (!Object.hasOwn(services, identityService) || services[identityService].auth.type !== "identity") return error(`unknown credential: ${id}`);
           if (creds[identityService]) return error(`more than one credential for service: ${identityService}`);
           creds[identityService] = IDENTITY_CREDENTIAL;
           continue;

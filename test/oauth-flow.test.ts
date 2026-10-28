@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { publicUrl } from "../src/config";
 import { s256 } from "../src/crypto";
 import { vaultFor } from "../src/vault";
+import { upstream } from "./helpers";
 
 const BASE = publicUrl(env);
 const REDIRECT_URI = "https://client.test/callback";
@@ -133,7 +134,7 @@ describe("MCP authorization flow", () => {
     expect(token.body.refresh_token).toBeTruthy();
 
     const userId = `entra_tenant-1_${oid}`;
-    const added = await vaultFor(env, userId).add("board", "main", { "x-api-key": "k", authorization: "t" });
+    const added = await vaultFor(env, userId).add(await upstream("board"), "main", { "x-api-key": "k", authorization: "t" });
     const listed = await callTool(token.body.access_token, "list_credentials");
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: (added as { id: string }).id }),
