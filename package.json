@@ -5,8 +5,10 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "wrangler dev -c wrangler.example.jsonc",
+    "deploy": "node tools/wrangler.mjs deploy",
+    "secret": "node tools/wrangler.mjs secret",
+    "tail": "node tools/wrangler.mjs tail",
     "typecheck": "tsc --noEmit",
     "test": "vitest run && python3 -m unittest discover -s test/scripts",
     "cf-typegen": "wrangler types -c wrangler.example.jsonc",
