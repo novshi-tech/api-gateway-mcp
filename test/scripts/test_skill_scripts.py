@@ -3,6 +3,7 @@
 Run: python3 -m unittest discover -s test/scripts
 """
 import csv
+import glob
 import base64
 from email import policy
 from email.parser import BytesParser
@@ -20,15 +21,16 @@ import unittest
 import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SKILLS = os.path.join(ROOT, "plugins", "api-gateway", "skills")
-GW_REQUEST = os.path.join(SKILLS, "api-gateway", "scripts", "gw_request.py")
-GRAPH_ALL = os.path.join(SKILLS, "microsoft-graph", "scripts", "graph_all.py")
-FREEE_ALL = os.path.join(SKILLS, "freee", "scripts", "freee_all.py")
-GMAIL_ALL = os.path.join(SKILLS, "gmail", "scripts", "gmail_all.py")
-GMAIL_MIME = os.path.join(SKILLS, "gmail", "scripts", "gmail_mime.py")
-DRIVE_ALL = os.path.join(SKILLS, "google-drive", "scripts", "drive_all.py")
-CALENDAR_ALL = os.path.join(SKILLS, "google-calendar", "scripts", "calendar_all.py")
-DOCS_TEXT = os.path.join(SKILLS, "google-docs", "scripts", "docs_text.py")
+# Every skill of every plugin, by skill name.
+SKILLS = {os.path.basename(p): p for p in sorted(glob.glob(os.path.join(ROOT, "plugins", "*", "skills", "*")))}
+GW_REQUEST = os.path.join(SKILLS["api-gateway"], "scripts", "gw_request.py")
+GRAPH_ALL = os.path.join(SKILLS["microsoft-graph"], "scripts", "graph_all.py")
+FREEE_ALL = os.path.join(SKILLS["freee"], "scripts", "freee_all.py")
+GMAIL_ALL = os.path.join(SKILLS["gmail"], "scripts", "gmail_all.py")
+GMAIL_MIME = os.path.join(SKILLS["gmail"], "scripts", "gmail_mime.py")
+DRIVE_ALL = os.path.join(SKILLS["google-drive"], "scripts", "drive_all.py")
+CALENDAR_ALL = os.path.join(SKILLS["google-calendar"], "scripts", "calendar_all.py")
+DOCS_TEXT = os.path.join(SKILLS["google-docs"], "scripts", "docs_text.py")
 
 TOTAL_ITEMS = 250
 
@@ -428,11 +430,9 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--in-reply-to", result.stderr.decode())
 
-    def test_scripts_find_gwlib_when_skill_dirs_are_prefixed_with_the_plugin_name(self):
-        # Cowork installs a plugin's skills as "<plugin>:<skill>", e.g. "api-gateway:api-gateway".
-        skills = os.path.join(self.tmp.name, "skills")
-        for name in os.listdir(SKILLS):
-            shutil.copytree(os.path.join(SKILLS, name), os.path.join(skills, f"api-gateway:{name}"), ignore=shutil.ignore_patterns("__pycache__"))
+    def test_scripts_run_from_a_skill_copied_on_its_own(self):
+        # Claude Code installs each plugin in its own tree, and Cowork names skill
+        # directories "<plugin>:<skill>": a skill must not reach outside its directory.
         scripts = [
             ("freee", "freee_all.py", ["/api/1/deals", "-q", "company_id=1", "--max-pages", "1"]),
             ("microsoft-graph", "graph_all.py", ["/v1.0/me/messages", "--max-pages", "1"]),
@@ -443,19 +443,23 @@ class SkillScriptsTest(unittest.TestCase):
         ]
         for skill, script, args in scripts:
             with self.subTest(script=script):
-                self.run_script(os.path.join(skills, f"api-gateway:{skill}", "scripts", script), *args)
+                alone = os.path.join(self.tmp.name, skill, f"api-gateway-x:{skill}")
+                shutil.copytree(SKILLS[skill], alone, ignore=shutil.ignore_patterns("__pycache__"))
+                self.run_script(os.path.join(alone, "scripts", script), *args)
+                self.run_script(os.path.join(alone, "scripts", "gw_request.py"), "GET", "board", "/v1/projects")
 
 
 class SkillDocsTest(unittest.TestCase):
     def skill_docs(self):
-        for root, _, files in os.walk(SKILLS):
-            for name in files:
-                if name.endswith(".md"):
-                    yield os.path.join(root, name)
+        for skill in SKILLS.values():
+            for root, _, files in os.walk(skill):
+                for name in files:
+                    if name.endswith(".md"):
+                        yield os.path.join(root, name)
 
     def test_every_skill_has_a_name_and_description(self):
-        for skill in os.listdir(SKILLS):
-            with self.subTest(skill=skill), open(os.path.join(SKILLS, skill, "SKILL.md"), encoding="utf-8") as f:
+        for skill, path in SKILLS.items():
+            with self.subTest(skill=skill), open(os.path.join(path, "SKILL.md"), encoding="utf-8") as f:
                 head = f.read().split("---")[1]
                 self.assertIn(f"\nname: {skill}\n", head)
                 self.assertRegex(head, r"\ndescription: \S")
@@ -466,9 +470,34 @@ class SkillDocsTest(unittest.TestCase):
                 text = f.read()
             for target in re.findall(r"\]\(([^)#]+)(?:#[^)]*)?\)", text):
                 if "://" not in target:
-                    with self.subTest(doc=os.path.relpath(path, SKILLS), link=target):
+                    with self.subTest(doc=os.path.relpath(path, ROOT), link=target):
                         self.assertTrue(os.path.exists(os.path.join(os.path.dirname(path), target)))
 
+
+    def test_skills_use_their_own_copy_of_gw_request(self):
+        for path in self.skill_docs():
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            with self.subTest(doc=os.path.relpath(path, ROOT)):
+                self.assertNotIn("${CLAUDE_SKILL_DIR}/..", text.replace('"${CLAUDE_SKILL_DIR}"/..', "${CLAUDE_SKILL_DIR}/.."))
+                if "GW=" in text:
+                    self.assertIn('GW="${CLAUDE_SKILL_DIR}/scripts/gw_request.py"', text)
+
+    def test_shared_scripts_are_in_sync_with_lib(self):
+        result = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "sync-plugin-libs.py"), "--check"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_marketplace_lists_every_plugin_at_its_version(self):
+        with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json"), encoding="utf-8") as f:
+            entries = {e["name"]: e for e in json.load(f)["plugins"]}
+        plugins = sorted(os.listdir(os.path.join(ROOT, "plugins")))
+        self.assertEqual(sorted(entries), plugins)
+        for name in plugins:
+            with self.subTest(plugin=name), open(os.path.join(ROOT, "plugins", name, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+                manifest = json.load(f)
+                self.assertEqual(manifest["name"], name)
+                self.assertEqual(entries[name]["version"], manifest["version"])
+                self.assertEqual(entries[name]["source"], {"source": "git-subdir", "url": "novshi-tech/api-gateway-mcp", "path": f"plugins/{name}"})
 
 
 if __name__ == "__main__":

@@ -1,10 +1,9 @@
 """Shared helpers for scripts that call upstream APIs through the API gateway.
 
-Service skills import this from their own scripts. Look at how freee_all.py
-puts this directory on sys.path: Cowork names it "api-gateway:api-gateway", so
-the path cannot be hard-coded. A skill in another plugin cannot rely on this,
-since Claude Code installs each plugin in its own tree; copy this file next to
-its scripts instead.
+Every skill that calls the gateway carries its own copy next to its scripts,
+so `import gwlib` finds it in the script's directory however Claude Code or
+Cowork installs the plugin. The original is lib/plugin/gwlib.py in the
+api-gateway-mcp repository; `npm run plugin:sync` copies it into the skills.
 """
 import argparse
 import csv

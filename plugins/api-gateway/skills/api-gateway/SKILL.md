@@ -29,6 +29,8 @@ Claude Code では、Bash の呼び出しごとにシェルが新しくなり、
 
 ## gw_request.py
 
+サービス別のスキルは、それぞれ自分の `scripts/` に同じ `gw_request.py` を持っている。サービス別のスキルを使うときは、そのスキルの手順にあるパス(`${CLAUDE_SKILL_DIR}/scripts/gw_request.py`)で呼ぶ。Microsoft 365、Google、freee のスキルは、別のプラグイン(`api-gateway-microsoft`、`api-gateway-google`、`api-gateway-freee`)に入っている。
+
 1 回の HTTP リクエストを送る。ステータスは標準エラー、ボディは標準出力(JSON は整形)に出る。
 
 ```sh

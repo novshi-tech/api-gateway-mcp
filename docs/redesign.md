@@ -119,8 +119,8 @@
 
 - 共通の `api-gateway` は、ほかのプラグインの前提条件にする。中身は共通の手順、`gw_request.py`、gwlib と、小さい接続先のスキル(gBizINFO、Serper、board)。
 - 大きい提供元は分ける: `api-gateway-google`、`api-gateway-microsoft`、`api-gateway-freee`。
-- スクリプトはいま、同じプラグインの中の `api-gateway` スキルから gwlib を探している。分けると届かないので、各プラグインに gwlib のコピーを同梱し、`tools/sync-gwlib.py` で同期する(nvt-api-gateway と同じやり方)。コピーがずれていたらテストで落とす。
-- 提供元に固有のスクリプト(`google_paging.py` など)は、その提供元のプラグインに移す。
+- スクリプトは、同じプラグインの中の `api-gateway` スキルから gwlib を探していた。分けると届かないので、原本を `lib/plugin/` に置き、各スキルの `scripts/` に `gwlib.py`・`gw_request.py`(と必要なら `google_paging.py`)のコピーを置く。`npm run plugin:sync`(`tools/sync-plugin-libs.py`)で同期し、ずれていたらテストで落とす。スキルの手順は自分のコピー(`${CLAUDE_SKILL_DIR}/scripts/gw_request.py`)を呼ぶ。
+- `marketplace.json` の `source` は `git-subdir`(Cowork は相対パスの `source` で同期に失敗するという報告がある)。提供元のプラグインには `dependencies: ["api-gateway"]` を書く。
 - board のスキルは非公開の nvt-api-gateway-skills から移す。移す前に、自社固有の情報が入っていないかを確かめる。
 - 配り方は、Cowork でもプラグインマーケットプレイスからの同期にもう一度挑戦する。だめなら当面は、プラグインごとの zip(まとめて作れるようにする)を手で上げる。
 

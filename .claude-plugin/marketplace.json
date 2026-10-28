@@ -4,13 +4,57 @@
     "name": "novshi-tech"
   },
   "metadata": {
-    "description": "API ゲートウェイ(api-gateway-mcp)と組み合わせて使うスキル集"
+    "description": "API ゲートウェイ(api-gateway-mcp)と組み合わせて使うスキル集。共通の api-gateway に、使う提供元のプラグインを足す"
   },
   "plugins": [
     {
       "name": "api-gateway",
-      "source": "./plugins/api-gateway",
-      "description": "API ゲートウェイ経由で freee・Microsoft Graph・Gmail・Google Drive・Google Calendar・Google Docs・Google Analytics・gBizINFO・Serper などの外部サービスの API を呼び出すスキル"
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway"
+      },
+      "version": "0.12.0",
+      "description": "API ゲートウェイの共通手順(認証情報の確認、トークンの発行、REST の呼び出し)と、gBizINFO・Serper のスキル。ほかの api-gateway-* プラグインの前提。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。"
+    },
+    {
+      "name": "api-gateway-google",
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway-google"
+      },
+      "version": "0.12.0",
+      "description": "API ゲートウェイ経由で Gmail・Google Drive・Google Calendar・Google Docs・Google Analytics を操作するスキル。api-gateway プラグインと一緒に使う。",
+      "dependencies": [
+        "api-gateway"
+      ]
+    },
+    {
+      "name": "api-gateway-microsoft",
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway-microsoft"
+      },
+      "version": "0.12.0",
+      "description": "API ゲートウェイ経由で Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)を操作するスキル。api-gateway プラグインと一緒に使う。",
+      "dependencies": [
+        "api-gateway"
+      ]
+    },
+    {
+      "name": "api-gateway-freee",
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway-freee"
+      },
+      "version": "0.12.0",
+      "description": "API ゲートウェイ経由で freee(会計・人事労務・請求書・販売)を操作するスキル。api-gateway プラグインと一緒に使う。",
+      "dependencies": [
+        "api-gateway"
+      ]
     }
   ]
 }

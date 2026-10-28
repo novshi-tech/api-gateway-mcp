@@ -40,7 +40,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 1. コネクタを追加します。ゲートウェイの Web 画面(`https://<ゲートウェイ>/`)に、追加用のリンクがあります。
    - Pro / Max: 個人の設定で、カスタムコネクタとして `https://<ゲートウェイ>/mcp` を追加します。
    - Team / Enterprise: Owner が組織の設定で同じ URL を追加し、各メンバーが接続します。
-2. プラグイン `api-gateway` をインストールします(下の「スキル」)。
+2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
 
@@ -50,29 +50,33 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 
 ## スキル
 
-このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。プラグイン `api-gateway`(`plugins/api-gateway`)に、ゲートウェイの共通手順と、よく使うサービスのスキルが入っています。
+このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。共通の `api-gateway` を入れ、使う提供元のプラグインを足します。Microsoft 365 だけ、Google だけ、という使い方ができます。
 
-| スキル | サービス名 | できること |
-| --- | --- | --- |
-| `api-gateway` | — | トークンの発行と、REST の呼び出し(`gw_request.py`)の共通手順。ほかのスキルはこれを使う |
-| `freee` | `freee` | 会計・人事労務・請求書・販売の API |
-| `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
-| `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
-| `google-drive` | `drive` | ファイルの検索・ダウンロード・エクスポート・アップロード、共有ドライブ |
-| `google-calendar` | `calendar` | 予定の検索・作成・更新、空き時間の確認 |
-| `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
-| `google-analytics` | `analytics`・`analytics-admin` | GA4 のレポート取得、アカウントとプロパティの参照(読み取り専用) |
-| `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
-| `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
+| プラグイン | スキル | サービス名 | できること |
+| --- | --- | --- | --- |
+| `api-gateway`(必須) | `api-gateway` | — | トークンの発行と、REST の呼び出し(`gw_request.py`)の共通手順。ほかのスキルはこれを前提にする |
+| | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
+| | `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
+| `api-gateway-microsoft` | `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
+| `api-gateway-google` | `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
+| | `google-drive` | `drive` | ファイルの検索・ダウンロード・エクスポート・アップロード、共有ドライブ |
+| | `google-calendar` | `calendar` | 予定の検索・作成・更新、空き時間の確認 |
+| | `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
+| | `google-analytics` | `analytics`・`analytics-admin` | GA4 のレポート取得、アカウントとプロパティの参照(読み取り専用) |
+| `api-gateway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
 
 インストールの方法:
 
-- Claude Code: `/plugin marketplace add novshi-tech/api-gateway-mcp` のあと、`/plugin install api-gateway@api-gateway-mcp` でインストールします。
-- Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` をインストールします。
+- Claude Code: `/plugin marketplace add novshi-tech/api-gateway-mcp` のあと、`/plugin install api-gateway@api-gateway-mcp` と、使う提供元のもの(例: `/plugin install api-gateway-microsoft@api-gateway-mcp`)をインストールします。提供元のプラグインは `api-gateway` に依存しているので、先に入れていなくても一緒に入ります。
+- Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` と使う提供元のプラグインをインストールします。
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
-- zip: `npm run plugin:zip` で `dist/api-gateway-<version>.zip` を作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。2026-09 時点では、個人の Cowork で GitHub のマーケットプレイスの同期に失敗することがありました。その場合は zip を使ってください。
+- zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` と `.claude-plugin/marketplace.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
 
-ほかのサービスのスキルは、自分のプラグインに作って足します(`add-service` スキル)。業務に寄ったサービスのスキルは、このリポジトリに入れず、別のプラグインに分けて運用するのがおすすめです。別のプラグインのスクリプトから `gwlib.py` を使うときは、コピーを同梱してください(Claude Code はプラグインごとに別の場所にインストールするため)。
+以前の版の `api-gateway`(0.11 まで)は、全部のスキルが 1 つに入っていました。0.12 に上げたら、使う提供元のプラグインを足してください。
+
+スキルのスクリプトが使う共通のファイル(`gwlib.py`、`gw_request.py`、`google_paging.py`)の原本は `lib/plugin/` にあります。Claude Code はプラグインごとに別の場所にインストールし、Cowork はスキルのディレクトリを `<プラグイン>:<スキル>` と名付けるので、スキルからほかのスキルのファイルには届きません。そのため、各スキルの `scripts/` にコピーを置いています。原本を変えたら `npm run plugin:sync` でコピーを更新します(テストがずれを検出します)。
+
+ほかのサービスのスキルは、自分のプラグインに作って足します(`add-service` スキル)。業務に寄ったサービスのスキルは、このリポジトリに入れず、別のプラグインに分けて運用するのがおすすめです。そのスキルにも `gwlib.py` と `gw_request.py` のコピーを同梱してください。
 
 ## デプロイ
 
