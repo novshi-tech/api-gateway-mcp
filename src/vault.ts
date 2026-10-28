@@ -21,7 +21,11 @@ interface StoredCredential extends CredentialInfo {
 // Header values keyed by lower-case header name, as entered by the user.
 export type HeaderSecrets = Record<string, string>;
 
-export type HeadersResult = { headers: Record<string, string> } | { error: "missing" | "reconnect" | "unavailable" };
+export type HeadersResult =
+  | { headers: Record<string, string> }
+  | { error: "missing" | "reconnect" | "unavailable" }
+  // The definition asks for a header this credential has no value for: it was renamed or added.
+  | { error: "no_value"; header: string };
 
 // Refresh this long before the upstream says the access token expires.
 const REFRESH_MARGIN_MS = 60 * 1000;
@@ -121,7 +125,8 @@ export class UserVault extends DurableObject<Env> {
     const headers: Record<string, string> = {};
     for (const field of config.auth.headers) {
       const name = field.name.toLowerCase();
-      if (values[name] !== undefined) headers[name] = `${field.prefix ?? ""}${values[name]}`;
+      if (values[name] === undefined) return { error: "no_value", header: field.name };
+      headers[name] = `${field.prefix ?? ""}${values[name]}`;
     }
     return { headers };
   }

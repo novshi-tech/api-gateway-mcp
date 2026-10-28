@@ -94,6 +94,29 @@ describe("admin screens", () => {
     expect(await vaultFor(env, "user-2").headers(cred.id, await upstream(name))).toEqual({ error: "reconnect" });
   });
 
+  it("refuses to call the upstream without a key when an edit renames the header", async () => {
+    const name = unique("renamed");
+    await post("/admin/services", headerService(name));
+    forgetRegistry();
+    const cred = await vaultFor(env, "user-5").add(await upstream(name), "main", { "x-api-key": "k" });
+    if ("error" in cred) throw new Error(cred.error);
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "api", "user-5", { creds: { [name]: cred.id } }, 60);
+    const call = () => SELF.fetch(`${BASE}/api/${name}/graphql`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+
+    expect(await (await get(`/admin/services/${name}`)).text()).toContain("ヘッダー名を変えたり足したりすると");
+    await post(`/admin/services/${name}`, { ...headerService(name), h_name_0: "x-api-token" });
+    forgetRegistry();
+    const refused = await call();
+    expect(refused.status).toBe(502);
+    expect(((await refused.json()) as { error: string }).error).toContain("no value for header x-api-token");
+
+    await post(`/admin/services/${name}`, headerService(name));
+    forgetRegistry();
+    const restored = await call();
+    expect(((await restored.json()) as { headers: Record<string, string> }).headers["x-api-key"]).toBe("k");
+    expect(await vaultFor(env, "user-5").get(cred.id)).not.toHaveProperty("needsReconnect");
+  });
+
   it("keeps an OAuth client's secret unless a new one is entered", async () => {
     const name = unique("oauth");
     const fields = {
