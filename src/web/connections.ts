@@ -1,4 +1,4 @@
-import { publicUrl, type Services } from "../config";
+import { oauthClient, publicUrl, type ServiceConfig, type Services } from "../config";
 import { randomToken, s256 } from "../crypto";
 import { getServices, getUpstream } from "../services";
 import { signToken, verifyToken } from "../tokens";
@@ -6,78 +6,68 @@ import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "../u
 import { vaultFor, type CredentialInfo } from "../vault";
 import { html, type Html } from "./html";
 import { page } from "./layout";
-import { cookie, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session } from "./session";
+import { cookie, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session, type Session } from "./session";
 
 export const CONNECT_CALLBACK_PATH = "/connect/callback";
 const CONNECT_COOKIE = "__Host-gw-connect";
 
-// Key tag colors, assigned to services in configuration order.
-const TAG_COLORS = ["#dcb34f", "#8fb6dd", "#94c9a4", "#e79a8f", "#c1aee0", "#e3c29a"];
-
-function tagColors(services: Services): Map<string, string> {
-  return new Map(Object.keys(services).map((name, i) => [name, TAG_COLORS[i % TAG_COLORS.length]]));
-}
+// Providers listed first on the service picker, in this order; the rest follow.
+const PROVIDER_ORDER = ["Google", "Microsoft", "freee"];
+const OTHER_PROVIDER = "その他";
 
 const addedOn = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric" });
 
-function credentialTags(credentials: CredentialInfo[], services: Services): Html {
-  if (credentials.length === 0) {
-    return html`<p class="empty">つながっているサービスはまだありません。下の一覧から追加してください。</p>`;
-  }
-  const colors = tagColors(services);
-  const tags = credentials.map((c) => {
-    const serviceName = services[c.service]?.display_name ?? c.service;
-    const reconnect =
-      c.needsReconnect &&
-      html`<form class="alert" method="post" action="/connect">接続が切れました。もう一度つなぐと使えるようになります。
-<input type="hidden" name="service" value="${c.service}"><input type="hidden" name="credential" value="${c.id}">
-<button>${serviceName} につなぎ直す</button></form>`;
-    return html`<li class="tag${c.needsReconnect ? " broken" : ""}" style="--tag: ${colors.get(c.service) ?? TAG_COLORS[0]}">
-<p class="service">${serviceName}</p>
-<p class="label">${c.label}</p>
-${reconnect}
-<p class="meta">${addedOn.format(c.createdAt)}に追加</p>
-<details><summary>削除する</summary>
-<form method="post" action="/credentials/${c.id}/delete">
-<p>Claude からこの接続を使えなくなります。</p>
-<button class="danger">「${c.label}」を削除</button>
-</form></details>
-</li>`;
-  });
-  return html`<ul class="tags">${tags}</ul>`;
+function displayName(services: Services, service: string): string {
+  return (Object.hasOwn(services, service) && services[service].display_name) || service;
 }
 
-function serviceRows(services: Services): Html {
-  const colors = tagColors(services);
-  const rows = Object.entries(services).map(([name, config]) => {
-    const displayName = config.display_name ?? name;
-    const label = html`<input type="hidden" name="service" value="${name}">
-<label>名前(複数のアカウントを見分けるため)<input type="text" name="label" placeholder="${displayName}"></label>`;
-    const auth = config.auth;
-    if (auth.type === "identity") {
-      return html`<li><div class="service-row" style="--tag: ${colors.get(name)}">
-<p class="fixed"><span class="swatch"></span><span class="name">${displayName}</span><span class="how">登録不要(サインイン中のあなたとして接続)</span></p>
-</div></li>`;
-    }
-    const body =
-      auth.type === "oauth2"
-        ? html`<form method="post" action="/connect">
-<p class="hint">${displayName} のサインイン画面に移ります。許可すると、ここに戻ってきます。</p>
-${label}
-<button>${displayName} にサインインしてつなぐ</button>
-</form>`
-        : html`<form method="post" action="/credentials">
-<p class="hint">${displayName} の管理画面で発行した値を入力します。</p>
-${label}
-${auth.headers.map((h) => html`<label>${h.label}<input type="password" name="h:${h.name.toLowerCase()}" required autocomplete="off"></label>`)}
-<button>保存してつなぐ</button>
-</form>`;
-    return html`<li><details class="service-row" style="--tag: ${colors.get(name)}">
-<summary><span class="swatch"></span><span class="name">${displayName}</span><span class="how">${auth.type === "oauth2" ? "アカウントでサインイン" : "API キーを入力"}</span></summary>
-<div class="body">${body}</div>
-</details></li>`;
+function howToConnect(config: ServiceConfig): string {
+  return config.auth.type === "oauth2" ? "アカウントでサインイン" : "API キーを入力";
+}
+
+// Services a user can add from the picker: identity services need nothing, and an
+// OAuth service is offered only once the gateway has its client.
+function addable(env: Env, services: Services): [string, ServiceConfig][] {
+  return Object.entries(services).filter(([name, config]) => {
+    if (config.auth.type === "identity") return false;
+    return config.auth.type !== "oauth2" || oauthClient(env, name) !== null;
   });
-  return html`<ul class="services">${rows}</ul>`;
+}
+
+function masthead(user: Session): Html {
+  return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ</a>
+<div class="who"><span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
+}
+
+function notice(url: URL, credentials: CredentialInfo[], services: Services): Html | false {
+  const find = (key: string) => {
+    const id = url.searchParams.get(key);
+    return id ? credentials.find((c) => c.id === id) : undefined;
+  };
+  const added = find("added");
+  if (added) return html`<p class="notice" role="status">${displayName(services, added.service)}「${added.label}」をつなぎました。</p>`;
+  const reconnected = find("reconnected");
+  if (reconnected) return html`<p class="notice" role="status">${displayName(services, reconnected.service)}「${reconnected.label}」をつなぎ直しました。</p>`;
+  if (url.searchParams.has("deleted")) return html`<p class="notice" role="status">接続を削除しました。</p>`;
+  return false;
+}
+
+function connectionRow(c: CredentialInfo, services: Services): Html {
+  const status = c.needsReconnect
+    ? html`<span class="badge broken">再接続が必要</span>
+<form method="post" action="/connect"><input type="hidden" name="service" value="${c.service}"><input type="hidden" name="credential" value="${c.id}"><button>つなぎ直す</button></form>`
+    : false;
+  return html`<li id="c-${c.id}">
+<div class="row-main"><p class="row-title">${displayName(services, c.service)}</p><p class="row-sub">${c.label} · ${addedOn.format(c.createdAt)}に追加</p></div>
+<div class="row-actions">${status}<a class="button quiet" href="/connections/${c.id}/delete">削除</a></div>
+</li>`;
+}
+
+function identityRow(config: ServiceConfig): Html {
+  return html`<li>
+<div class="row-main"><p class="row-title">${config.display_name}</p><p class="row-sub">サインイン中のあなたとしてつながります</p></div>
+<div class="row-actions"><span class="badge">登録不要</span></div>
+</li>`;
 }
 
 export async function home(request: Request, env: Env): Promise<Response> {
@@ -85,15 +75,87 @@ export async function home(request: Request, env: Env): Promise<Response> {
   if (!user) return redirect("/login");
   const services = await getServices(env);
   const credentials = await vaultFor(env, user.sub).list();
+  const identity = Object.values(services).filter((config) => config.auth.type === "identity");
+  const rows = [...credentials.map((c) => connectionRow(c, services)), ...identity.map(identityRow)];
   return page(
     "API ゲートウェイ",
-    html`<header class="masthead"><h1>API ゲートウェイ</h1>
-<div class="who"><span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>
+    html`${masthead(user)}
+${notice(new URL(request.url), credentials, services)}
+<div class="section-head"><h1>つないだサービス</h1><a class="button" href="/connections/new">接続を追加</a></div>
 <p>Claude が仕事で使うサービスの接続を、ここで管理します。パスワードやキーは暗号化して保管され、Claude には渡りません。</p>
-<h2>つながっているサービス</h2>
-${credentialTags(credentials, services)}
-<h2>サービスを追加する</h2>
-${serviceRows(services)}`,
+${rows.length > 0
+  ? html`<ul class="list">${rows}</ul>`
+  : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}`,
+  );
+}
+
+export async function chooseService(request: Request, env: Env): Promise<Response> {
+  const user = await session(request, env);
+  if (!user) return redirect("/login");
+  const services = await getServices(env);
+  const credentials = await vaultFor(env, user.sub).list();
+  const groups = new Map<string, [string, ServiceConfig][]>();
+  for (const entry of addable(env, services)) {
+    const provider = entry[1].provider ?? OTHER_PROVIDER;
+    groups.set(provider, [...(groups.get(provider) ?? []), entry]);
+  }
+  const rank = (p: string) => (PROVIDER_ORDER.includes(p) ? PROVIDER_ORDER.indexOf(p) : p === OTHER_PROVIDER ? Infinity : PROVIDER_ORDER.length);
+  const ordered = [...groups].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b, "ja"));
+  const sections = ordered.map(([provider, entries]) => {
+    const items = entries.map(([name, config]) => {
+      const count = credentials.filter((c) => c.service === name).length;
+      const search = [name, config.display_name, provider].join(" ").toLowerCase();
+      return html`<li data-search="${search}"><a href="/connections/new/${name}">
+<span class="row-main"><span class="row-title">${config.display_name}</span><span class="row-sub">${howToConnect(config)}${count > 0 ? ` · ${count} 件つないでいます` : ""}</span></span>
+<span class="chevron" aria-hidden="true">›</span></a></li>`;
+    });
+    return html`<section class="group"><h2>${provider}</h2><ul class="list choices">${items}</ul></section>`;
+  });
+  return page(
+    "接続を追加",
+    html`${masthead(user)}
+<a class="back" href="/">‹ つないだサービスに戻る</a>
+<h1>接続を追加</h1>
+<p>つなぐサービスを選んでください。同じサービスに複数のアカウントをつなぐこともできます。</p>
+<label class="filter" hidden>サービスを絞り込む<input type="search" id="filter" autocomplete="off" placeholder="例: Gmail、freee"></label>
+${sections.length > 0 ? sections : html`<p class="empty">追加できるサービスがありません。管理者に連絡してください。</p>`}
+<p class="empty" id="no-match" hidden>一致するサービスがありません。</p>
+<script src="/assets/app.js" defer></script>`,
+  );
+}
+
+export async function connectForm(request: Request, env: Env, service: string): Promise<Response> {
+  const user = await session(request, env);
+  if (!user) return redirect("/login");
+  const services = await getServices(env);
+  const entry = addable(env, services).find(([name]) => name === service);
+  if (!entry) return errorPage("サービスが見つかりません", `「${service}」はつなげるサービスの一覧にありません。`, 404, ["/connections/new", "サービスの選択に戻る"]);
+  const [, config] = entry;
+  const name = config.display_name ?? service;
+  const label = html`<input type="hidden" name="service" value="${service}">
+<label>名前(複数のアカウントを見分けるため)<input type="text" name="label" placeholder="${name}"></label>`;
+  const auth = config.auth;
+  const form =
+    auth.type === "oauth2"
+      ? html`<form method="post" action="/connect" class="card">
+<p class="hint">${name} のサインイン画面に移ります。許可すると、ここに戻ってきます。</p>
+${label}
+<button>${name} にサインインしてつなぐ</button>
+</form>`
+      : auth.type === "headers"
+        ? html`<form method="post" action="/credentials" class="card">
+<p class="hint">${name} の管理画面で発行した値を入力します。</p>
+${label}
+${auth.headers.map((h) => html`<label>${h.label}<input type="password" name="h:${h.name.toLowerCase()}" required autocomplete="off"></label>`)}
+<button>保存してつなぐ</button>
+</form>`
+        : false;
+  return page(
+    `${name} をつなぐ`,
+    html`${masthead(user)}
+<a class="back" href="/connections/new">‹ サービスの選択に戻る</a>
+<h1>${name} をつなぐ</h1>
+${form}`,
   );
 }
 
@@ -111,9 +173,27 @@ export async function addCredential(request: Request, env: Env): Promise<Respons
   if (!upstream) return errorPage("保存できませんでした", `unknown service: ${service}`, 400);
   const result = await vaultFor(env, user.sub).add(upstream, String(form.get("label") ?? ""), secrets);
   if ("error" in result) {
-    return errorPage("保存できませんでした", result.error, 400);
+    return errorPage("保存できませんでした", result.error, 400, [`/connections/new/${service}`, "入力に戻る"]);
   }
-  return redirect("/");
+  return redirect(`/?added=${result.id}`);
+}
+
+export async function confirmDelete(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await session(request, env);
+  if (!user) return redirect("/login");
+  const credential = await vaultFor(env, user.sub).get(id);
+  if (!credential) return redirect("/");
+  const services = await getServices(env);
+  return page(
+    "接続の削除",
+    html`${masthead(user)}
+<a class="back" href="/">‹ つないだサービスに戻る</a>
+<h1>「${credential.label}」を削除しますか?</h1>
+<form method="post" action="/credentials/${credential.id}/delete" class="card">
+<p>${displayName(services, credential.service)} の接続です。削除すると、Claude からこの接続を使えなくなります。使うときは、もう一度つなぎ直してください。</p>
+<div class="actions"><button class="danger">削除する</button><a class="button quiet" href="/">やめる</a></div>
+</form>`,
+  );
 }
 
 export async function deleteCredential(request: Request, env: Env, id: string): Promise<Response> {
@@ -121,11 +201,11 @@ export async function deleteCredential(request: Request, env: Env, id: string): 
   const user = await session(request, env);
   if (!user) return redirect("/login");
   await vaultFor(env, user.sub).remove(id);
-  return redirect("/");
+  return redirect("/?deleted=1");
 }
 
-function errorPage(title: string, message: string, status: number): Response {
-  return page(title, html`<div class="card"><h1>${title}</h1><p>${message}</p><p><a href="/">接続の一覧に戻る</a></p></div>`, undefined, status);
+function errorPage(title: string, message: string, status: number, [href, text] = ["/", "つないだサービスに戻る"]): Response {
+  return page(title, html`<div class="card"><h1>${title}</h1><p>${message}</p><p><a href="${href}">${text}</a></p></div>`, undefined, status);
 }
 
 type PendingConnect = {
@@ -190,10 +270,11 @@ export async function connectCallback(request: Request, env: Env): Promise<Respo
     });
     const result = await vaultFor(env, user.sub).addOAuth(upstream, pending.label, tokens, pending.credential);
     if ("error" in result) return errorPage("つなげませんでした", result.error, 400);
+    const notice = pending.credential ? `reconnected=${result.id}` : `added=${result.id}`;
+    return redirect(`/?${notice}`, new Headers({ "set-cookie": cookie(CONNECT_COOKIE, "", 0) }));
   } catch (error) {
     if (!(error instanceof UpstreamOAuthError)) throw error;
     console.warn(JSON.stringify({ type: "connect_failed", service: pending.service, reason: error.message }));
     return errorPage("つなげませんでした", `${displayName} との接続を完了できませんでした。しばらくしてからやり直し、続くときは管理者に連絡してください。`, 502);
   }
-  return redirect("/", new Headers({ "set-cookie": cookie(CONNECT_COOKIE, "", 0) }));
 }

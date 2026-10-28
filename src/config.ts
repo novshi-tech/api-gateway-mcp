@@ -29,6 +29,8 @@ export interface IdentityAuth {
 export interface ServiceConfig {
   // Shown in the web UI; defaults to the service name.
   display_name?: string;
+  // Groups services in the web UI ("Google", "Microsoft", ...); others are listed last.
+  provider?: string;
   base_url: string;
   // Name of a Service Binding to reach the upstream through instead of the public internet.
   binding?: string;
@@ -59,6 +61,7 @@ export function parseServices(raw: unknown): Services {
     if (config.binding !== undefined && !BINDING_NAME.test(config.binding)) throw new Error(`service ${name}: invalid binding name`);
     services[name] = {
       display_name: config.display_name || name,
+      ...(config.provider ? { provider: config.provider } : {}),
       base_url: config.base_url.replace(/\/+$/, ""),
       ...(config.binding ? { binding: config.binding } : {}),
       auth: config.auth,

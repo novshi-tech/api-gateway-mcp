@@ -4,7 +4,18 @@ import { publicUrl } from "./config";
 import { jwks, JWKS_PATH } from "./identity";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
-import { addCredential, CONNECT_CALLBACK_PATH, connectCallback, connectStart, deleteCredential, home } from "./web/connections";
+import { APP_JS_PATH, appJs } from "./web/assets";
+import {
+  addCredential,
+  chooseService,
+  confirmDelete,
+  CONNECT_CALLBACK_PATH,
+  connectCallback,
+  connectForm,
+  connectStart,
+  deleteCredential,
+  home,
+} from "./web/connections";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 
 export { UserVault } from "./vault";
@@ -24,7 +35,11 @@ const ROUTES: Route[] = [
   ["GET", "/authorize", authorizeGet],
   ["POST", "/authorize", authorizePost],
   ["GET", MCP_CALLBACK_PATH, authorizeCallback],
+  ["GET", APP_JS_PATH, () => appJs()],
   ["GET", "/", home],
+  ["GET", "/connections/new", chooseService],
+  ["GET", /^\/connections\/new\/([a-z0-9][a-z0-9-]*)$/, (request, env, [service]) => connectForm(request, env, service)],
+  ["GET", /^\/connections\/([0-9a-f-]+)\/delete$/, (request, env, [id]) => confirmDelete(request, env, id)],
   ["GET", "/login", login],
   ["GET", LOGIN_CALLBACK_PATH, loginCallback],
   ["POST", "/logout", logout],

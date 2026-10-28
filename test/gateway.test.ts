@@ -342,13 +342,78 @@ describe("web ui", () => {
     });
     expect(res.status).toBe(303);
     const [cred] = await vaultFor(env, carol).list();
+    expect(res.headers.get("location")).toBe(`/?added=${cred.id}`);
     expect(cred).toMatchObject({ service: "board", label: "form" });
     expect(await vaultFor(env, carol).headers(cred.id, await upstream("board"))).toEqual({ headers: { "x-api-key": "k", authorization: "Bearer t" } });
 
-    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    const page = await (await SELF.fetch(`${BASE}/?added=${cred.id}`, { headers: { cookie: await sessionCookie(carol) } })).text();
     expect(page).toContain(cred.id);
     expect(page).not.toContain(">k<");
-    expect(page).toContain("Microsoft Graph");
+    expect(page).toContain("「form」をつなぎました");
+  });
+
+  it("lists connections and identity services on the home page", async () => {
+    const cookie = await sessionCookie(carol);
+    const empty = await (await SELF.fetch(`${BASE}/`, { headers: { cookie } })).text();
+    expect(empty).toContain("Murmur");
+    expect(empty).toContain("登録不要");
+    expect(empty).toContain(`href="/connections/new"`);
+
+    const cred = await addBoard(carol, "main");
+    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie } })).text();
+    expect(page).toContain(`href="/connections/${cred.id}/delete"`);
+  });
+
+  it("offers services grouped by provider, without identity services or OAuth services lacking a client", async () => {
+    const page = await (await SELF.fetch(`${BASE}/connections/new`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    const order = ["<h2>Google</h2>", "<h2>Microsoft</h2>", "<h2>freee</h2>", "<h2>その他</h2>"].map((h) => page.indexOf(h));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(page).toContain(`href="/connections/new/docs"`);
+    expect(page).toContain(`href="/connections/new/board"`);
+    expect(page).not.toContain(`href="/connections/new/gmail"`);
+    expect(page).not.toContain(`href="/connections/new/murmur"`);
+    expect(page).toContain(`<script src="/assets/app.js" defer></script>`);
+  });
+
+  it("shows a form for one service and 404 for others", async () => {
+    const cookie = await sessionCookie(carol);
+    const board = await SELF.fetch(`${BASE}/connections/new/board`, { headers: { cookie } });
+    expect(board.status).toBe(200);
+    const form = await board.text();
+    expect(form).toContain(`action="/credentials"`);
+    expect(form).toContain(`name="h:x-api-key"`);
+    expect(await (await SELF.fetch(`${BASE}/connections/new/freee`, { headers: { cookie } })).text()).toContain(`action="/connect"`);
+    expect((await SELF.fetch(`${BASE}/connections/new/murmur`, { headers: { cookie } })).status).toBe(404);
+    expect((await SELF.fetch(`${BASE}/connections/new/gmail`, { headers: { cookie } })).status).toBe(404);
+    expect((await SELF.fetch(`${BASE}/connections/new/constructor`, { headers: { cookie } })).status).toBe(404);
+  });
+
+  it("confirms before deleting a connection", async () => {
+    const cookie = await sessionCookie(carol);
+    const cred = await addBoard(carol, "to-delete");
+    const confirm = await (await SELF.fetch(`${BASE}/connections/${cred.id}/delete`, { headers: { cookie } })).text();
+    expect(confirm).toContain("「to-delete」を削除しますか?");
+    expect(confirm).toContain(`action="/credentials/${cred.id}/delete"`);
+    expect(await vaultFor(env, carol).list()).toHaveLength(1);
+
+    const res = await SELF.fetch(`${BASE}/credentials/${cred.id}/delete`, {
+      method: "POST",
+      headers: { cookie, origin: new URL(BASE).origin },
+      redirect: "manual",
+    });
+    expect(res.headers.get("location")).toBe("/?deleted=1");
+    expect(await vaultFor(env, carol).list()).toEqual([]);
+    const gone = await SELF.fetch(`${BASE}/connections/${cred.id}/delete`, { headers: { cookie }, redirect: "manual" });
+    expect(gone.headers.get("location")).toBe("/");
+  });
+
+  it("serves the picker script and lets pages load it", async () => {
+    const js = await SELF.fetch(`${BASE}/assets/app.js`);
+    expect(js.headers.get("content-type")).toContain("javascript");
+    expect(await js.text()).toContain("data-search");
+    const page = await SELF.fetch(`${BASE}/connections/new`, { headers: { cookie: await sessionCookie(carol) } });
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
   });
 
   it("escapes what the user typed when showing it back", async () => {
