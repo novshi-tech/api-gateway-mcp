@@ -1,5 +1,5 @@
-// The only script the pages load: narrows the service picker as the user types.
-// Pages work without it; the filter field stays hidden until this runs.
+// The only script the pages load: narrows the service picker as the user types, and
+// shows the admin form's fields for one auth type. Pages work without it.
 const APP_JS = `
 const filter = document.getElementById("filter");
 if (filter) {
@@ -16,6 +16,17 @@ if (filter) {
     }
     document.getElementById("no-match").hidden = any;
   });
+}
+
+// The admin form shows only the fields of the chosen auth type.
+const authTypes = document.querySelectorAll('input[name="auth_type"]');
+if (authTypes.length > 0) {
+  const show = () => {
+    const chosen = document.querySelector('input[name="auth_type"]:checked')?.value;
+    for (const section of document.querySelectorAll("[data-auth]")) section.hidden = section.dataset.auth !== chosen;
+  };
+  for (const input of authTypes) input.addEventListener("change", show);
+  show();
 }
 `;
 

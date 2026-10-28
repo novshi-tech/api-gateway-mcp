@@ -1,12 +1,12 @@
 import { publicUrl, type ServiceConfig, type Services } from "../config";
 import { randomToken, s256 } from "../crypto";
-import { getServices, getUpstream, isAvailable } from "../services";
+import { getDirectory, getServices, getUpstream, type Directory } from "../services";
 import { signToken, verifyToken } from "../tokens";
 import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "../upstream-oauth";
 import { vaultFor, type CredentialInfo } from "../vault";
 import { html, type Html } from "./html";
 import { page } from "./layout";
-import { cookie, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session, type Session } from "./session";
+import { cookie, isAdmin, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session, type Session } from "./session";
 
 export const CONNECT_CALLBACK_PATH = "/connect/callback";
 const CONNECT_COOKIE = "__Host-gw-connect";
@@ -27,13 +27,13 @@ function howToConnect(config: ServiceConfig): string {
 
 // Services a user can add from the picker: identity services need nothing, and an
 // OAuth service is offered only once the gateway has its client.
-function addable(env: Env, services: Services): [string, ServiceConfig][] {
-  return Object.entries(services).filter(([name, config]) => config.auth.type !== "identity" && isAvailable(env, name, config));
+function addable(directory: Directory): [string, ServiceConfig][] {
+  return Object.entries(directory.services).filter(([name, config]) => config.auth.type !== "identity" && directory.available(name));
 }
 
-function masthead(user: Session): Html {
+export function masthead(env: Env, user: Session): Html {
   return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ</a>
-<div class="who"><span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
+<div class="who">${isAdmin(env, user) && html`<a href="/admin/services">接続先の管理</a>`}<span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
 }
 
 function notice(url: URL, credentials: CredentialInfo[], services: Services): Html | false {
@@ -80,7 +80,7 @@ export async function home(request: Request, env: Env): Promise<Response> {
   const rows = [...credentials.map((c) => connectionRow(c, services)), ...identity.map(identityRow)];
   return page(
     "API ゲートウェイ",
-    html`${masthead(user)}
+    html`${masthead(env, user)}
 ${notice(new URL(request.url), credentials, services)}
 <div class="section-head"><h1>つないだサービス</h1><a class="button" href="/connections/new">接続を追加</a></div>
 <p>Claude が仕事で使うサービスの接続を、ここで管理します。パスワードやキーは暗号化して保管され、Claude には渡りません。</p>
@@ -94,10 +94,11 @@ ${rows.length > 0
 export async function chooseService(request: Request, env: Env): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
-  const services = await getServices(env);
+  const directory = await getDirectory(env);
+  const services = directory.services;
   const credentials = await vaultFor(env, user.sub).list();
   const groups = new Map<string, [string, ServiceConfig][]>();
-  for (const entry of addable(env, services)) {
+  for (const entry of addable(directory)) {
     const provider = entry[1].provider ?? OTHER_PROVIDER;
     groups.set(provider, [...(groups.get(provider) ?? []), entry]);
   }
@@ -115,7 +116,7 @@ export async function chooseService(request: Request, env: Env): Promise<Respons
   });
   return page(
     "接続を追加",
-    html`${masthead(user)}
+    html`${masthead(env, user)}
 <a class="back" href="/">‹ つないだサービスに戻る</a>
 <h1>接続を追加</h1>
 <p>つなぐサービスを選んでください。同じサービスに複数のアカウントをつなぐこともできます。</p>
@@ -129,8 +130,9 @@ ${sections.length > 0 ? sections : html`<p class="empty">追加できるサー�
 export async function connectForm(request: Request, env: Env, service: string): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
-  const services = await getServices(env);
-  const entry = addable(env, services).find(([name]) => name === service);
+  const directory = await getDirectory(env);
+  const services = directory.services;
+  const entry = addable(directory).find(([name]) => name === service);
   if (!entry) return errorPage("サービスが見つかりません", `「${service}」はつなげるサービスの一覧にありません。`, 404, ["/connections/new", "サービスの選択に戻る"]);
   const [, config] = entry;
   const name = config.display_name ?? service;
@@ -154,7 +156,7 @@ ${auth.headers.map((h) => html`<label>${h.label}<input type="password" name="h:$
         : false;
   return page(
     `${name} をつなぐ`,
-    html`${masthead(user)}
+    html`${masthead(env, user)}
 <a class="back" href="/connections/new">‹ サービスの選択に戻る</a>
 <h1>${name} をつなぐ</h1>
 ${form}`,
@@ -188,7 +190,7 @@ export async function confirmDelete(request: Request, env: Env, id: string): Pro
   const services = await getServices(env);
   return page(
     "接続の削除",
-    html`${masthead(user)}
+    html`${masthead(env, user)}
 <a class="back" href="/">‹ つないだサービスに戻る</a>
 <h1>「${credential.label}」を削除しますか?</h1>
 <form method="post" action="/credentials/${credential.id}/delete" class="card">

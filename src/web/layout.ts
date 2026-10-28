@@ -136,6 +136,18 @@ input[type=search] {
 .empty { max-width: none; padding: 1.25rem; border: 2px dashed var(--line); border-radius: .6rem; color: var(--muted); }
 .hint { color: var(--muted); font-size: .875rem; }
 
+fieldset { border: 1px solid var(--line); border-radius: .5rem; padding: .9rem 1rem .2rem; margin: 0 0 1.25rem; }
+legend { padding: 0 .35rem; font-weight: 700; font-size: .9375rem; }
+label.choice { display: flex; align-items: center; gap: .5rem; color: var(--ink); font-size: .9375rem; }
+textarea {
+  display: block; width: 100%; margin-top: .3rem; font: inherit; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: .35rem; padding: .5rem .65rem;
+}
+.header-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0 .75rem; }
+.error { max-width: none; padding: .7rem 1rem; border-radius: .5rem; background: var(--alert-bg); color: var(--alert); font-weight: 600; }
+a.button.danger-link { color: var(--alert); border-color: var(--alert); margin-left: auto; }
+.who a { font-size: .875rem; }
+
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: 1.5rem; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1.25rem; }
 

@@ -4,6 +4,7 @@ import { publicUrl } from "./config";
 import { jwks, JWKS_PATH } from "./identity";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
+import { confirmDeleteService, deleteService, editService, listServices, newService, saveService } from "./web/admin";
 import { APP_JS_PATH, appJs } from "./web/assets";
 import {
   addCredential,
@@ -18,6 +19,7 @@ import {
 } from "./web/connections";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 
+export { Registry } from "./registry";
 export { UserVault } from "./vault";
 
 const DAY = 24 * 60 * 60;
@@ -46,6 +48,13 @@ const ROUTES: Route[] = [
   ["POST", "/credentials", addCredential],
   ["POST", /^\/credentials\/([0-9a-f-]+)\/delete$/, (request, env, [id]) => deleteCredential(request, env, id)],
   ["POST", "/connect", connectStart],
+  ["GET", "/admin/services", listServices],
+  ["POST", "/admin/services", (request, env) => saveService(request, env)],
+  ["GET", "/admin/services/new", newService],
+  ["GET", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)$/, (request, env, [name]) => editService(request, env, name)],
+  ["POST", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)$/, (request, env, [name]) => saveService(request, env, name)],
+  ["GET", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => confirmDeleteService(request, env, name)],
+  ["POST", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => deleteService(request, env, name)],
   ["GET", CONNECT_CALLBACK_PATH, connectCallback],
 ];
 

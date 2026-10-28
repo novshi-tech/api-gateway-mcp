@@ -120,6 +120,12 @@ npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 
 アクセストークンは、期限の 1 分前からゲートウェイがリフレッシュします。リフレッシュトークンが失効したら、Web 画面に「再接続」が出ます。
 
+### 管理画面から接続先を足す
+
+`wrangler.jsonc` の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの下に表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
+
+管理画面で足した接続先(ヘッダーか OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
+
 ゲートウェイのサインインを信頼する自社の API(`auth.type` が `identity`)は、ユーザーが何も登録しません。ゲートウェイがサインイン中のユーザーの ID(`sub`)を Ed25519 で署名し、`Authorization: Bearer <JWT>` として送ります。JWT は `iss` がゲートウェイの URL、`aud` が設定の `audience`、寿命は 5 分です。上流は `https://<ゲートウェイ>/.well-known/jwks.json` の公開鍵で検証します。Claude からは、`list_credentials` に `identity:<サービス名>` という認証情報として見えます。
 
 ```jsonc

@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { z } from "zod";
 import { publicUrl } from "./config";
 import { IDENTITY_CREDENTIAL, identityCredentialId, serviceOfIdentityCredential } from "./identity";
-import { getServices, isAvailable } from "./services";
+import { getDirectory, getServices } from "./services";
 import { GATEWAY_TOKEN_TTL_SECONDS, signToken } from "./tokens";
 import { vaultFor } from "./vault";
 
@@ -37,11 +37,12 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
-      const config = await getServices(env);
+      const directory = await getDirectory(env);
+      const config = directory.services;
       const identity = Object.entries(config)
         .filter(([, c]) => c.auth.type === "identity")
         .map(([service, c]) => ({ id: identityCredentialId(service), service, label: `${c.display_name}(サインイン中のユーザー)` }));
-      const services = Object.keys(config).filter((name) => isAvailable(env, name, config[name]));
+      const services = Object.keys(config).filter((name) => directory.available(name));
       return json({ services, credentials: [...(await vault.list()), ...identity], register_url: `${base}/` });
     },
   );
