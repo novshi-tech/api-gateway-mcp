@@ -14,7 +14,7 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
 ```
 
 - **Claude は認証情報を見ません。** API キーや OAuth のトークンは、ユーザーがゲートウェイの Web 画面で登録し、暗号化して保存されます。Claude が受け取るのは、寿命 15 分のゲートウェイのトークンだけです。
-- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは `wrangler.jsonc` の `SERVICES` に、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
+- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
 - **使い方はスキルで配ります。** API の呼び方は、Claude のスキル(プラグイン)にまとめて配布します。コネクタの URL を含めていないので、どのデプロイでも同じプラグインを使えます。
 
 Claude の Cowork で動作を確認しています。MCP の OAuth に従っているので、ほかの Claude のクライアントや ChatGPT のコネクタにも対応する設計ですが、まだ確認していません。設計の詳細は [docs/concept.md](docs/concept.md) と [docs/auth-design.md](docs/auth-design.md) にあります。
@@ -30,7 +30,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 
 いちばん楽なのは、このリポジトリを Claude Code で開いて「ゲートウェイをデプロイしたい」と頼むことです。作業用のスキル(`.agents/skills`。`.claude/skills` はそこへのリンク)が、手順に沿って対話で進めます。
 
-- `deploy`: IdP へのアプリ登録、`wrangler.jsonc` の作成、KV とシークレットの登録、デプロイ、コネクタの追加までと、設定を変えたあとの再デプロイ
+- `deploy`: IdP へのアプリ登録、デプロイごとの設定(`deployments/<名前>.jsonc`)の作成、KV とシークレットの登録、デプロイ、コネクタの追加までと、設定を変えたあとの再デプロイ
 - `add-service`: 新しいサービスを足す。認証方式の調査、`SERVICES` の定義、OAuth のシークレット、サービス別のスキルの作成まで。例:「kintone の API をゲートウェイに足して」
 
 手作業で進める場合は、下の「デプロイ」に従ってください。
@@ -87,23 +87,27 @@ Entra ID はシングルテナントのアプリとして登録し、`OIDC_ISSUE
 
 ### 2. 設定してデプロイする
 
-`wrangler.example.jsonc` を `wrangler.jsonc` にコピーし(git の管理外です)、`vars` に `PUBLIC_URL`、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます(`deployments/` は git の管理外です)。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+
+wrangler は、`npm run deploy` / `npm run secret` / `npm run tail` に名前を付けて呼びます(`tools/wrangler.mjs` が `--config deployments/<名前>.jsonc` を渡します)。リポジトリの直下には `wrangler.jsonc` を置かないので、名前を付けずに `npx wrangler deploy` を打っても、どこにもデプロイされません。
 
 ```sh
 npm ci
-cp wrangler.example.jsonc wrangler.jsonc
+mkdir -p deployments
+sed -e 's|"node_modules/|"../node_modules/|' -e 's|"src/index.ts"|"../src/index.ts"|' wrangler.example.jsonc > deployments/acme.jsonc
 npx wrangler login
 npx wrangler kv namespace create OAUTH_KV
-npx wrangler secret put OIDC_CLIENT_SECRET
-openssl rand -base64 32 | npx wrangler secret put SIGNING_KEY
-openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY
-npx wrangler deploy
+npm run secret -- acme put OIDC_CLIENT_SECRET
+openssl rand -base64 32 | npm run secret -- acme put SIGNING_KEY
+openssl rand -base64 32 | npm run secret -- acme put ENCRYPTION_KEY
+npm run deploy -- acme
 ```
 
 - `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 - `SIGNING_KEY` を変えると、発行済みのトークンと MCP の接続が無効になり、ユーザーは接続し直しになります。
 - `IDENTITY_SIGNING_KEY` を変えると、`identity` の上流が古い公開鍵をキャッシュしている間は検証に失敗します。上流が JWKS を取り直すまで待つか、上流の公開鍵を差し替えます。
-- 設定を変えたら、`npx wrangler deploy` で出し直します。
+- 設定を変えたら、`npm run deploy -- <名前>` で出し直します。
+- 新しい版で Durable Object やその migration が増えたときは(`wrangler.example.jsonc` の `durable_objects` と `migrations`)、各デプロイの設定にも同じものを足してから出し直します。deploy スキルが照らし合わせて直します。
 
 ### 3. 連携先を設定する
 
@@ -112,8 +116,8 @@ npx wrangler deploy
 OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、クライアントの名前を大文字にした名前で登録します(ハイフンは `_` に)。組み込みのサービスのクライアントは `FREEE`・`GOOGLE`・`MICROSOFT` の 3 つで、Google の 6 つのサービスは 1 組を共有します。`SERVICES` に足したサービスは、`auth.client` に書いた名前か、なければサービス名がクライアントの名前です。
 
 ```sh
-npx wrangler secret put OAUTH_<CLIENT>_CLIENT_ID
-npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
+npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_ID
+npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_SECRET
 ```
 
 クライアントが登録されていない OAuth のサービスは、Web 画面にも `list_credentials` にも出ません。以前のサービスごとの名前(`OAUTH_GMAIL_CLIENT_ID` など)は読まなくなったので、古いデプロイでは `OAUTH_GOOGLE_*` / `OAUTH_MICROSOFT_*` を登録し直してください。
@@ -122,7 +126,7 @@ npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 
 ### 管理画面から接続先を足す
 
-`wrangler.jsonc` の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの一番下にある「アカウントの情報」を開くと表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
+デプロイの設定の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの一番下にある「アカウントの情報」を開くと表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
 
 管理画面で足した接続先(ヘッダーか OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
 
@@ -140,10 +144,10 @@ npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 
 ```sh
 # 署名鍵(Ed25519 の秘密鍵の JWK)を作って登録する
-node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npx wrangler secret put IDENTITY_SIGNING_KEY
+node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npm run secret -- <名前> put IDENTITY_SIGNING_KEY
 ```
 
-`binding` を書いたサービスは、公開のインターネットではなく、`wrangler.jsonc` の `services` に書いた Service Binding(`{ "binding": "MURMUR", "service": "murmur" }`)で上流を呼びます。`base_url` のホスト名は使われず、パスだけが意味を持ちます。
+`binding` を書いたサービスは、公開のインターネットではなく、デプロイの設定の `services` に書いた Service Binding(`{ "binding": "MURMUR", "service": "murmur" }`)で上流を呼びます。`base_url` のホスト名は使われず、パスだけが意味を持ちます。
 
 #### freee(`freee`)
 
@@ -151,15 +155,15 @@ freee のアプリ管理でアプリを作成し、コールバック URL を設
 
 #### Microsoft Graph(`graph`)
 
-サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`src/catalog.ts` の `GRAPH_SCOPE` にある委任のアクセス許可を付けて、管理者の同意を与えます。`wrangler.jsonc` の `MICROSOFT_TENANT_ID` にテナント ID を書きます。シークレットは `OAUTH_MICROSOFT_CLIENT_ID` / `OAUTH_MICROSOFT_CLIENT_SECRET` です。
+サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`src/catalog.ts` の `GRAPH_SCOPE` にある委任のアクセス許可を付けて、管理者の同意を与えます。デプロイの設定の `MICROSOFT_TENANT_ID` にテナント ID を書きます。シークレットは `OAUTH_MICROSOFT_CLIENT_ID` / `OAUTH_MICROSOFT_CLIENT_SECRET` です。
 
 #### Google(`gmail`・`drive`・`calendar`・`docs`・`analytics`・`analytics-admin`)
 
 Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API、Google Analytics Data API、Google Analytics Admin API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `src/catalog.ts` のスコープを追加します。6 つのサービスで 1 つの OAuth クライアントを共有します。
 
 ```sh
-npx wrangler secret put OAUTH_GOOGLE_CLIENT_ID
-npx wrangler secret put OAUTH_GOOGLE_CLIENT_SECRET
+npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_ID
+npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_SECRET
 ```
 
 - スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書き、Analytics の `analytics.readonly` は GA4 のレポートとプロパティの読み取りに使います(Data API と Admin API はホストが別なので、サービスも 2 つに分けています)。読み取り専用にするなら、`SERVICES` に同じ名前でサービスを書いて、スコープを `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
@@ -177,15 +181,14 @@ gBizINFO の Web API 利用申請で API トークンを取得し、ユーザー
 ## 注意
 
 - スクリプトから直接 HTTP を送るときは、`User-Agent` を明示してください。Python の `urllib` の既定値などは、Cloudflare に Error 1010 で拒否されることがあります(付属のスクリプトは設定済み)。
-- 調べるときは `npx wrangler tail --format json` でログを流します。ゲートウェイは、中継したリクエストごとに、ユーザー・サービス・パス・ステータスの監査ログを出します。
+- 調べるときは `npm run tail -- <名前> --format json` でログを流します。ゲートウェイは、中継したリクエストごとに、ユーザー・サービス・パス・ステータスの監査ログを出します。
 
 ## 開発
 
 ```sh
 npm install
-cp wrangler.example.jsonc wrangler.jsonc
 cp .dev.vars.example .dev.vars   # 値を埋める
-npm run dev
+npm run dev       # wrangler.example.jsonc で動かす
 npm run typecheck
 npm test          # Worker のテストと、スキルのスクリプトのテスト
 ```
