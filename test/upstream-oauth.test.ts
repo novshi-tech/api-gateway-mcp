@@ -6,6 +6,7 @@ import { publicUrl } from "../src/config";
 import { buildServer } from "../src/mcp";
 import { signToken } from "../src/tokens";
 import { vaultFor } from "../src/vault";
+import { upstream } from "./helpers";
 
 const BASE = publicUrl(env);
 const ORIGIN = new URL(BASE).origin;
@@ -132,7 +133,7 @@ describe("connecting an OAuth service", () => {
 
   it("keeps OAuth and header services on their own forms", async () => {
     expect((await startConnect(alice, { service: "board" })).status).toBe(400);
-    expect(await vaultFor(env, alice).add("freee", "", { authorization: "x" })).toEqual({ error: "freee is connected with OAuth" });
+    expect(await vaultFor(env, alice).add(await upstream("freee"), "", { authorization: "x" })).toEqual({ error: "freee is connected with OAuth" });
     expect((await startConnect(alice, { service: "freee", credential: crypto.randomUUID() })).status).toBe(400);
   });
 

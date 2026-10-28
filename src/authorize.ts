@@ -1,7 +1,8 @@
 import { AuthorizationError, CimdFetchError, type AuthRequest, type ClientInfo, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { publicUrl } from "./config";
 import { randomToken, s256 } from "./crypto";
-import { escape, page } from "./html";
+import { html } from "./web/html";
+import { page } from "./web/layout";
 import { authorizationUrl, SignInError, signIn } from "./idp";
 import type { McpProps } from "./mcp";
 
@@ -16,22 +17,22 @@ interface UpstreamData {
 }
 
 function consentPage(client: ClientInfo, request: AuthRequest, handle: string, headers: Headers): Response {
-  const name = escape(client.clientName ?? client.clientId);
+  const name = client.clientName ?? client.clientId;
   const redirectHost = new URL(request.redirectUri).hostname;
   const local = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/.test(redirectHost);
   const origin = client.clientId.startsWith("https://")
-    ? `発行元: <strong>${escape(new URL(client.clientId).hostname)}</strong>`
+    ? html`発行元: <strong>${new URL(client.clientId).hostname}</strong>`
     : "このアプリは自己登録されたもので、名前は検証されていません。";
   return page(
     `${client.clientName ?? "アプリ"} の接続`,
-    `<div class="card">
+    html`<div class="card">
 <h1>${name} に API ゲートウェイへのアクセスを許可しますか?</h1>
 <p>${origin}</p>
-<p>アクセス権は <strong>${escape(redirectHost)}</strong> に送られます。</p>
-${local ? "<p><strong>このコンピューター上のアプリにアクセス権を渡します。</strong>自分でサインインを始めた場合だけ続けてください。</p>" : ""}
+<p>アクセス権は <strong>${redirectHost}</strong> に送られます。</p>
+${local && html`<p><strong>このコンピューター上のアプリにアクセス権を渡します。</strong>自分でサインインを始めた場合だけ続けてください。</p>`}
 <p>許可すると、このアプリはあなたがつないだサービスの API を呼び出せるようになります。</p>
 <form method="post" class="actions">
-  <input type="hidden" name="handle" value="${escape(handle)}">
+  <input type="hidden" name="handle" value="${handle}">
   <button name="decision" value="approve">許可して会社のアカウントでサインイン</button>
   <button name="decision" value="deny" class="quiet">許可しない</button>
 </form>
@@ -41,7 +42,7 @@ ${local ? "<p><strong>このコンピューター上のアプリにアクセス�
 }
 
 function renderError(message: string, status = 400): Response {
-  return page("エラー", `<div class="card"><h1>続けられませんでした</h1><p>${escape(message)}</p></div>`, undefined, status);
+  return page("エラー", html`<div class="card"><h1>続けられませんでした</h1><p>${message}</p></div>`, undefined, status);
 }
 
 function redirectToClient(redirectUri: string, params: Record<string, string | undefined>, headers = new Headers()): Response {
