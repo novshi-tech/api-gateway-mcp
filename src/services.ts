@@ -34,3 +34,13 @@ export async function getUpstream(env: Env, service: string): Promise<Upstream |
   const config = await getService(env, service);
   return config ? { service, config, client: clientFor(env, service, config) } : null;
 }
+
+// Where a credential's secrets are sent: the upstream origin (or Service Binding) and,
+// for OAuth, the token endpoint and client. The vault records it when a credential is
+// stored and refuses to send the secrets anywhere else, so changing a definition later
+// cannot redirect credentials people already entered.
+export function upstreamTarget({ config, client }: Upstream): string {
+  const parts = [config.binding ? `binding:${config.binding}` : new URL(config.base_url).origin];
+  if (config.auth.type === "oauth2") parts.push(config.auth.token_url, client?.id ?? "");
+  return parts.join(" ");
+}

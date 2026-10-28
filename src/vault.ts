@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { decryptJson, encryptJson, importAesKey } from "./crypto";
-import type { Upstream } from "./services";
+import { upstreamTarget, type Upstream } from "./services";
 import { refreshTokens, UpstreamOAuthError, type TokenSet } from "./upstream-oauth";
 
 export interface CredentialInfo {
@@ -14,6 +14,8 @@ export interface CredentialInfo {
 
 interface StoredCredential extends CredentialInfo {
   sealed: string;
+  // upstreamTarget() when stored. Older credentials lack it until first used.
+  target?: string;
 }
 
 // Header values keyed by lower-case header name, as entered by the user.
@@ -56,7 +58,8 @@ export class UserVault extends DurableObject<Env> {
     return stored ? info(stored) : null;
   }
 
-  async add({ service, config }: Upstream, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
+  async add(upstream: Upstream, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
+    const { service, config } = upstream;
     if (config.auth.type === "identity") return { error: `${service} needs no credential` };
     if (config.auth.type !== "headers") return { error: `${service} is connected with OAuth` };
     const values: HeaderSecrets = {};
@@ -68,17 +71,18 @@ export class UserVault extends DurableObject<Env> {
     const id = crypto.randomUUID();
     const info: CredentialInfo = { id, service, label: label.trim() || service, createdAt: Date.now() };
     const sealed = await encryptJson(await this.key(), values, this.aad(id));
-    await this.ctx.storage.put<StoredCredential>(`cred:${id}`, { ...info, sealed });
+    await this.ctx.storage.put<StoredCredential>(`cred:${id}`, { ...info, sealed, target: upstreamTarget(upstream) });
     return info;
   }
 
   // Stores tokens from an OAuth connection; with `replaceId`, reconnects that credential.
   async addOAuth(
-    { service, config }: Upstream,
+    upstream: Upstream,
     label: string,
     tokens: TokenSet,
     replaceId?: string,
   ): Promise<CredentialInfo | { error: string }> {
+    const { service, config } = upstream;
     if (config.auth.type !== "oauth2") return { error: `${service} is not an OAuth service` };
     let record: CredentialInfo;
     if (replaceId) {
@@ -89,7 +93,7 @@ export class UserVault extends DurableObject<Env> {
       record = { id: crypto.randomUUID(), service, label: label.trim() || service, createdAt: Date.now() };
     }
     const sealed = await encryptJson(await this.key(), tokens, this.aad(record.id));
-    await this.ctx.storage.put<StoredCredential>(`cred:${record.id}`, { ...record, sealed });
+    await this.ctx.storage.put<StoredCredential>(`cred:${record.id}`, { ...record, sealed, target: upstreamTarget(upstream) });
     return record;
   }
 
@@ -101,6 +105,15 @@ export class UserVault extends DurableObject<Env> {
   async headers(id: string, upstream: Upstream): Promise<HeadersResult> {
     const stored = await this.ctx.storage.get<StoredCredential>(`cred:${id}`);
     if (!stored || stored.service !== upstream.service) return { error: "missing" };
+    if (stored.needsReconnect) return { error: "reconnect" };
+    const target = upstreamTarget(upstream);
+    if (stored.target === undefined) {
+      await this.ctx.storage.put<StoredCredential>(`cred:${id}`, { ...stored, target });
+    } else if (stored.target !== target) {
+      console.warn(JSON.stringify({ type: "upstream_changed", credential: id, service: stored.service }));
+      await this.ctx.storage.put<StoredCredential>(`cred:${id}`, { ...stored, needsReconnect: true });
+      return { error: "reconnect" };
+    }
     const config = upstream.config;
     if (config.auth.type === "oauth2") return this.oauthHeaders(id, stored, upstream);
     if (config.auth.type !== "headers") return { error: "missing" };
@@ -114,7 +127,6 @@ export class UserVault extends DurableObject<Env> {
   }
 
   private async oauthHeaders(id: string, stored: StoredCredential, upstream: Upstream): Promise<HeadersResult> {
-    if (stored.needsReconnect) return { error: "reconnect" };
     const tokens = await decryptJson<TokenSet>(await this.key(), stored.sealed, this.aad(id));
     if (tokens.expires_at === undefined || tokens.expires_at - REFRESH_MARGIN_MS > Date.now()) {
       return { headers: { authorization: `Bearer ${tokens.access_token}` } };

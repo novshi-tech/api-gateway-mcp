@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { env, SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleProxy } from "../src/proxy";
@@ -44,6 +44,46 @@ describe("vault", () => {
     expect(await getUpstream(env, "nope")).toBeNull();
     expect(await getUpstream(env, "constructor")).toBeNull();
     expect(await vaultFor(env, alice).add(await upstream("board"), "", { "x-api-key": "k" })).toEqual({ error: "missing value for authorization" });
+  });
+
+  it("sends secrets only to the upstream they were entered for", async () => {
+    const cred = await addBoard(alice);
+    const board = await upstream("board");
+    const samePlace = { ...board, config: { ...board.config, base_url: "https://api.the-board.jp/v2" } };
+    expect(await vaultFor(env, alice).headers(cred.id, samePlace)).toHaveProperty("headers");
+
+    const elsewhere = { ...board, config: { ...board.config, base_url: "https://evil.example" } };
+    expect(await vaultFor(env, alice).headers(cred.id, elsewhere)).toEqual({ error: "reconnect" });
+    expect(await vaultFor(env, alice).get(cred.id)).toMatchObject({ needsReconnect: true });
+    // Moving the definition back does not undo it: the user re-enters the key.
+    expect(await vaultFor(env, alice).headers(cred.id, board)).toEqual({ error: "reconnect" });
+  });
+
+  it("ties an OAuth credential to its token endpoint and client", async () => {
+    const freee = await upstream("freee");
+    const tokens = { access_token: "a", refresh_token: "r", expires_at: Date.now() + 3_600_000 };
+    const first = await vaultFor(env, alice).addOAuth(freee, "main", tokens);
+    const second = await vaultFor(env, alice).addOAuth(freee, "other", tokens);
+    if ("error" in first || "error" in second) throw new Error("not stored");
+    expect(await vaultFor(env, alice).headers(first.id, freee)).toEqual({ headers: { authorization: "Bearer a" } });
+    const newClient = { ...freee, client: { id: "another-client", secret: "s" } };
+    expect(await vaultFor(env, alice).headers(first.id, newClient)).toEqual({ error: "reconnect" });
+    const auth = freee.config.auth as { token_url: string };
+    const newTokenUrl = { ...freee, config: { ...freee.config, auth: { ...auth, token_url: "https://evil.example/token" } } };
+    expect(await vaultFor(env, alice).headers(second.id, newTokenUrl as typeof freee)).toEqual({ error: "reconnect" });
+  });
+
+  it("records the upstream of an older credential on first use", async () => {
+    const cred = await addBoard(alice);
+    const stub = vaultFor(env, alice);
+    await runInDurableObject(stub, async (_, state) => {
+      const stored = (await state.storage.get<Record<string, unknown>>(`cred:${cred.id}`))!;
+      delete stored.target;
+      await state.storage.put(`cred:${cred.id}`, stored);
+    });
+    expect(await stub.headers(cred.id, await upstream("board"))).toHaveProperty("headers");
+    const target = await runInDurableObject(stub, async (_, state) => (await state.storage.get<{ target?: string }>(`cred:${cred.id}`))!.target);
+    expect(target).toBe("https://api.the-board.jp");
   });
 
   it("removes credentials", async () => {
@@ -415,6 +455,20 @@ describe("web ui", () => {
     expect(await js.text()).toContain("data-search");
     const page = await SELF.fetch(`${BASE}/connections/new`, { headers: { cookie: await sessionCookie(carol) } });
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+  });
+
+  it("shows the user ID for the admin setting", async () => {
+    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    expect(page).toContain(`<code>${carol}</code>`);
+  });
+
+  it("asks to delete and add again when an API key no longer fits its service", async () => {
+    const cred = await addBoard(carol);
+    const board = await upstream("board");
+    await vaultFor(env, carol).headers(cred.id, { ...board, config: { ...board.config, base_url: "https://moved.example" } });
+    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    expect(page).toContain("削除して追加し直してください");
+    expect(page).not.toContain(`name="credential" value="${cred.id}"`);
   });
 
   it("escapes what the user typed when showing it back", async () => {

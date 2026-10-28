@@ -6,6 +6,7 @@ import { admit, SignInError } from "../src/idp";
 import { getServices } from "../src/services";
 import { signToken, verifyToken } from "../src/tokens";
 import { html, Html } from "../src/web/html";
+import { isAdmin } from "../src/web/session";
 
 const SECRET = "unit-test-signing-key-unit-test-signing-key";
 const ISSUER = "https://gw.example.com";
@@ -183,5 +184,14 @@ describe("catalog", () => {
   it("rejects an OAuth client name that cannot be a secret name", () => {
     const auth = { type: "oauth2", client: "Bad Name", authorization_url: "https://a.example", token_url: "https://a.example" };
     expect(() => parseServices({ x: { base_url: "https://a.example", auth } })).toThrow("invalid client name");
+  });
+});
+
+describe("isAdmin", () => {
+  it("matches user IDs listed in ADMINS", () => {
+    const env = { ADMINS: "entra_t_a, google_b" } as unknown as Env;
+    expect(isAdmin(env, { sub: "google_b", name: "B" })).toBe(true);
+    expect(isAdmin(env, { sub: "entra_t_c", name: "C" })).toBe(false);
+    expect(isAdmin({ ADMINS: "" } as unknown as Env, { sub: "", name: "" })).toBe(false);
   });
 });

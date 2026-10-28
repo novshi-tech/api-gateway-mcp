@@ -50,10 +50,14 @@ function notice(url: URL, credentials: CredentialInfo[], services: Services): Ht
 }
 
 function connectionRow(c: CredentialInfo, services: Services): Html {
-  const status = c.needsReconnect
-    ? html`<span class="badge broken">再接続が必要</span>
+  // An OAuth connection is reconnected in place; one with an API key is deleted and added again.
+  const oauth = Object.hasOwn(services, c.service) && services[c.service].auth.type === "oauth2";
+  const status =
+    c.needsReconnect &&
+    (oauth
+      ? html`<span class="badge broken">再接続が必要</span>
 <form method="post" action="/connect"><input type="hidden" name="service" value="${c.service}"><input type="hidden" name="credential" value="${c.id}"><button>つなぎ直す</button></form>`
-    : false;
+      : html`<span class="badge broken">使えなくなりました。削除して追加し直してください</span>`);
   return html`<li id="c-${c.id}">
 <div class="row-main"><p class="row-title">${displayName(services, c.service)}</p><p class="row-sub">${c.label} · ${addedOn.format(c.createdAt)}に追加</p></div>
 <div class="row-actions">${status}<a class="button quiet" href="/connections/${c.id}/delete">削除</a></div>
@@ -82,7 +86,8 @@ ${notice(new URL(request.url), credentials, services)}
 <p>Claude が仕事で使うサービスの接続を、ここで管理します。パスワードやキーは暗号化して保管され、Claude には渡りません。</p>
 ${rows.length > 0
   ? html`<ul class="list">${rows}</ul>`
-  : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}`,
+  : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}
+<p class="hint">あなたのユーザー ID: <code>${user.sub}</code>(管理者の設定に使います)</p>`,
   );
 }
 
