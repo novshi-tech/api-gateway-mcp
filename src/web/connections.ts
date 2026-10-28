@@ -87,7 +87,7 @@ ${notice(new URL(request.url), credentials, services)}
 ${rows.length > 0
   ? html`<ul class="list">${rows}</ul>`
   : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}
-<p class="hint">あなたのユーザー ID: <code>${user.sub}</code>(管理者の設定に使います)</p>`,
+<details class="account"><summary>アカウントの情報</summary><p>ユーザー ID: <code>${user.sub}</code></p><p>管理者を設定するときに使います。</p></details>`,
   );
 }
 

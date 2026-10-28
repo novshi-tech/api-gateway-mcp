@@ -122,7 +122,7 @@ npx wrangler secret put OAUTH_<CLIENT>_CLIENT_SECRET
 
 ### 管理画面から接続先を足す
 
-`wrangler.jsonc` の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの下に表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
+`wrangler.jsonc` の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの一番下にある「アカウントの情報」を開くと表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
 
 管理画面で足した接続先(ヘッダーか OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
 

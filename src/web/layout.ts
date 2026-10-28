@@ -148,6 +148,10 @@ textarea {
 a.button.danger-link { color: var(--alert); border-color: var(--alert); margin-left: auto; }
 .who a { font-size: .875rem; }
 
+.account { margin-top: 2.5rem; color: var(--muted); font-size: .8125rem; }
+.account summary { cursor: pointer; width: max-content; }
+.account p { margin: .4rem 0 0; overflow-wrap: anywhere; }
+
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: 1.5rem; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1.25rem; }
 
