@@ -135,6 +135,9 @@ export function authorizeCallback(request: Request, env: EnvWithOAuth): Promise<
       metadata: { name: user.name },
       scope: original.scope,
       props,
+      // claude.ai, Cowork and Claude Desktop share one client ID and redirect URI, so
+      // revoking would cut off the user's other connections. Idle grants expire anyway.
+      revokeExistingGrants: false,
     });
     headers.set("location", redirectTo);
     return new Response(null, { status: 302, headers });

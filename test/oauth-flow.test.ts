@@ -27,15 +27,19 @@ function idpCode(claims: Record<string, unknown>): string {
   return btoa(JSON.stringify(claims)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// Drives the whole MCP authorization flow: registration, consent, upstream
-// sign-in through the fake IdP, callback, and token exchange.
-async function authorize(claims: (nonce: string) => Record<string, unknown>) {
+async function register(): Promise<string> {
   const registered = await SELF.fetch(`${BASE}/oauth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Test", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "none" }),
   });
-  const { client_id } = (await registered.json()) as { client_id: string };
+  return ((await registered.json()) as { client_id: string }).client_id;
+}
+
+// Drives the whole MCP authorization flow: registration, consent, upstream
+// sign-in through the fake IdP, callback, and token exchange.
+async function authorize(claims: (nonce: string) => Record<string, unknown>, clientId?: string) {
+  const client_id = clientId ?? (await register());
 
   const verifier = crypto.randomUUID() + crypto.randomUUID();
   const authorizeUrl = new URL(`${BASE}/authorize`);
@@ -96,6 +100,14 @@ async function exchange(code: string, client_id: string, verifier: string) {
   return { status: res.status, body: (await res.json()) as Record<string, string> };
 }
 
+async function refresh(refresh_token: string, client_id: string) {
+  const res = await SELF.fetch(`${BASE}/oauth/token`, {
+    method: "POST",
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token, client_id, resource: `${BASE}/mcp` }),
+  });
+  return { status: res.status, body: (await res.json()) as Record<string, string> };
+}
+
 async function callTool(accessToken: string, name: string, args: Record<string, unknown> = {}) {
   const res = await SELF.fetch(`${BASE}/mcp`, {
     method: "POST",
@@ -127,6 +139,23 @@ describe("MCP authorization flow", () => {
       expect.objectContaining({ id: (added as { id: string }).id }),
       expect.objectContaining({ id: "identity:murmur" }),
     ]);
+  });
+
+  // claude.ai, Cowork and Claude Desktop share one client ID and redirect URI, so
+  // connecting in one of them must not cut off the others.
+  it("keeps earlier grants when the same user connects the same client again", async () => {
+    const oid = crypto.randomUUID();
+    const claims = (nonce: string) => ({ nonce, tid: "tenant-1", oid, name: "Ada" });
+    const first = await authorize(claims);
+    const firstToken = await exchange(first.back.searchParams.get("code")!, first.client_id, first.verifier);
+
+    const second = await authorize(claims, first.client_id);
+    const secondToken = await exchange(second.back.searchParams.get("code")!, second.client_id, second.verifier);
+    expect(secondToken.status).toBe(200);
+
+    const refreshed = await refresh(firstToken.body.refresh_token, first.client_id);
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body.access_token).toBeTruthy();
   });
 
   it("denies users from other tenants", async () => {
