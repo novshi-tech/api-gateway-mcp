@@ -1,3 +1,4 @@
+import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { catalog } from "../src/catalog";
 import { oauthClient, parseServices } from "../src/config";
@@ -174,6 +175,7 @@ describe("catalog", () => {
   it("lets SERVICES add services and replace a built-in one by name", async () => {
     const auth = { type: "headers", headers: [{ name: "x-key", label: "key" }] };
     const services = await getServices({
+      ...env,
       SERVICES: { board: { base_url: "https://board.example", auth }, mine: { base_url: "https://mine.example", auth } },
     } as unknown as Env);
     expect(services.board.base_url).toBe("https://board.example");

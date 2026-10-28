@@ -147,6 +147,7 @@ export default defineConfig({
           OIDC_ISSUER,
           OIDC_CLIENT_ID,
           ALLOWED_TENANTS: "tenant-1",
+          ADMINS: "admin-user",
           OAUTH_FREEE_CLIENT_ID: FREEE.client.id,
           OAUTH_FREEE_CLIENT_SECRET: FREEE.client.secret,
           MICROSOFT_TENANT_ID: "tenant-1",

@@ -1,6 +1,6 @@
 # 運用開始後の設計の見直し
 
-更新日: 2026-10-28
+更新日: 2026-10-28(管理画面の実装に合わせて改訂)
 
 構想: [concept.md](concept.md)
 認可の設計: [auth-design.md](auth-design.md)
@@ -23,13 +23,15 @@
 
 ### 3 つの出どころを 1 つの窓口で引く
 
-接続先の定義は、次の 3 か所から集めて、後のものほど優先して重ねる。
+接続先の定義は、次の 3 か所から集めて重ねる。同じ名前があれば設定(`SERVICES`)が勝つ。管理画面ではカタログと同じ名前は使えない(全員の Google などの鍵の向き先を、画面から変えられないようにするため)。
 
 | 出どころ | 中身 | 変え方 |
 | --- | --- | --- |
 | カタログ(`src/catalog.ts`) | 汎用の接続先: freee、Microsoft Graph、Google 系、gBizINFO、Serper、board | ソースを変えて PR を出す |
 | 設定(`SERVICES`) | Service Binding や identity を使う接続先(murmur)と、移行中の互換 | デプロイの設定を変えて出し直す |
 | 管理画面 | 自社専用の接続先(ubs-apps、bm-next など) | 管理者が画面で登録する |
+
+設定から管理画面へ移すときは、先に管理画面に同じ名前で登録してから(設定が勝つので、この時点では何も変わらない)、設定から消してデプロイする。
 
 - いまは `parseServices(env.SERVICES)` を ui、mcp、proxy、vault の 10 か所で直接呼んでいる。これを `getServices(env)` と `getService(env, name)` の窓口 1 つにまとめ、呼ぶ側はすべてここを通す。
 - 管理画面の定義は保管場所から読むので、窓口は非同期になる。
@@ -54,7 +56,7 @@
   - Microsoft Graph のテナント ID は、URL に直接書かずに変数(`MICROSOFT_TENANT_ID`)から組み立てる。
 - カタログのクライアントは、これまでどおり `wrangler secret` で入れる: `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET`(例: `OAUTH_GOOGLE_CLIENT_ID`)。
 - 移行のあいだは、接続先ごとの古い名前(`OAUTH_GMAIL_CLIENT_ID` など)も読む。自社の移行が終わったら消す。
-- 管理画面で登録した OAuth の接続先のクライアントは、`Registry` に `ENCRYPTION_KEY` で暗号化して保管する。
+- 管理画面で登録した OAuth の接続先のクライアントは、接続先ごとに 1 つ、その接続先の画面で入れる。`Registry` に `ENCRYPTION_KEY` で暗号化して保管する。シークレットは画面に二度と表示しない。
 
 ## 認証情報と向き先の結び付け
 
@@ -88,8 +90,8 @@
 | `/connections/new` | サービスの選択。提供元ごと(Google、Microsoft、freee、その他、自社)にまとめ、絞り込みの検索を付ける |
 | `/connections/new/<service>` | 認証。OAuth はラベルを入れて「サインインしてつなぐ」、ヘッダー型はキーの入力欄。作ったら一覧に戻って「○○を追加しました」と出す |
 | `/admin/services` | 接続先の一覧(出どころも出す。カタログと設定のものは読み取り専用) |
-| `/admin/services/new`、`/admin/services/<name>` | 接続先の登録と編集 |
-| `/admin/clients` | 管理画面で使う OAuth のクライアントの登録 |
+| `/admin/services/new`、`/admin/services/<name>` | 接続先の登録と編集(OAuth のクライアントもここで入れる) |
+| `/admin/services/<name>/delete` | 接続先の削除の確認 |
 
 - フォームの送り先(`/credentials`、`/connect`、OAuth のコールバック)と処理は、いまのものを使い回す。
 - 一覧に戻ったときの通知は、リダイレクト先のクエリ(`/?added=<id>`)で渡す。
