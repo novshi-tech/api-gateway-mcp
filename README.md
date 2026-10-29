@@ -43,6 +43,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
+5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
 
 ```sh
 curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/api/1/companies"

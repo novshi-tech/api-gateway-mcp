@@ -17,6 +17,7 @@ import {
   deleteCredential,
   home,
 } from "./web/connections";
+import { confirmRevoke, revoke } from "./web/grants";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 
 export { Background } from "./background";
@@ -43,6 +44,8 @@ const ROUTES: Route[] = [
   ["GET", "/connections/new", chooseService],
   ["GET", /^\/connections\/new\/([a-z0-9][a-z0-9-]*)$/, (request, env, [service]) => connectForm(request, env, service)],
   ["GET", /^\/connections\/([0-9a-f-]+)\/delete$/, (request, env, [id]) => confirmDelete(request, env, id)],
+  ["GET", /^\/grants\/([A-Za-z0-9_-]+)\/revoke$/, (request, env, [id]) => confirmRevoke(request, env, id)],
+  ["POST", /^\/grants\/([A-Za-z0-9_-]+)\/revoke$/, (request, env, [id]) => revoke(request, env, id)],
   ["GET", "/login", login],
   ["GET", LOGIN_CALLBACK_PATH, loginCallback],
   ["POST", "/logout", logout],

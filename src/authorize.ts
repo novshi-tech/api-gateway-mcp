@@ -5,6 +5,7 @@ import { html } from "./web/html";
 import { page } from "./web/layout";
 import { authorizationUrl, SignInError, signIn } from "./idp";
 import type { McpProps } from "./mcp";
+import type { GrantMetadata } from "./web/grants";
 
 export const MCP_SCOPE = "gateway";
 export const MCP_CALLBACK_PATH = "/oauth/callback";
@@ -130,10 +131,13 @@ export function authorizeCallback(request: Request, env: EnvWithOAuth): Promise<
     }
 
     const props: McpProps = { userId: user.id, name: user.name };
+    // Kept on the grant so the list of allowed apps can name it without looking the client up.
+    const client = await oauth.lookupClient(original.clientId).catch(() => null);
+    const metadata: GrantMetadata = { name: user.name, ...(client?.clientName ? { client: client.clientName } : {}) };
     const { redirectTo } = await oauth.completeAuthorization({
       request: original,
       userId: user.id,
-      metadata: { name: user.name },
+      metadata,
       scope: original.scope,
       props,
       // claude.ai, Cowork and Claude Desktop share one client ID and redirect URI, so

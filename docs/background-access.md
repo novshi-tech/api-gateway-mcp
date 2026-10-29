@@ -2,7 +2,7 @@
 
 更新日: 2026-10-29
 
-状態: 1 と 2 は実装した(2026-10-29)。3 は未着手。
+状態: 1〜3 を実装した(2026-10-29)。
 
 構想: [concept.md](concept.md)
 認可の設計: [auth-design.md](auth-design.md)
@@ -94,7 +94,8 @@ OAuth2 の client credentials で上流のトークンを取る認証方式を�
 - 入口: `src/background.ts` の `Background`(`src/index.ts` から export)。トークンはサービス・トークンの URL・client id・スコープごとに isolate のメモリに覚え、期限の 1 分前まで使い回す。同時に来た呼び出しは 1 回の取得を共有する
 - 中継は `src/proxy.ts` の `forward` を REST と共有する。操作ログは `user` の代わりに `"caller": "background"` を書く
 - `client_credentials` の接続先は、`list_credentials`・「接続を追加」・REST(`/api/`)のどれにも出ない(REST では 404)。ユーザーの保管庫にも入らない
-- テスト: `test/background.test.ts`、`test/admin.test.ts`(管理画面からの登録)
+- 許可したアプリの一覧と取り消し: `src/web/grants.ts`。トップの画面に許可(grant)ごとに出し、確認のあと `revokeGrant` で取り消す。アプリの名前は、許可したときにクライアントの名前を grant の metadata に入れておき、一覧では引き直さない(CIMD のメタデータを毎回取りに行かないため)。それ以前の許可は client_id のホスト名で出す
+- テスト: `test/background.test.ts`、`test/admin.test.ts`(管理画面からの登録)、`test/oauth-flow.test.ts`(許可の一覧と取り消し)
 
 ## 確かめること
 
