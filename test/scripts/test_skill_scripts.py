@@ -31,6 +31,7 @@ GMAIL_MIME = os.path.join(SKILLS["gmail"], "scripts", "gmail_mime.py")
 DRIVE_ALL = os.path.join(SKILLS["google-drive"], "scripts", "drive_all.py")
 CALENDAR_ALL = os.path.join(SKILLS["google-calendar"], "scripts", "calendar_all.py")
 DOCS_TEXT = os.path.join(SKILLS["google-docs"], "scripts", "docs_text.py")
+BOARD_ALL = os.path.join(SKILLS["board"], "scripts", "board_all.py")
 
 TOTAL_ITEMS = 250
 
@@ -312,6 +313,21 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--key", result.stderr.decode())
 
+    def test_board_all_fetches_every_page(self):
+        self.run_script(BOARD_ALL, "/v1/projects", "-q", "order_status_in[]=4", "-o", "all.json")
+        with open(os.path.join(self.tmp.name, "all.json"), encoding="utf-8") as f:
+            items = json.load(f)
+        self.assertEqual([i["id"] for i in items], list(range(TOTAL_ITEMS)))
+        self.assertEqual(len(FakeGateway.requests), 3)
+        self.assertTrue(all("order_status_in%5B%5D=4" in r["path"] for r in FakeGateway.requests))
+
+    def test_board_all_csv(self):
+        out = self.run_script(BOARD_ALL, "/v1/projects", "--csv", "id,name")
+        rows = list(csv.reader(io.StringIO(out.stdout.decode())))
+        self.assertEqual(rows[0], ["id", "name"])
+        self.assertEqual(rows[1], ["0", "p0"])
+        self.assertEqual(len(rows), TOTAL_ITEMS + 1)
+
     def test_google_lists_keep_query_and_gateway_auth_across_pages(self):
         for script, path, key in ((GMAIL_ALL, "/gmail/v1/users/me/messages", "messages"), (DRIVE_ALL, "/drive/v3/files", "files"), (CALENDAR_ALL, "/calendar/v3/calendars/primary/events", "items")):
             with self.subTest(script=script):
@@ -434,6 +450,7 @@ class SkillScriptsTest(unittest.TestCase):
         # Claude Code installs each plugin in its own tree, and Cowork names skill
         # directories "<plugin>:<skill>": a skill must not reach outside its directory.
         scripts = [
+            ("board", "board_all.py", ["/v1/projects", "--max-pages", "1"]),
             ("freee", "freee_all.py", ["/api/1/deals", "-q", "company_id=1", "--max-pages", "1"]),
             ("microsoft-graph", "graph_all.py", ["/v1.0/me/messages", "--max-pages", "1"]),
             ("gmail", "gmail_all.py", ["/gmail/v1/users/me/messages", "--max-pages", "1"]),
