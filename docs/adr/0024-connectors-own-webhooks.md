@@ -47,7 +47,7 @@
 
 ### 4. 共有の箱はアプリの権限
 
-- テナントの管理者が Entra に本体専用のアプリ（`Mail.Read` のアプリ権限だけ）を登録し、RBAC for Applications の管理スコープで読ませる箱だけに絞る
+- テナントの管理者が Entra に本体専用のアプリを登録し、Exchange の RBAC for Applications で役割 `Application Mail.Read` を読ませる箱だけの管理スコープに付ける。Entra の側では API のアクセス許可を何も付けない（`Mail.Read` のアプリ権限に同意すると全員の箱に届き、Exchange のスコープより優先される。2026-10-29 に書き方を直した）
 - ゲートウェイには、管理者が管理画面で client credentials の接続先を登録する（client id と secret はゲートウェイの `Registry` に暗号化して置く）
 - 本体はゲートウェイの名前付きエントリポイント（インターネットに出ず、Service Binding からしか呼べない）から使う。本体とゲートウェイの間のシークレットは要らない。信頼の境界は Cloudflare のアカウントになる（0020 でチームのもの）
 - その入口で使えるのは、デプロイが持つ client credentials の接続だけ。個人の接続には届かない

@@ -8,7 +8,7 @@
 - 認証方式 `client_credentials`: 管理画面（「OAuth 2.0(client credentials)」）か設定ファイルで登録。トークンはゲートウェイのメモリで使い回し、保管しない。利用者の画面・`list_credentials`・REST（`/api/`）には出ない
 - 名前付きのエントリポイント `Background`: 本体は `{ "binding": "GATEWAY", "service": "<ゲートウェイの Worker 名>", "entrypoint": "Background" }` を張り、`env.GATEWAY.fetch("https://gateway/<サービス名>/<Graph のパス>")` で呼ぶ（`/api` は付けない、Authorization も要らない）。`client_credentials` の接続先にだけ届く
 - 許可したアプリ: ゲートウェイのトップに許可ごとに出て、本人が取り消せる。名前はクライアントの `client_name`（本体は CIMD のメタデータに書いておく）
-- 共有の箱の RBAC for Applications は必須（`Mail.Read` のアプリ権限だけだと全員の箱が読める）。やめたのは、個人の箱もアプリの権限で読んで人ごとにスコープを足す案（0024 の議論の経過 4）
+- 共有の箱の RBAC for Applications は必須。権限は Exchange の役割 `Application Mail.Read` をスコープ付きで渡し、Entra では何も付けない（Entra で `Mail.Read` のアプリ権限に同意すると全員の箱が読めて、スコープが効かない）。やめたのは、個人の箱もアプリの権限で読んで人ごとにスコープを足す案（0024 の議論の経過 4）
 - 残り: 未決 1（client secret をなくす）、確かめること（名前付きエントリポイントがインターネットに出ないこと・RBAC for Applications のスコープの外が 403 になること。実デプロイで）
 
 **2026-10-28〜29: 外部コネクタ（Outlook）の設計を議論した（クラウドセッション、ブランチ `claude/adoring-feynman-yozaf4`。#4・#5 で main に入れた）。ADR だけでコードは変えていない。** 要点（詳細は 0024 と Artifact「Murmur 外部コネクタ設計」v4）:
