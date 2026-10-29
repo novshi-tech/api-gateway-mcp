@@ -1,6 +1,6 @@
 # 0024 外部コネクタ: Webhook は本体が持ち、個人の箱は本人の OAuth、共有の箱はアプリの権限で読む
 
-- 状態: 採用（2026-10-29、直樹）。0012 の状態に注記を足し、CLAUDE.md の約束事と注意を直した。ゲートウェイの側は api-gateway-mcp の `docs/background-access.md`（#15）で決める
+- 状態: 採用（2026-10-29、直樹）。共有のアドレスが Microsoft 365 グループのときは 0025（購読者にした共有メールボックスで読む）。0012 の状態に注記を足し、CLAUDE.md の約束事と注意を直した。ゲートウェイの側は api-gateway-mcp の `docs/background-access.md`（#15）で決める
 - 関連: 0012（外には何も書かない。この ADR で緩める）、0016（次の段階。段取り 5 の準備）、0007（読み取り専用・量の見通し 7）、0015（手元の pull スクリプトの案。この ADR で置き換える）、0003（identity）、0006（ServiceClient・act-as。この ADR で置き換える）、0013（共有のデータソースは組織の資格情報）、0020・0021（1 デプロイ = 1 チーム、同じ Cloudflare アカウント）、0023（リポジトリをまとめる構想）
 - 設計の詳細: Artifact「Murmur 外部コネクタ設計」（v3）。ゲートウェイの側の提案は api-gateway-mcp の `docs/background-access.md`（#15）
 
@@ -47,7 +47,7 @@
 
 ### 4. 共有の箱はアプリの権限
 
-- テナントの管理者が Entra に本体専用のアプリ（`Mail.Read` のアプリ権限だけ）を登録し、RBAC for Applications の管理スコープで読ませる箱だけに絞る
+- テナントの管理者が Entra に本体専用のアプリを登録し、Exchange の RBAC for Applications で役割 `Application Mail.Read` を読ませる箱だけの管理スコープに付ける。Entra の側では API のアクセス許可を何も付けない（`Mail.Read` のアプリ権限に同意すると全員の箱に届き、Exchange のスコープより優先される。2026-10-29 に書き方を直した）
 - ゲートウェイには、管理者が管理画面で client credentials の接続先を登録する（client id と secret はゲートウェイの `Registry` に暗号化して置く）
 - 本体はゲートウェイの名前付きエントリポイント（インターネットに出ず、Service Binding からしか呼べない）から使う。本体とゲートウェイの間のシークレットは要らない。信頼の境界は Cloudflare のアカウントになる（0020 でチームのもの）
 - その入口で使えるのは、デプロイが持つ client credentials の接続だけ。個人の接続には届かない
