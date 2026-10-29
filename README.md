@@ -55,6 +55,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | プラグイン | スキル | サービス名 | できること |
 | --- | --- | --- | --- |
 | `api-gateway`(必須) | `api-gateway` | — | トークンの発行と、REST の呼び出し(`gw_request.py`)の共通手順。ほかのスキルはこれを前提にする |
+| | `board` | `board` | 販売管理 SaaS「board」の案件・見積・請求・発注・支払・顧客などの検索・登録・更新 |
 | | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
 | | `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
 | `api-gateway-microsoft` | `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
@@ -173,6 +174,10 @@ npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_SECRET
 - スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書き、Analytics の `analytics.readonly` は GA4 のレポートとプロパティの読み取りに使います(Data API と Admin API はホストが別なので、サービスも 2 つに分けています)。読み取り専用にするなら、`SERVICES` に同じ名前でサービスを書いて、スコープを `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
 - `authorize_params` の `access_type: offline` と `prompt: consent` は、リフレッシュトークンを受け取るための設定です。
 - REST の呼び出し先の例: `/api/gmail/gmail/v1/users/me/messages`、`/api/drive/drive/v3/files`(アップロードは `/api/drive/upload/drive/v3/files`)、`/api/calendar/calendar/v3/calendars/primary/events`、`/api/docs/v1/documents/{id}`、`/api/analytics/v1beta/properties/{id}:runReport`、`/api/analytics-admin/v1beta/accountSummaries`
+
+#### board(`board`)
+
+board の API 設定で API キーと API トークンを発行し、ユーザーが Web 画面で登録します。ゲートウェイは API キーを `x-api-key` ヘッダー、トークンを `Authorization: Bearer` で送ります。トークンごとに使えるエンドポイントが決まっているので、使う API の権限を付けて発行します。
 
 #### gBizINFO(`gbizinfo`)
 
