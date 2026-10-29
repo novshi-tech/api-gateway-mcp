@@ -1,6 +1,6 @@
 # 0025 Microsoft 365 グループのメールボックスは、アプリの権限 `Group.Read.All` で読む
 
-- 状態: 案（2026-10-29、直樹の判断「まずは `Group.Read.All` を与える」）。実物で確かめるまで実装しない
+- 状態: 案（2026-10-29、直樹の判断「まずは `Group.Read.All` を与える」）。同じ日に公式ドキュメントを調べ、アプリの権限では変更通知が受けられないとわかった（下の「調べたこと」）。A・B・C のどれにするかを決めるまで実装しない
 - 関連: 0024（決定 4: 共有の箱はアプリの権限で読み、RBAC for Applications で絞る。この案はその例外）、0012（外には何も書かない）、0013（共有のデータソースは組織の資格情報）、0020（1 デプロイ = 1 チーム）
 
 ## 背景
@@ -12,6 +12,22 @@
 - `Set-Mailbox` では見つからず、0024 の手順はそのまま使えない
 - Graph でグループのメールを読むのは `/groups/{id}/conversations`（スレッドと投稿）で、要るのは Entra のアプリの権限 `Group.Read.All`。Exchange の RBAC for Applications のスコープでは絞れない（と見ている。確かめること）
 - `Group.Read.All` はテナントのすべてのグループ（会話・メンバー・プロパティ）に届く
+
+## 調べたこと（2026-10-29、Microsoft Graph の公式ドキュメント）
+
+- 変更通知: グループの会話（`groups/{id}/conversations`）は、委任（職場のアカウント）の `Group.Read.All` だけで作れる。**アプリの権限では作れない**（Create subscription の権限の表で Application が Not supported）
+- delta: 会話・スレッド・投稿には delta がない（Delta query overview の一覧にない）
+- 読み取りの最小の権限は `Group-Conversation.Read.All`（委任・アプリとも）。`Group.Read.All` はそれより広い
+
+0024 の「通知はヒントで、正は delta」は、グループの会話では成り立たない。
+
+## 選択肢
+
+- A. アプリの権限 `Group-Conversation.Read.All` で読み、Cron の見回りで新しいものを取る。client credentials と Background の入口はそのまま使える。通知がないので届くのが見回りの間隔ぶん遅れ、delta がないので取りこぼしと重複は `lastDeliveredDateTime` と `sourceRef` で防ぐ。取り込みの作りが 0024 とは別に 1 つ増える
+- B. 共有メールボックスを 1 つ作り、グループのメンバーかつ購読者にして、届いたメールのコピーを受けさせる。メールとして届くので、0024 の変更通知・delta・RBAC for Applications がそのまま使える。グループごとに管理者の作業が 1 回要る
+- C. メンバーの本人の権限（委任の `Group.Read.All`）で通知を受ける。管理者の同意が要り、その人がメンバーから抜けると止まる
+
+以下の「決定（案）」は、調べる前に書いた A の形（権限は `Group-Conversation.Read.All` に読み替える）。
 
 ## 決定（案）
 
@@ -33,8 +49,10 @@
 
 ## 実物で確かめること
 
-- グループの会話（`/groups/{id}/conversations` か `threads`）に変更通知のサブスクリプションを作れるか。どの権限か
-- delta があるか。なければ Cron の見回りで `lastDeliveredDateTime` を手がかりに取る
+- ~~グループの会話に変更通知のサブスクリプションを作れるか~~ → アプリの権限では作れない（ドキュメント）
+- ~~delta があるか~~ → ない（ドキュメント）
+- B なら: 共有メールボックスをグループのメンバー・購読者にできるか、エイリアス宛ても含めてコピーが届くか
+- A なら: 会話の一覧を `lastDeliveredDateTime` の新しい順に取れるか
 - RBAC for Applications のスコープがグループのメールボックスに効かないこと（効くなら絞る）
 - 投稿から In-Reply-To・Message-ID に当たるもの（アンカー）が取れるか
 - `Group.Read.All` に同意したあと、client credentials のトークンの `roles` に入ること
