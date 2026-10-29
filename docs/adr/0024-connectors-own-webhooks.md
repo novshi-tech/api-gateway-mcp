@@ -1,6 +1,6 @@
 # 0024 外部コネクタ: Webhook は本体が持ち、個人の箱は本人の OAuth、共有の箱はアプリの権限で読む
 
-- 状態: 採用（2026-10-29、直樹）。0012 の状態に注記を足し、CLAUDE.md の約束事と注意を直した。ゲートウェイの側は api-gateway-mcp の `docs/background-access.md`（#15）で決める
+- 状態: 採用（2026-10-29、直樹）。共有のアドレスが Microsoft 365 グループのときの例外は 0025（案）。0012 の状態に注記を足し、CLAUDE.md の約束事と注意を直した。ゲートウェイの側は api-gateway-mcp の `docs/background-access.md`（#15）で決める
 - 関連: 0012（外には何も書かない。この ADR で緩める）、0016（次の段階。段取り 5 の準備）、0007（読み取り専用・量の見通し 7）、0015（手元の pull スクリプトの案。この ADR で置き換える）、0003（identity）、0006（ServiceClient・act-as。この ADR で置き換える）、0013（共有のデータソースは組織の資格情報）、0020・0021（1 デプロイ = 1 チーム、同じ Cloudflare アカウント）、0023（リポジトリをまとめる構想）
 - 設計の詳細: Artifact「Murmur 外部コネクタ設計」（v3）。ゲートウェイの側の提案は api-gateway-mcp の `docs/background-access.md`（#15）
 
