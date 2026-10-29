@@ -21,7 +21,7 @@
 - イベント型を追加・変更するときは、zod スキーマ（`src/domain/events.ts`）、fold の純関数テスト（`test/domain/fold.test.ts`）、リプレイテスト（H1、`test/scenarios.test.ts`）を同じ PR で更新する
 - Claude API の呼び出しは必ず記録・再生の層（`src/ingest/llm.ts` の `RecordReplayLlm`）を通す。テストは再生モードのみ
 - `src/domain/` に Workers API への依存を持ち込まない（下の FC-IS を参照）
-- 本体は外に何も書かない（`docs/adr/0012`）。送信・起票・コメントはスタンドがゲートウェイ経由で行い、本体には `record_sent` で事実だけを記録する。本体に送信の経路（`Connector.send`、承認付きの送信）を足さない
+- 本体はデータソースの中身を書き換えない（`docs/adr/0012`）。送信・起票・コメントはスタンドがゲートウェイ経由で行い、本体には `record_sent` で事実だけを記録する。本体に送信の経路（`Connector.send`、承認付きの送信）を足さない。例外は取り込みのための購読の管理（Graph のサブスクリプション、Jira の動的 Webhook など）だけで、本体が持つ（`docs/adr/0024`）。読み取りしかしないことは本体のコードで保証する
 - チームリスト・購読・派生・本体の承認を足さない（`docs/adr/0013`）。誰の番かは持ち主の操作（`ThreadClaimed`）と構造で決め、自然文の条件を持ち込まない
 - スレッド以外のエンティティ（用件・Matter）を足さない。個人のメモはデータソースの 1 種類（`docs/adr/0014`）
 - Murmur は自分でリンクを張らない（`record_sent` の副作用の経路 sent だけが例外）。アンカーの一致は結び候補としてクエリ層で出すだけ。本人の側の状態（片付け・属性・メモ）を自動で変えない（`docs/adr/0014`）
@@ -82,6 +82,6 @@ pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
 
 ## 注意
 
-- 本体は上流サービスのトークンを持たず、外へは何も書かない。取り込みはゲートウェイ経由（プロトタイプはダミーコネクタのみ）
+- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。いまの実装はダミーコネクタのみ
 - 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
 - スタンド（Cowork / Claude Code）用のスキルは novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`（v2 の版の下書きは `docs/stand/skill-murmur.md`）、接続手順は `docs/stand/connect.md`。HTTP API を変えたらスキルの API の表も直す
