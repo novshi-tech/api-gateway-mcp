@@ -1,7 +1,7 @@
 {
   "name": "api-gateway-freee",
   "displayName": "API Gateway: freee",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "API ゲートウェイ経由で freee(会計・人事労務・請求書・販売)を操作するスキル。api-gateway プラグインと一緒に使う。",
   "author": {
     "name": "novshi-tech"

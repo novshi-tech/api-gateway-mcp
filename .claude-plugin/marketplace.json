@@ -14,7 +14,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway"
       },
-      "version": "0.12.0",
+      "version": "0.12.1",
       "description": "API ゲートウェイの共通手順(認証情報の確認、トークンの発行、REST の呼び出し)と、gBizINFO・Serper のスキル。ほかの api-gateway-* プラグインの前提。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。"
     },
     {
@@ -24,7 +24,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway-google"
       },
-      "version": "0.12.0",
+      "version": "0.12.1",
       "description": "API ゲートウェイ経由で Gmail・Google Drive・Google Calendar・Google Docs・Google Analytics を操作するスキル。api-gateway プラグインと一緒に使う。",
       "dependencies": [
         "api-gateway"
@@ -37,7 +37,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway-microsoft"
       },
-      "version": "0.12.0",
+      "version": "0.12.1",
       "description": "API ゲートウェイ経由で Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)を操作するスキル。api-gateway プラグインと一緒に使う。",
       "dependencies": [
         "api-gateway"
@@ -50,7 +50,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway-freee"
       },
-      "version": "0.12.0",
+      "version": "0.12.1",
       "description": "API ゲートウェイ経由で freee(会計・人事労務・請求書・販売)を操作するスキル。api-gateway プラグインと一緒に使う。",
       "dependencies": [
         "api-gateway"
