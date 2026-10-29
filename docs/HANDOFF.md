@@ -1,22 +1,23 @@
 # 申し送り
 
-最終更新: 2026-10-28。**2026-10-28 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（提案）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
+最終更新: 2026-10-29。**2026-10-28〜29 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（採用）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。次はゲートウェイの改修（api-gateway-mcp#15）から。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
 
 ## いまの状態
 
-**2026-10-28: 外部コネクタ（Outlook）の設計を議論した（クラウドセッション、ブランチ `claude/adoring-feynman-yozaf4`）。ADR だけでコードは変えていない。** 要点（詳細は 0024 と Artifact「Murmur 外部コネクタ設計」v3）:
-- **`docs/adr/0024`（提案、直樹のレビュー待ち）**: Webhook の管理は本体が持つ（0012 を「中身は書き換えない。取り込みのための購読の管理だけはする」に緩める）。通知はヒントで、正は delta。同期は Cloudflare Queues で直列
+**2026-10-28〜29: 外部コネクタ（Outlook）の設計を議論した（クラウドセッション、ブランチ `claude/adoring-feynman-yozaf4`。#4・#5 で main に入れた）。ADR だけでコードは変えていない。** 要点（詳細は 0024 と Artifact「Murmur 外部コネクタ設計」v4）:
+- **`docs/adr/0024`（採用、2026-10-29、直樹）**: Webhook の管理は本体が持つ（0012 を「中身は書き換えない。取り込みのための購読の管理だけはする」に緩めた。0012 の状態と CLAUDE.md に反映した）。通知はヒントで、正は delta。同期は Cloudflare Queues で直列
 - 個人の箱は本人の権限: 本体がゲートウェイの OAuth クライアントになり（Claude と同じ）、本人が同意する。データソースは同意のあと実行時に作る（読者は本人 1 人）
-- 共有の箱はアプリの権限: テナントの管理者がデプロイの設定で client credentials を入れ、Entra の RBAC for Applications で箱を絞る。本体はゲートウェイの名前付きエントリポイント（Service Binding だけから呼べる）で使う
-- ゲートウェイに頼むこと（api-gateway-mcp の側で決める）: 読み取りだけの Graph の接続先、client credentials の認証方式、専用の入口、redesign.md の「認証情報の持ち主はユーザーだけ」の例外。ゲートウェイから本体への呼び出しは増やさない
+- 共有の箱はアプリの権限: テナントの管理者がゲートウェイの管理画面で client credentials の接続先を登録し、Entra の RBAC for Applications で箱を絞る。本体はゲートウェイの名前付きエントリポイント（Service Binding だけから呼べる）で使う
+- 読み取りしかしないことは本体のコードで保証する（取り込みに、書き込むかどうかを AI が判断する箇所がない）。本体のためだけに読み取りだけの接続は用意せず、本人の `graph` の接続をそのまま使う（api-gateway-mcp#15 のレビュー）
+- ゲートウェイに頼むこと: client credentials の認証方式（管理画面から登録）、Service Binding だけから呼べる専用の入口、許可したクライアントを取り消す画面（あるとよい）、redesign.md の「認証情報の持ち主はユーザーだけ」の例外。ゲートウェイから本体への呼び出しは増やさない。提案は api-gateway-mcp の `docs/background-access.md`（novshi-tech/api-gateway-mcp#15。ゲートウェイの大規模改善の作業と一緒に、そちらでレビューして main に入れる）
 - 議論で外した案: 手元のランナー（0015。先送り）、Webhook をゲートウェイに置く（ゲートウェイの性格が崩れて密結合）、全部アプリの権限（人が増えるたびに管理者の作業）、独自の許可の機構（OAuth の作り直し）
 - **`docs/adr/0023`（構想）**: ゲートウェイと Murmur を 1 つのリポジトリにまとめる（Worker は分けたまま）。今はやらない
-- api-gateway-mcp をこのセッションにクローンして読んだ（変更なし）。ゲートウェイの側の ADR は、置き場所（ブランチ）を直樹に聞いている
+- nvt-api-gateway-skills の `murmur` スキルの API の表は、0021 の分も直っていた（57bd64c、プラグイン 0.5.0。今の main は 0.6.0 で、SKILL.md は `docs/stand/skill-murmur.md` と同じ）
 
 **2026-10-23（後半）: 0021 の決定 1〜3 を実装した（クラウドセッション、ブランチ `claude/adoring-noether-yjejoy`。main には未反映）。ストレージは D1 に決めた（直樹）。** 詳細は 0021 の「実装の記録」。要点:
 - マルチテナントを外した（24e666c）: マスタ・イベントの封筒・投影・API からテナントを外し、1 デプロイ = 1 チーム。User の Party は 1 つまで、Party のない User は何も見えない。
   API が変わった: `/me` は `party`（なければ `null`）、`list_threads`・`list_lists`・`add_note` の `tenant` を外した、Webhook は `POST /webhooks/dummy`、`timeline.html` の `tenant` を外した。
-  **nvt-api-gateway-skills の `murmur` スキルの API の表を直す必要がある**（このリポの下書き `docs/stand/skill-murmur.md` は直した。スキルのリポはこのセッションの範囲外）
+  ~~nvt-api-gateway-skills の `murmur` スキルの API の表を直す必要がある~~ → 直っていた（57bd64c、プラグイン 0.5.0。2026-10-29 に確認）
 - 投影を差分で書くようにした（74c55d6）: `foldChanges` が変わったスレッド・シグナル・索引を返し、ストアはそれだけ upsert する（0004 のトレードオフの解消）
 - D1 に移した（03f9ef2）: スキーマは SQLite、マイグレーションは `drizzle/` を作り直した（Postgres の 0000〜0003 は消した）。Postgres の実装・Neon・pglite の依存を消した。テストは Miniflare の D1
 - テスト: `pnpm test` で 199 件が全部緑。`pnpm scenario verify all`（`--db d1`・`--ai replay` も）は 4 本とも一致（AI の記録はそのまま当たる）。`wrangler dev --env dev --local` で Webhook の取り込み・重複排除・管理画面も確かめた
@@ -174,7 +175,7 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
 
 ## 次のセッションでやること
 
-0. **0024 を直樹がレビューする。** 採用なら、0012 の状態に注記・CLAUDE.md の約束事を直し、ゲートウェイの側の ADR を書いて、設計の段取り S0（実物で確かめる）から始める
+0. **外部コネクタ（0024、採用）は、ゲートウェイの改修から始める。** api-gateway-mcp#15 がそちらで main に入ったら、ゲートウェイに client credentials・専用の入口を実装する（api-gateway-mcp の作業）。並べて、設計の段取り S0（実物で確かめる: 委任の再認可の間隔、delta の `uniqueBody` と In-Reply-To、下書き → 送信の `internetMessageId`、名前付きエントリポイントが公開されないこと）
 
 0. 2026-10-23 の ADR（0020・0021・0022、0016 の書き直し）を直樹がレビューする
 0. **0021 の実装（ブランチ `claude/adoring-noether-yjejoy`）を main に入れる前に**、直樹が手でやること（main への push で CI が murmur-dev にデプロイするので、先に済ませないとデプロイが落ちる）:
@@ -182,14 +183,14 @@ v1 の H1〜H6 は緑だった（`proto-v1`）。v2 は仮説を立て直した�
    2. `pnpm db:migrate dev`（`wrangler d1 migrations apply DB --remote --env dev`）
    3. `pnpm seed absence --env dev --user u_kimura=<直樹のゲートウェイの User ID>`（dev の Neon のイベントは移さない。seed から入れ直す）
    4. `wrangler secret delete DATABASE_URL --env dev`（任意）。そのあと main に入れる
-   5. nvt-api-gateway-skills の `murmur` スキルの API の表を直す（上の「いまの状態」）。Cowork のプラグインも入れ直す
+   5. ~~nvt-api-gateway-skills の `murmur` スキルの API の表を直す~~（済み、57bd64c）。Cowork のプラグインも入れ直す
 0. 0021 の残り: 決定の 4（ゲートウェイの `deploy` スキルで Murmur も一緒にデプロイし、Service Binding・JWKS・シークレットの配線を自動にする）。api-gateway-mcp の側の作業。`projection_meta.idx` が何件で 2 MB に届くかの計測
 1. ~~複数の組織にまたがる認証と接続の設計（`docs/adr/0017`）~~ → 2026-10-22 に結論（`docs/adr/0018`）: やらない。組織の切り替えはスタンドで行う。設計はしない
 2. **次の段階（`docs/adr/0016`）**: 自社向けに実コネクタを作り、実データで Ingest が使えるかを確かめる。振り返りの持ち越しの順に
    1 相手を引く API → 2 件名を属性として畳む → 3 スキルの片付けの説明 → 4 写しが課題のスレッドより先に届いたとき → 5 実データの試用（本題）→ 6 LINE が自分の push を webhook で返すか（LINE をつなぐ前に）。
    着手するものは ADR に案を書いてから。最初のデータソースは UBS の Outlook に決まった（2026-10-22。LINE と Jira はそのあと早めに）。5 に入る前に、ゴールの数字・どのメールボックスとフォルダか・取り込みの経路（0015 の pull スクリプトの案か act-as か）・本文と記録の扱いを決める
 3. 片付け（急がない）
-   - Cowork のプラグインは 0.3.0 のまま。nvt-api-gateway-skills の main は 0.4.0（79c4d7d）なので、使う前に入れ直す
+   - Cowork のプラグインは 0.3.0 のまま。nvt-api-gateway-skills の main は 0.6.0（7286cbc）なので、使う前に入れ直す
    - dev の DB は absence の seed と H7 の 1 回目のイベントが入ったまま（木村 = 直樹のゲートウェイの User）。ステップ 7 のコードがデプロイ済みで、投影のスレッドに `closedAtSource` がない（読むと false 扱い）。使うときに seed を入れ直せば揃う
    - 2026-10-21 の後半は直樹の手元（`~/src/github.com/novshi-tech/murmur`）のセッションで作業した。main に直接 push している（ブランチ `ccr-fab8e92c-c9jtn1` にも同じものを push）
 
