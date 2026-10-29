@@ -26,7 +26,7 @@ const DROP_REQUEST_HEADERS = new Set([
 
 const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "connection", "keep-alive", "transfer-encoding", "trailer", "upgrade"]);
 
-function denied(status: number, message: string): Response {
+export function denied(status: number, message: string): Response {
   return Response.json({ error: message }, { status });
 }
 
@@ -53,7 +53,8 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   if (!claims) return denied(401, "invalid or expired gateway token");
 
   const target = await getUpstream(env, service);
-  if (!target) return denied(404, `unknown service: ${service}`);
+  // client_credentials services belong to the deployment and are reached only through the Background entrypoint.
+  if (!target || target.config.auth.type === "client_credentials") return denied(404, `unknown service: ${service}`);
   const config = target.config;
   const credentialId = claims.creds?.[service];
   if (!credentialId) return denied(403, `token does not cover service: ${service}`);
@@ -79,11 +80,29 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
     return denied(502, "could not refresh the upstream access token; try again later");
   }
 
+  return forward(request, config, upstreamFetcher(env, config), upstreamPath, result.headers, {
+    user: claims.sub,
+    credential: credentialId,
+    service,
+  });
+}
+
+// Sends the caller's request upstream with the injected headers, logs it, and returns
+// the response without hop-by-hop headers and cookies. Shared with the Background entrypoint.
+export async function forward(
+  request: Request,
+  config: ServiceConfig,
+  fetcher: typeof fetch,
+  upstreamPath: string,
+  injected: Record<string, string>,
+  who: Record<string, string>,
+): Promise<Response> {
+  const url = new URL(request.url);
   const upstreamUrl = `${config.base_url}${upstreamPath}${url.search}`;
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const upstream = await upstreamFetcher(env, config)(upstreamUrl, {
+  const upstream = await fetcher(upstreamUrl, {
     method: request.method,
-    headers: forwardHeaders(request.headers, result.headers),
+    headers: forwardHeaders(request.headers, injected),
     body: hasBody ? request.body : undefined,
     // Redirects go back to the caller; a signed download URL needs no credentials.
     redirect: "manual",
@@ -92,9 +111,7 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   console.log(
     JSON.stringify({
       type: "audit",
-      user: claims.sub,
-      credential: credentialId,
-      service,
+      ...who,
       method: request.method,
       path: upstreamPath || "/",
       status: upstream.status,
@@ -120,7 +137,7 @@ async function identityHeaders(
 }
 
 // A Service Binding reaches a Worker that has no public route.
-function upstreamFetcher(env: Env, config: ServiceConfig): typeof fetch {
+export function upstreamFetcher(env: Env, config: ServiceConfig): typeof fetch {
   if (!config.binding) return fetch;
   const binding = (env as unknown as Record<string, Fetcher | undefined>)[config.binding];
   if (!binding) throw new Error(`missing service binding: ${config.binding}`);

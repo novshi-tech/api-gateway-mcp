@@ -20,7 +20,8 @@ export interface Directory {
   sources: Record<string, ServiceSource>;
   registry: RegistrySnapshot;
   client(service: string): OAuthClient | null;
-  // An OAuth service is usable only once the gateway has its client.
+  // A service users can see: an OAuth service only once the gateway has its client, and
+  // never a client_credentials one, which only the Background entrypoint uses.
   available(service: string): boolean;
 }
 
@@ -61,12 +62,15 @@ export async function getDirectory(env: Env): Promise<Directory> {
   const client = (service: string): OAuthClient | null => {
     if (!Object.hasOwn(services, service)) return null;
     const auth = services[service].auth;
-    if (auth.type !== "oauth2") return null;
+    if (auth.type !== "oauth2" && auth.type !== "client_credentials") return null;
     if (sources[service] === "admin") return registry.clients[service] ?? null;
     return oauthClient(env, service, auth.client);
   };
-  const available = (service: string) =>
-    Object.hasOwn(services, service) && (services[service].auth.type !== "oauth2" || client(service) !== null);
+  const available = (service: string) => {
+    if (!Object.hasOwn(services, service)) return false;
+    const type = services[service].auth.type;
+    return type !== "client_credentials" && (type !== "oauth2" || client(service) !== null);
+  };
   return { services, sources, registry, client, available };
 }
 

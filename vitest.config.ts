@@ -14,6 +14,16 @@ const SERVICES = {
     base_url: "https://api.unclient.example",
     auth: { type: "oauth2", authorization_url: "https://unclient.example/authorize", token_url: "https://unclient.example/token" },
   },
+  // Reached only through the Background entrypoint, with a token from the fake app sign-in below.
+  "graph-app": {
+    display_name: "Microsoft Graph(アプリ)",
+    base_url: "https://graph.microsoft.com",
+    auth: { type: "client_credentials", client: "murmur-app", token_url: "https://login.app.example/token", scope: "https://graph.microsoft.com/.default" },
+  },
+  "app-unclient": {
+    base_url: "https://api.app-unclient.example",
+    auth: { type: "client_credentials", token_url: "https://login.app.example/token" },
+  },
   murmur: {
     display_name: "Murmur",
     base_url: "https://murmur.example/api",
@@ -111,6 +121,28 @@ async function oauthServer(
   return Response.json({ error: "unsupported_grant_type" }, { status: 400 });
 }
 
+const APP_LOGIN = "https://login.app.example";
+const APP_CLIENT = { id: "murmur-app-client", secret: "murmur-app-secret" };
+const appTokens = new Map<string, number>();
+
+// A fake token endpoint for client credentials. Tokens are counted per scope, so tests can
+// tell a reused token from a new one; a scope starting with "short" yields one that is already expired.
+async function appLogin(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname === "/stats") return Response.json({ issued: appTokens.get(url.searchParams.get("scope") ?? "") ?? 0 });
+  if (url.pathname !== "/token" || request.method !== "POST") return new Response("not found", { status: 404 });
+  const form = new URLSearchParams(await request.text());
+  if (form.get("client_id") !== APP_CLIENT.id || form.get("client_secret") !== APP_CLIENT.secret) {
+    return Response.json({ error: "invalid_client" }, { status: 401 });
+  }
+  if (form.get("grant_type") !== "client_credentials") return Response.json({ error: "unsupported_grant_type" }, { status: 400 });
+  await sleep(50);
+  const scope = form.get("scope") ?? "";
+  const n = (appTokens.get(scope) ?? 0) + 1;
+  appTokens.set(scope, n);
+  return Response.json({ access_token: `app-token-${n}`, token_type: "Bearer", expires_in: scope.startsWith("short") ? 0 : 3599 });
+}
+
 // Stands in for every upstream API: echoes the request it received.
 async function upstream(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -118,6 +150,7 @@ async function upstream(request: Request): Promise<Response> {
   if (url.origin === FREEE_ACCOUNTS) return oauthServer(request, FREEE);
   if (url.origin === ENTRA) return oauthServer(request, GRAPH);
   if (url.origin === GOOGLE_OAUTH) return oauthServer(request, DOCS);
+  if (url.origin === APP_LOGIN) return appLogin(request);
   if (url.pathname === "/redirect") {
     return new Response(null, { status: 302, headers: { location: "https://download.example.com/file" } });
   }
@@ -159,6 +192,8 @@ export default defineConfig({
           OAUTH_MICROSOFT_CLIENT_SECRET: GRAPH.client.secret,
           OAUTH_GOOGLE_CLIENT_ID: DOCS.client.id,
           OAUTH_GOOGLE_CLIENT_SECRET: DOCS.client.secret,
+          OAUTH_MURMUR_APP_CLIENT_ID: APP_CLIENT.id,
+          OAUTH_MURMUR_APP_CLIENT_SECRET: APP_CLIENT.secret,
         },
         outboundService: upstream,
       },

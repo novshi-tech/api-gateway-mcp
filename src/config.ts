@@ -21,6 +21,17 @@ export interface OAuth2Auth {
   authorize_params?: Record<string, string>;
 }
 
+// OAuth2 client credentials: the deployment, not a user, owns the access. The client
+// comes from Registry (admin-registered) or OAUTH_<CLIENT>_CLIENT_ID / _CLIENT_SECRET as
+// for oauth2. Only the Background entrypoint (Service Binding) can use such a service;
+// users never see it.
+export interface ClientCredentialsAuth {
+  type: "client_credentials";
+  client?: string;
+  token_url: string;
+  scope?: string;
+}
+
 // For an upstream that trusts the gateway's sign-in: no stored credential, the
 // gateway signs the user's ID (EdDSA, IDENTITY_SIGNING_KEY) for this audience and
 // sends it as `Authorization: Bearer`. Upstreams verify it with /.well-known/jwks.json.
@@ -37,7 +48,7 @@ export interface ServiceConfig {
   base_url: string;
   // Name of a Service Binding to reach the upstream through instead of the public internet.
   binding?: string;
-  auth: HeadersAuth | OAuth2Auth | IdentityAuth;
+  auth: HeadersAuth | OAuth2Auth | ClientCredentialsAuth | IdentityAuth;
 }
 
 export type Services = Record<string, ServiceConfig>;
@@ -55,6 +66,9 @@ export function parseServices(raw: unknown): Services {
     const auth = config.auth;
     if (auth?.type === "oauth2") {
       requireHttps(name, "authorization_url", auth.authorization_url);
+      requireHttps(name, "token_url", auth.token_url);
+      if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);
+    } else if (auth?.type === "client_credentials") {
       requireHttps(name, "token_url", auth.token_url);
       if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);
     } else if (auth?.type === "identity") {

@@ -154,6 +154,36 @@ node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then
 
 `binding` を書いたサービスは、公開のインターネットではなく、デプロイの設定の `services` に書いた Service Binding(`{ "binding": "MURMUR", "service": "murmur" }`)で上流を呼びます。`base_url` のホスト名は使われず、パスだけが意味を持ちます。
 
+#### 人がいないときに Worker が使う接続先(`client_credentials`)
+
+Murmur のように、夜中の通知や定期の見回りでユーザーがいないときにも上流を呼ぶ Worker のために、OAuth 2.0 の client credentials でゲートウェイ自身がトークンを取る接続先を置けます(設計は [docs/background-access.md](docs/background-access.md))。持ち主はユーザーではなくデプロイで、Web 画面にも `list_credentials` にも出ず、REST(`/api/`)からも使えません。
+
+- 管理画面の「接続先を追加」で認証方式に「OAuth 2.0(client credentials)」を選び、トークンの URL・スコープ・クライアント ID・シークレットを入れます。設定ファイルに書くこともできます(クライアントは `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET`)。
+- 呼べるのは、同じ Cloudflare アカウントの Worker が名前付きのエントリポイント `Background` に張った Service Binding からだけです。名前付きのエントリポイントはインターネットに出ないので、呼び出し元との間のシークレットは要りません。そのアカウントに Worker をデプロイできる人は使える、という信頼の置き方です。
+- パスは `/<サービス名>/<上流のパス>`(`/api` は付けない)。ヘッダーの扱いとリダイレクトは REST と同じです。
+- アクセストークンは期限の 1 分前まで Worker のメモリで使い回し、保管しません。
+- 上流のアプリの権限は、読ませるものだけに絞ってください(Entra なら `Mail.Read` のアプリの権限と、Exchange の RBAC for Applications の管理スコープ)。
+
+```jsonc
+"graph-app": {
+  "display_name": "Microsoft Graph(アプリ)",
+  "provider": "Microsoft",
+  "base_url": "https://graph.microsoft.com",
+  "auth": {
+    "type": "client_credentials",
+    "client": "murmur-app",
+    "token_url": "https://login.microsoftonline.com/<テナント ID>/oauth2/v2.0/token",
+    "scope": "https://graph.microsoft.com/.default"
+  }
+}
+```
+
+```jsonc
+// 呼び出す側(Murmur)の wrangler の設定
+"services": [{ "binding": "GATEWAY", "service": "<ゲートウェイの Worker 名>", "entrypoint": "Background" }]
+// コード: await env.GATEWAY.fetch("https://gateway/graph-app/v1.0/users/shared@example.com/mailFolders/inbox/messages/delta")
+```
+
 #### freee(`freee`)
 
 freee のアプリ管理でアプリを作成し、コールバック URL を設定します。シークレットは `OAUTH_FREEE_CLIENT_ID` / `OAUTH_FREEE_CLIENT_SECRET` です。

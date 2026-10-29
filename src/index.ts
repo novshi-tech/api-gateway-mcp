@@ -19,6 +19,7 @@ import {
 } from "./web/connections";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 
+export { Background } from "./background";
 export { Registry } from "./registry";
 export { UserVault } from "./vault";
 

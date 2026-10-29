@@ -126,6 +126,7 @@ Executor の実装で参考にする点(https://github.com/UsefulSoftwareCo/exec
 ### 1. 認証情報の持ち主はユーザーだけ
 
 - 認証情報はすべてユーザーが持つ。組織で共有する認証情報は作らない。
+  - 例外: 管理者が登録する `client_credentials` の接続先は、デプロイが持つ。ユーザーには見えず、同じ Cloudflare アカウントの Worker が Service Binding の専用の入口からだけ使う([background-access.md](background-access.md)、[redesign.md](redesign.md))。
 - ユーザーが使えるのは、自分で登録した認証情報だけ。そのため、管理者という役割も要らない。
 - Board のように API キーがアカウントにひとつしかないサービスは、各ユーザーがそれぞれ同じキーを登録する(Board の API トークンは、ユーザーごとに発行できる)。
 

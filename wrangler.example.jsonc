@@ -52,4 +52,7 @@
   // IDENTITY_SIGNING_KEY (an Ed25519 private JWK) is needed only for services whose auth type is "identity".
   // Such a service may be reached through a Service Binding: add "binding": "<NAME>" to it and
   // "services": [{ "binding": "<NAME>", "service": "<worker name>" }] here.
+  // Services whose auth type is "client_credentials" are reached only by other Workers on this
+  // account, through the named entrypoint "Background": the caller adds
+  // { "binding": "GATEWAY", "service": "<this worker's name>", "entrypoint": "Background" }.
 }
