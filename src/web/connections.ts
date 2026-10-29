@@ -4,6 +4,8 @@ import { getDirectory, getServices, getUpstream, type Directory } from "../servi
 import { signToken, verifyToken } from "../tokens";
 import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "../upstream-oauth";
 import { vaultFor, type CredentialInfo } from "../vault";
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { grantRows, listGrants } from "./grants";
 import { html, type Html } from "./html";
 import { page } from "./layout";
 import { cookie, isAdmin, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session, type Session } from "./session";
@@ -46,6 +48,7 @@ function notice(url: URL, credentials: CredentialInfo[], services: Services): Ht
   const reconnected = find("reconnected");
   if (reconnected) return html`<p class="notice" role="status">${displayName(services, reconnected.service)}「${reconnected.label}」をつなぎ直しました。</p>`;
   if (url.searchParams.has("deleted")) return html`<p class="notice" role="status">接続を削除しました。</p>`;
+  if (url.searchParams.has("revoked")) return html`<p class="notice" role="status">アプリのアクセスを取り消しました。</p>`;
   return false;
 }
 
@@ -71,7 +74,7 @@ function identityRow(config: ServiceConfig): Html {
 </li>`;
 }
 
-export async function home(request: Request, env: Env): Promise<Response> {
+export async function home(request: Request, env: Env & { OAUTH_PROVIDER: OAuthHelpers }): Promise<Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
   const services = await getServices(env);
@@ -87,6 +90,9 @@ ${notice(new URL(request.url), credentials, services)}
 ${rows.length > 0
   ? html`<ul class="list">${rows}</ul>`
   : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}
+<h2>アクセスを許可したアプリ</h2>
+<p>Claude や Murmur など、あなたがサインインして許可したアプリです。取り消すと、そのアプリはここでつないだサービスを使えなくなります。</p>
+${grantRows(await listGrants(env, user.sub))}
 <details class="account"><summary>アカウントの情報</summary><p>ユーザー ID: <code>${user.sub}</code></p><p>管理者を設定するときに使います。</p></details>`,
   );
 }

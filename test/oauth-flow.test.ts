@@ -2,6 +2,7 @@ import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { publicUrl } from "../src/config";
 import { s256 } from "../src/crypto";
+import { signToken } from "../src/tokens";
 import { vaultFor } from "../src/vault";
 import { upstream } from "./helpers";
 
@@ -168,5 +169,47 @@ describe("MCP authorization flow", () => {
   it("denies a replayed IdP nonce", async () => {
     const { back } = await authorize(() => ({ nonce: "wrong", tid: "tenant-1", oid: "o", name: "Ada" }));
     expect(back.searchParams.get("error")).toBe("access_denied");
+  });
+});
+
+describe("apps the user allowed", () => {
+  async function asUser(userId: string, path: string, method = "GET") {
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "session", userId, { name: userId }, 60);
+    return SELF.fetch(`${BASE}${path}`, {
+      method,
+      headers: { cookie: `__Host-gw-session=${token}`, origin: new URL(BASE).origin },
+      redirect: "manual",
+    });
+  }
+
+  it("lists each grant on the home page and revokes it after asking", async () => {
+    const oid = crypto.randomUUID();
+    const userId = `entra_tenant-1_${oid}`;
+    const { back, client_id, verifier } = await authorize((nonce) => ({ nonce, tid: "tenant-1", oid, name: "Ada" }));
+    const token = await exchange(back.searchParams.get("code")!, client_id, verifier);
+
+    const home = await (await asUser(userId, "/")).text();
+    expect(home).toContain("アクセスを許可したアプリ");
+    expect(home).toContain("Test");
+    expect(home).toContain("client.test");
+    const grantId = home.match(/href="\/grants\/([^/"]+)\/revoke"/)![1];
+
+    // Someone else can neither see nor revoke it.
+    expect((await asUser("someone-else", `/grants/${grantId}/revoke`)).headers.get("location")).toBe("/");
+    await asUser("someone-else", `/grants/${grantId}/revoke`, "POST");
+    expect((await refresh(token.body.refresh_token, client_id)).status).toBe(200);
+
+    expect(await (await asUser(userId, `/grants/${grantId}/revoke`)).text()).toContain("「Test」のアクセスを取り消しますか?");
+    const revoked = await asUser(userId, `/grants/${grantId}/revoke`, "POST");
+    expect(revoked.headers.get("location")).toBe("/?revoked=1");
+    expect((await refresh(token.body.refresh_token, client_id)).status).toBe(400);
+    const mcp = await SELF.fetch(`${BASE}/mcp`, { method: "POST", headers: { authorization: `Bearer ${token.body.access_token}` } });
+    expect(mcp.status).toBe(401);
+    expect(await (await asUser(userId, "/?revoked=1")).text()).toContain("アクセスを許可したアプリはありません");
+  });
+
+  it("refuses a cross-site revoke", async () => {
+    const res = await SELF.fetch(`${BASE}/grants/abc/revoke`, { method: "POST", headers: { origin: "https://evil.example" } });
+    expect(res.status).toBe(403);
   });
 });

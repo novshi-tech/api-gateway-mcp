@@ -22,9 +22,12 @@ function audit(user: Session, action: string, service: string, fields: string[] 
   console.log(JSON.stringify({ type: "admin", admin: user.sub, action, service, fields }));
 }
 
-function authLabel(config: ServiceConfig): string {
-  return config.auth.type === "oauth2" ? "OAuth 2.0" : config.auth.type === "headers" ? "API キー" : "サインインを信頼";
-}
+const AUTH_LABELS: Record<ServiceConfig["auth"]["type"], string> = {
+  headers: "API キー",
+  oauth2: "OAuth 2.0",
+  client_credentials: "OAuth 2.0(client credentials)",
+  identity: "サインインを信頼",
+};
 
 export async function listServices(request: Request, env: Env): Promise<Response> {
   const user = await admin(request, env);
@@ -40,9 +43,14 @@ export async function listServices(request: Request, env: Env): Promise<Response
         : shadowed
           ? html`<a class="button quiet" href="/admin/services/${name}/delete">管理画面の定義を削除</a>`
           : false;
-    const note = !directory.available(name) && "OAuth のクライアントが未設定のため、利用者には表示されていません";
+    const note =
+      config.auth.type === "client_credentials"
+        ? directory.client(name)
+          ? "利用者には表示されません。Service Binding の Background の入口から使います"
+          : "クライアントが未設定のため、Background の入口からも使えません"
+        : !directory.available(name) && "OAuth のクライアントが未設定のため、利用者には表示されていません";
     return html`<li>
-<div class="row-main"><p class="row-title">${config.display_name}</p><p class="row-sub">${name} · ${authLabel(config)}${config.provider ? ` · ${config.provider}` : ""}${shadowed ? " · 設定ファイルの定義が優先されています" : ""}</p>${note && html`<p class="row-sub">${note}</p>`}</div>
+<div class="row-main"><p class="row-title">${config.display_name}</p><p class="row-sub">${name} · ${AUTH_LABELS[config.auth.type]}${config.provider ? ` · ${config.provider}` : ""}${shadowed ? " · 設定ファイルの定義が優先されています" : ""}</p>${note && html`<p class="row-sub">${note}</p>`}</div>
 <div class="row-actions"><span class="badge">${SOURCE_LABELS[source]}</span>${action}</div>
 </li>`;
   });
@@ -70,6 +78,8 @@ interface ServiceForm {
   authorize_params: string;
   client_id: string;
   client_secret: string;
+  cc_token_url: string;
+  cc_scope: string;
 }
 
 function emptyForm(): ServiceForm {
@@ -86,6 +96,8 @@ function emptyForm(): ServiceForm {
     authorize_params: "",
     client_id: "",
     client_secret: "",
+    cc_token_url: "",
+    cc_scope: "",
   };
 }
 
@@ -105,6 +117,9 @@ function formOf(name: string, config: ServiceConfig, client: OAuthClient | undef
         .join("\n"),
       client_id: client?.id ?? "",
     };
+  }
+  if (auth.type === "client_credentials") {
+    return { ...form, auth_type: "client_credentials", cc_token_url: auth.token_url, cc_scope: auth.scope ?? "", client_id: client?.id ?? "" };
   }
   return form;
 }
@@ -129,8 +144,18 @@ function readForm(data: FormData): ServiceForm {
     token_url: field("token_url"),
     scope: field("scope"),
     authorize_params: field("authorize_params"),
-    client_id: field("client_id"),
-    client_secret: field("client_secret"),
+    ...clientFields(data, field("auth_type")),
+    cc_token_url: field("cc_token_url"),
+    cc_scope: field("cc_scope"),
+  };
+}
+
+// Each OAuth fieldset has its own client inputs; only the chosen one counts.
+function clientFields(data: FormData, authType: string): { client_id: string; client_secret: string } {
+  const prefix = authType === "client_credentials" ? "cc_" : "";
+  return {
+    client_id: String(data.get(`${prefix}client_id`) ?? "").trim(),
+    client_secret: String(data.get(`${prefix}client_secret`) ?? "").trim(),
   };
 }
 
@@ -160,6 +185,12 @@ function configOf(form: ServiceForm): ServiceConfig | string {
         ...(form.scope ? { scope: form.scope } : {}),
         ...(Object.keys(params).length > 0 ? { authorize_params: params } : {}),
       },
+    };
+  }
+  if (form.auth_type === "client_credentials") {
+    return {
+      ...base,
+      auth: { type: "client_credentials", token_url: form.cc_token_url, ...(form.cc_scope ? { scope: form.cc_scope } : {}) },
     };
   }
   return "認証方式を選んでください。";
@@ -205,6 +236,7 @@ ${!creating && html`<p class="hint">ベース URL のホスト、トークンの
 <fieldset><legend>認証方式</legend>
 <label class="choice"><input type="radio" name="auth_type" value="headers"${form.auth_type === "headers" ? " checked" : ""}> API キーやトークンをヘッダーで送る</label>
 <label class="choice"><input type="radio" name="auth_type" value="oauth2"${form.auth_type === "oauth2" ? " checked" : ""}> OAuth 2.0(認可コード + PKCE)</label>
+<label class="choice"><input type="radio" name="auth_type" value="client_credentials"${form.auth_type === "client_credentials" ? " checked" : ""}> OAuth 2.0(client credentials。人がいないときに Murmur などの Worker が使う)</label>
 </fieldset>
 <fieldset data-auth="headers"><legend>API キーの場合: 送るヘッダー</legend>
 <p class="hint">利用者が「画面での名前」の欄に値を入れ、ゲートウェイがこのヘッダーで送ります。使わない行は空のままにします。${!creating && "ヘッダー名を変えたり足したりすると、今ある接続には値がないので使えなくなります(元の名前に戻せば使えます)。"}</p>
@@ -218,6 +250,13 @@ ${headerRows}
 <label>認可の追加パラメータ(1 行に「名前=値」)<textarea name="authorize_params" rows="2">${form.authorize_params}</textarea></label>
 <label>クライアント ID<input type="text" name="client_id" value="${form.client_id}" autocomplete="off"></label>
 <label>クライアントシークレット${!creating && "(変えないときは空のまま)"}<input type="password" name="client_secret" autocomplete="off"></label>
+</fieldset>
+<fieldset data-auth="client_credentials"><legend>OAuth 2.0(client credentials)の場合</legend>
+<p class="hint">ユーザーではなくこのゲートウェイが持つ接続です。利用者の画面にも Claude にも出ず、同じ Cloudflare アカウントの Worker が Service Binding(<code>"entrypoint": "Background"</code>)で <code>/${form.name || "<名前>"}/&lt;上流のパス&gt;</code> を呼んだときだけ使います。上流のアプリの権限は、読ませるものだけに絞ってください。</p>
+<label>トークンの URL<input type="text" name="cc_token_url" value="${form.cc_token_url}" autocomplete="off" placeholder="https://login.microsoftonline.com/&lt;テナント&gt;/oauth2/v2.0/token"></label>
+<label>スコープ(空白区切り)<input type="text" name="cc_scope" value="${form.cc_scope}" autocomplete="off" placeholder="https://graph.microsoft.com/.default"></label>
+<label>クライアント ID<input type="text" name="cc_client_id" value="${form.client_id}" autocomplete="off"></label>
+<label>クライアントシークレット${!creating && "(変えないときは空のまま)"}<input type="password" name="cc_client_secret" autocomplete="off"></label>
 </fieldset>
 <div class="actions"><button>保存する</button><a class="button quiet" href="/admin/services">やめる</a>${!creating && html`<a class="button quiet danger-link" href="/admin/services/${form.name}/delete">削除…</a>`}</div>
 </form>
@@ -262,7 +301,7 @@ export async function saveService(request: Request, env: Env, existing?: string)
 
   // undefined keeps the stored client; null drops it when the service is no longer OAuth.
   let client: OAuthClient | null | undefined = null;
-  if (config.auth.type === "oauth2") {
+  if (config.auth.type === "oauth2" || config.auth.type === "client_credentials") {
     const stored = directory.registry.clients[name];
     if (!form.client_id) return serviceForm(env, user, form, creating, "クライアント ID を入れてください。", 400);
     if (form.client_secret) client = { id: form.client_id, secret: form.client_secret };

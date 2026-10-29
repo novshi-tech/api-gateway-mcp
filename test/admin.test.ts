@@ -1,4 +1,5 @@
 import { env, SELF } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { publicUrl } from "../src/config";
 import { forgetRegistry } from "../src/services";
@@ -143,6 +144,43 @@ describe("admin screens", () => {
     expect(await (await post(`/admin/services/${name}`, { ...fields, client_id: "cid-2" })).text()).toContain("クライアントシークレットを入れてください");
     expect(await (await get("/admin/services/new")).text()).toContain(`<code>${BASE}/connect/callback</code>`);
     expect(await (await get("/connections/new", "user-3")).text()).toContain(`href="/connections/new/${name}"`);
+  });
+
+  it("registers a client_credentials service that only the Background entrypoint uses", async () => {
+    const name = unique("graph-app");
+    const fields = {
+      name,
+      display_name: "共有の箱",
+      base_url: "https://graph.microsoft.com",
+      auth_type: "client_credentials",
+      cc_token_url: "https://login.app.example/token",
+      cc_scope: "https://graph.microsoft.com/.default",
+      cc_client_id: "murmur-app-client",
+      cc_client_secret: "",
+      // The OAuth 2.0 fieldset's inputs are sent too; they must not count.
+      client_id: "other",
+      client_secret: "other-secret",
+    };
+    expect(await (await post("/admin/services", fields)).text()).toContain("クライアントシークレットを入れてください");
+    expect((await post("/admin/services", { ...fields, cc_client_secret: "murmur-app-secret" })).status).toBe(303);
+    forgetRegistry();
+    expect((await upstream(name)).client).toEqual({ id: "murmur-app-client", secret: "murmur-app-secret" });
+
+    const list = await (await get("/admin/services")).text();
+    expect(list).toContain("OAuth 2.0(client credentials)");
+    expect(list).toContain("Background の入口から使います");
+    const edit = await (await get(`/admin/services/${name}`)).text();
+    expect(edit).toContain(`value="https://login.app.example/token"`);
+    expect(edit).not.toContain("murmur-app-secret");
+    expect((await post(`/admin/services/${name}`, fields)).status).toBe(303);
+    forgetRegistry();
+    expect((await upstream(name)).client?.secret).toBe("murmur-app-secret");
+
+    expect(await (await get("/connections/new", "user-6")).text()).not.toContain(`/connections/new/${name}"`);
+    expect((await get(`/connections/new/${name}`, "user-6")).status).toBe(404);
+    const background = (exports as unknown as { Background: Fetcher }).Background;
+    const res = await background.fetch(`https://gateway/${name}/v1.0/users`);
+    expect(((await res.json()) as { headers: Record<string, string> }).headers.authorization).toMatch(/^Bearer app-token-/);
   });
 
   it("deletes a service after asking", async () => {

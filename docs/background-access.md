@@ -1,8 +1,8 @@
 # 人がいないときの利用者(Murmur)に接続を使わせる
 
-更新日: 2026-10-28
+更新日: 2026-10-29
 
-状態: 提案。レビューのあと、[redesign.md](redesign.md) の作業との順番を決める。
+状態: 1〜3 を実装した(2026-10-29)。
 
 構想: [concept.md](concept.md)
 認可の設計: [auth-design.md](auth-design.md)
@@ -45,7 +45,7 @@ OAuth2 の client credentials で上流のトークンを取る認証方式を�
 - 上の例は設定ファイルに書いた場合。管理画面で登録したときは `client` を書かず、登録した client を使う。
 - トークンは寿命(Entra は 1 時間前後)まで Worker のメモリに覚えて使い回し、切れたら取り直す。リフレッシュトークンはない。トークンは保管しない。
 - この接続先は、画面にも `list_credentials` にも出さない。ユーザーが使うものではない。
-- 上流で絞る: テナントの管理者が、Murmur 専用のアプリを Entra に登録し、権限は `Mail.Read`(アプリ)だけにする。Exchange の RBAC for Applications の管理スコープで、読ませる共有の箱だけに絞る。手順は管理者向けにスキルかドキュメントに書く。
+- 上流で絞る: テナントの管理者が、Murmur 専用のアプリを Entra に登録する。**Entra では API のアクセス許可を何も付けない**(`Mail.Read` のアプリの権限に同意すると、テナントの全員の箱に届き、Exchange のスコープより優先される)。権限は Exchange の RBAC for Applications で、役割 `Application Mail.Read` を読ませる共有の箱だけの管理スコープに付けて渡す。手順は README の「人がいないときに Worker が使う接続先」に書いた。
 
 ### 2. Service Binding だけから呼べる入口
 
@@ -54,7 +54,7 @@ OAuth2 の client credentials で上流のトークンを取る認証方式を�
 - 名前付きのエントリポイント(`export class Background extends WorkerEntrypoint`)を足す。デフォルト以外のエントリポイントはインターネットに出ず、Service Binding からしか呼べない。その入口に届いたこと自体が、呼び出し元が同じアカウントの Worker である証明になるので、**呼び出し元との間のシークレットは要らない**。
 - 呼び出し側の設定: `{ "binding": "GATEWAY", "service": "<ゲートウェイの Worker 名>", "entrypoint": "Background" }`
 - 今のデフォルトの `fetch` は、インターネットからも Service Binding からも同じ入口で呼ばれ、リクエストからはどちらか区別できない(ヘッダーは偽造できる)。そのため入口を分ける。
-- パスは REST と同じ `/<service>/<上流のパス>`。中継の動き(ヘッダーの注入、ボディの素通し、リダイレクトの扱い、操作ログ)は REST と同じものを使う。
+- パスは REST のベース URL(`<ゲートウェイ>/api`)からの相対と同じ `/<service>/<上流のパス>`。`/api` は付けない。ホスト名は何でもよい(例: `env.GATEWAY.fetch("https://gateway/graph-app/v1.0/users/...")`)。中継の動き(ヘッダーの注入、ボディの素通し、リダイレクトの扱い、操作ログ)は REST と同じものを使う。
 - **この入口で使えるのは `client_credentials` の接続先だけ。** ユーザーの接続には届かない。ここからユーザーの接続を使えると、本人の同意(OAuth)を飛ばせてしまう。
 - 信頼の境界は Cloudflare のアカウントになる。そのアカウントに Worker をデプロイできる人は、この入口を使える。ゲートウェイと Murmur はチームの同じアカウントに置く前提(Murmur の ADR 0020)。
 
@@ -85,8 +85,17 @@ OAuth2 の client credentials で上流のトークンを取る認証方式を�
 ## 未決
 
 1. 上流(Entra)向けの client secret をなくすか。証明書にするか、Entra のフェデレーション資格情報(ゲートウェイが自分で署名した JWT をそのまま出す)を使う。ゲートウェイの署名は Ed25519 なので、Entra が受け付けるかを調べてから決める。
-2. redesign.md の作業との順番。1 は管理画面(#14)の認証方式を 1 つ増やす形で乗る。2 は 1 と一緒に入れる。3 は接続の一覧の画面に足す。
+2. ~~redesign.md の作業との順番~~ 1 と 2 は管理画面の認証方式を 1 つ増やす形で入れた。3 は接続の一覧の画面に足す。
 3. Murmur は CIMD のクライアントになる(client_id は Murmur が公開するメタデータの URL)。CIMD の検証で、Murmur のコールバックの URL が許されるかを確かめる。
+
+## 実装
+
+- 認証方式の型と検証: `src/config.ts` の `ClientCredentialsAuth`。トークンの取得は `src/upstream-oauth.ts` の `clientCredentialsToken`
+- 入口: `src/background.ts` の `Background`(`src/index.ts` から export)。トークンはサービス・トークンの URL・client id・スコープごとに isolate のメモリに覚え、期限の 1 分前まで使い回す。同時に来た呼び出しは 1 回の取得を共有する
+- 中継は `src/proxy.ts` の `forward` を REST と共有する。操作ログは `user` の代わりに `"caller": "background"` を書く
+- `client_credentials` の接続先は、`list_credentials`・「接続を追加」・REST(`/api/`)のどれにも出ない(REST では 404)。ユーザーの保管庫にも入らない
+- 許可したアプリの一覧と取り消し: `src/web/grants.ts`。トップの画面に許可(grant)ごとに出し、確認のあと `revokeGrant` で取り消す。アプリの名前は、許可したときにクライアントの名前を grant の metadata に入れておき、一覧では引き直さない(CIMD のメタデータを毎回取りに行かないため)。それ以前の許可は client_id のホスト名で出す
+- テスト: `test/background.test.ts`、`test/admin.test.ts`(管理画面からの登録)、`test/oauth-flow.test.ts`(許可の一覧と取り消し)
 
 ## 確かめること
 

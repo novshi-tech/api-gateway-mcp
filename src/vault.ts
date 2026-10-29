@@ -65,6 +65,7 @@ export class UserVault extends DurableObject<Env> {
   async add(upstream: Upstream, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
     const { service, config } = upstream;
     if (config.auth.type === "identity") return { error: `${service} needs no credential` };
+    if (config.auth.type === "client_credentials") return { error: `${service} is not connected by users` };
     if (config.auth.type !== "headers") return { error: `${service} is connected with OAuth` };
     const values: HeaderSecrets = {};
     for (const field of config.auth.headers) {

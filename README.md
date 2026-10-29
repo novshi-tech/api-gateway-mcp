@@ -43,6 +43,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
+5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
 
 ```sh
 curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/api/1/companies"
@@ -153,6 +154,53 @@ node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then
 ```
 
 `binding` を書いたサービスは、公開のインターネットではなく、デプロイの設定の `services` に書いた Service Binding(`{ "binding": "MURMUR", "service": "murmur" }`)で上流を呼びます。`base_url` のホスト名は使われず、パスだけが意味を持ちます。
+
+#### 人がいないときに Worker が使う接続先(`client_credentials`)
+
+Murmur のように、夜中の通知や定期の見回りでユーザーがいないときにも上流を呼ぶ Worker のために、OAuth 2.0 の client credentials でゲートウェイ自身がトークンを取る接続先を置けます(設計は [docs/background-access.md](docs/background-access.md))。持ち主はユーザーではなくデプロイで、Web 画面にも `list_credentials` にも出ず、REST(`/api/`)からも使えません。
+
+- 管理画面の「接続先を追加」で認証方式に「OAuth 2.0(client credentials)」を選び、トークンの URL・スコープ・クライアント ID・シークレットを入れます。設定ファイルに書くこともできます(クライアントは `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET`)。
+- 呼べるのは、同じ Cloudflare アカウントの Worker が名前付きのエントリポイント `Background` に張った Service Binding からだけです。名前付きのエントリポイントはインターネットに出ないので、呼び出し元との間のシークレットは要りません。そのアカウントに Worker をデプロイできる人は使える、という信頼の置き方です。
+- パスは `/<サービス名>/<上流のパス>`(`/api` は付けない)。ヘッダーの扱いとリダイレクトは REST と同じです。
+- アクセストークンは期限の 1 分前まで Worker のメモリで使い回し、保管しません。
+- 上流のアプリの権限は、読ませるものだけに絞ってください。Microsoft Graph で共有メールボックスを読ませるなら、下の手順で Exchange の RBAC for Applications を使います。
+
+Microsoft Graph で共有メールボックスだけを読ませる手順(テナントの管理者):
+
+1. Entra 管理センターの「アプリの登録」でアプリを登録し(シングルテナント、リダイレクト URI なし)、クライアント シークレットを作ります。クライアント ID と、「エンタープライズ アプリケーション」の側のオブジェクト ID を控えます。
+2. **「API のアクセス許可」には何も足しません。** Entra で `Mail.Read` などのアプリの権限に管理者の同意をすると、テナントの全員の箱に届き、Exchange のスコープでは絞れなくなります。
+3. Exchange Online の PowerShell で、権限をスコープ付きで渡します。
+
+```powershell
+Connect-ExchangeOnline
+New-ServicePrincipal -AppId <クライアント ID> -ObjectId <エンタープライズ アプリのオブジェクト ID> -DisplayName "<名前>"
+Set-Mailbox shared@example.com -CustomAttribute15 "gateway-app"   # 読ませる箱ごとに
+New-ManagementScope -Name "<スコープ名>" -RecipientRestrictionFilter "CustomAttribute15 -eq 'gateway-app'"
+New-ManagementRoleAssignment -App <クライアント ID> -Role "Application Mail.Read" -CustomResourceScope "<スコープ名>"
+Test-ServicePrincipalAuthorization -Identity <クライアント ID> -Resource shared@example.com   # InScope が True になる
+```
+
+反映には時間がかかることがあります。読ませる箱を増やすときは、その箱に同じ印を付けるだけです。詳しくは [Role Based Access Control for Applications in Exchange Online](https://learn.microsoft.com/Exchange/permissions-exo/application-rbac)。
+
+```jsonc
+"graph-app": {
+  "display_name": "Microsoft Graph(アプリ)",
+  "provider": "Microsoft",
+  "base_url": "https://graph.microsoft.com",
+  "auth": {
+    "type": "client_credentials",
+    "client": "murmur-app",
+    "token_url": "https://login.microsoftonline.com/<テナント ID>/oauth2/v2.0/token",
+    "scope": "https://graph.microsoft.com/.default"
+  }
+}
+```
+
+```jsonc
+// 呼び出す側(Murmur)の wrangler の設定
+"services": [{ "binding": "GATEWAY", "service": "<ゲートウェイの Worker 名>", "entrypoint": "Background" }]
+// コード: await env.GATEWAY.fetch("https://gateway/graph-app/v1.0/users/shared@example.com/mailFolders/inbox/messages/delta")
+```
 
 #### freee(`freee`)
 

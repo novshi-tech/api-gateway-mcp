@@ -1,4 +1,4 @@
-import type { OAuth2Auth } from "./config";
+import type { ClientCredentialsAuth, OAuth2Auth } from "./config";
 
 export interface OAuthClient {
   id: string;
@@ -39,7 +39,7 @@ export function upstreamAuthorizationUrl(
   return url.href;
 }
 
-async function tokenRequest(auth: OAuth2Auth, client: OAuthClient, grant: Record<string, string>): Promise<TokenSet> {
+async function tokenRequest(auth: { token_url: string }, client: OAuthClient, grant: Record<string, string>): Promise<TokenSet> {
   const res = await fetch(auth.token_url, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
@@ -81,4 +81,11 @@ export async function refreshTokens(auth: OAuth2Auth, client: OAuthClient, curre
   if (auth.scope) grant.scope = auth.scope;
   const next = await tokenRequest(auth, client, grant);
   return { ...next, refresh_token: next.refresh_token ?? current.refresh_token };
+}
+
+// No refresh token: the caller asks again once the access token expires.
+export function clientCredentialsToken(auth: ClientCredentialsAuth, client: OAuthClient): Promise<TokenSet> {
+  const grant: Record<string, string> = { grant_type: "client_credentials" };
+  if (auth.scope) grant.scope = auth.scope;
+  return tokenRequest(auth, client, grant);
 }
