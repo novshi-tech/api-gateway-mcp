@@ -163,7 +163,24 @@ Murmur のように、夜中の通知や定期の見回りでユーザーがい�
 - 呼べるのは、同じ Cloudflare アカウントの Worker が名前付きのエントリポイント `Background` に張った Service Binding からだけです。名前付きのエントリポイントはインターネットに出ないので、呼び出し元との間のシークレットは要りません。そのアカウントに Worker をデプロイできる人は使える、という信頼の置き方です。
 - パスは `/<サービス名>/<上流のパス>`(`/api` は付けない)。ヘッダーの扱いとリダイレクトは REST と同じです。
 - アクセストークンは期限の 1 分前まで Worker のメモリで使い回し、保管しません。
-- 上流のアプリの権限は、読ませるものだけに絞ってください(Entra なら `Mail.Read` のアプリの権限と、Exchange の RBAC for Applications の管理スコープ)。
+- 上流のアプリの権限は、読ませるものだけに絞ってください。Microsoft Graph で共有メールボックスを読ませるなら、下の手順で Exchange の RBAC for Applications を使います。
+
+Microsoft Graph で共有メールボックスだけを読ませる手順(テナントの管理者):
+
+1. Entra 管理センターの「アプリの登録」でアプリを登録し(シングルテナント、リダイレクト URI なし)、クライアント シークレットを作ります。クライアント ID と、「エンタープライズ アプリケーション」の側のオブジェクト ID を控えます。
+2. **「API のアクセス許可」には何も足しません。** Entra で `Mail.Read` などのアプリの権限に管理者の同意をすると、テナントの全員の箱に届き、Exchange のスコープでは絞れなくなります。
+3. Exchange Online の PowerShell で、権限をスコープ付きで渡します。
+
+```powershell
+Connect-ExchangeOnline
+New-ServicePrincipal -AppId <クライアント ID> -ObjectId <エンタープライズ アプリのオブジェクト ID> -DisplayName "<名前>"
+Set-Mailbox shared@example.com -CustomAttribute15 "gateway-app"   # 読ませる箱ごとに
+New-ManagementScope -Name "<スコープ名>" -RecipientRestrictionFilter "CustomAttribute15 -eq 'gateway-app'"
+New-ManagementRoleAssignment -App <クライアント ID> -Role "Application Mail.Read" -CustomResourceScope "<スコープ名>"
+Test-ServicePrincipalAuthorization -Identity <クライアント ID> -Resource shared@example.com   # InScope が True になる
+```
+
+反映には時間がかかることがあります。読ませる箱を増やすときは、その箱に同じ印を付けるだけです。詳しくは [Role Based Access Control for Applications in Exchange Online](https://learn.microsoft.com/Exchange/permissions-exo/application-rbac)。
 
 ```jsonc
 "graph-app": {
