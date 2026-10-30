@@ -1,8 +1,14 @@
 # 申し送り
 
-最終更新: 2026-10-29。**2026-10-28〜29 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（採用）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。次はゲートウェイの改修（api-gateway-mcp#15）から。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
+最終更新: 2026-10-30（組織ごとのコネクタを並べる。「いまの状態」の先頭）。**2026-10-28〜29 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（採用）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。次はゲートウェイの改修（api-gateway-mcp#15）から。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
 
 ## いまの状態
+
+**2026-10-30: 組織の使い分けを「切り替える」から「並べてつなぐ」に変えた（api-gateway-mcp の `docs/adr/0004`、採用。0018 に追記）。** 1 つのデプロイ = 1 つの組織のまま、組織ごとのゲートウェイを別々のコネクタとして Claude に並べる。実装（3 つのリポジトリのブランチ `claude/eager-ride-i7ul38`、main には未反映）:
+- ゲートウェイ: 設定 `ORGANIZATION_NAME`（空なら `PUBLIC_URL` のホスト名）を、MCP の title・instructions、ツールの説明、`list_credentials` / `issue_token` の `gateway`、Web 画面の見出しに出す。登録画面のラベル欄は「同じ組織の中の使い分け」の文言に
+- スキル: `api-gateway` に「コネクタの選び方」（api-gateway 0.14.0）。murmur・bm-next はそれを参照（nvt-api-gateway 0.7.0）。`docs/stand/skill-murmur.md` と `connect.md` も合わせた
+- マルチアカウントはやめた（0004 の決定 5 を改めた）。1 人がつなげるのは 1 つのサービスにつき 1 つ。以前の 2 つ目以降の接続は残り、画面で削除を促す
+- 残り: 各デプロイの設定に `ORGANIZATION_NAME` を書いて出し直す。コネクタの名前を組織が分かるものに付け直す。0004 の未決（顧客のゲートウェイの置き場所、独自ドメインで揃えるか）
 
 **2026-10-29（後半）: ゲートウェイに client credentials・Background の入口・許可したアプリの取り消しを実装した（api-gateway-mcp のブランチ `claude/busy-feynman-5zz6sk`）。** `docs/background-access.md` の 1〜3。本体のコードは変えていない。要点:
 - 認証方式 `client_credentials`: 管理画面（「OAuth 2.0(client credentials)」）か設定ファイルで登録。トークンはゲートウェイのメモリで使い回し、保管しない。利用者の画面・`list_credentials`・REST（`/api/`）には出ない

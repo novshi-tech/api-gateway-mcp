@@ -13,9 +13,10 @@ Murmur は連絡(メール・Slack・LINE・Jira など)を**スレッド**に�
 
 ## 手順
 
-1. `list_credentials` に `identity:murmur` があることを確かめる。ユーザーが登録するものはない。ゲートウェイが、サインイン中のユーザーとして本体に伝える。
-2. `issue_token` に `identity:murmur` を渡してトークンを発行し、`GW_TOKEN` と `GW_BASE_URL` を設定する。送信に使うサービスの認証情報と一緒に発行してよい。
-3. `scripts/gw_request.py`(`api-gateway` スキルのものと同じ)で呼ぶ。パスは下の表のとおり(先頭に `/api` は付けない)。
+1. 作業する組織のコネクタを選ぶ(`api-gateway` スキルの「コネクタの選び方」)。Murmur は組織(チーム)ごとに 1 つで、その組織のゲートウェイの上流になっている。組織の分からない「自分の番のもの」は、`identity:murmur` を持つコネクタが 2 つ以上あれば、どの組織のものかを聞くか、組織ごとに分けて見せる。
+2. そのコネクタの `list_credentials` に `identity:murmur` があることを確かめる。ユーザーが登録するものはない。ゲートウェイが、サインイン中のユーザーとして本体に伝える。
+3. 同じコネクタの `issue_token` に `identity:murmur` を渡してトークンを発行し、`GW_TOKEN` と `GW_BASE_URL` を設定する。送信に使うサービスの認証情報と一緒に発行してよい(同じ組織のコネクタのものだけ)。
+4. `scripts/gw_request.py`(`api-gateway` スキルのものと同じ)で呼ぶ。パスは下の表のとおり(先頭に `/api` は付けない)。
 
 ```sh
 python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py GET murmur /me
@@ -29,6 +30,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 ## 守ること
 
 - **送ったら記録する。** スタンド経由で外へ送った・起票した・コメントしたら、その直後に `record_sent` を呼ぶ。送る前には呼ばない(送れなかったものを記録しない)。`sent_ref` は送信の API が返した ID(メールの Message-ID、Slack の ts、LINE の sentMessages[].id、Jira の課題キーやコメント ID)。同じ `sent_ref` で 2 回呼んでも 1 回分しか残らない
+- **組織をまたがない。** 送ったのと同じ組織のコネクタの Murmur に記録する。組織が違えば Murmur も違うので、別の組織の連絡やスレッドを、この組織の Murmur のメモに書き写したり結んだりしない
 - 送る前の確認(宛先・本文・送信元・返事期待)はユーザーに見せて、送信の指示をもらう。これは Murmur の承認ではなく、ユーザーとの会話でのゲート
 - **リンクは候補を見て、ユーザーと決めてから張る。** `get_thread` の `linkCandidates` はアンカー(課題キー・PR・メッセージ ID)が一致したものにすぎない。同じ件でなければ結ばない
 - メモ・属性・片付け・開き直しは本人の側の状態。結んだ先が動いても(`linkedActiveSinceDismissed`)、閉じたメモを勝手に開き直さない。ユーザーに知らせて決めてもらう
