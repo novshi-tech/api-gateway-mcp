@@ -7,7 +7,7 @@ description: Google Drive のファイル・フォルダの検索、一覧、ダ
 
 `api-gateway` スキルでサービス `drive` の認証情報を選び、`issue_token` の `token` と `base_url` を `GW_TOKEN` / `GW_BASE_URL` に設定する。上流の Google トークンはゲートウェイが管理する。
 
-複数の接続があれば `list_credentials` の `label` をユーザーの指定と照合する。ユーザーが指定済みの接続を使い、曖昧な場合だけ確認する。`GET /drive/v3/about` に `fields=user` を指定すると接続アカウントを確認できる。Gmail の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、接続したアカウントが同じとは限らない。
+接続はサービスごとに 1 つ。複数の組織のゲートウェイがつながっていれば、`api-gateway` スキルの「コネクタの選び方」で組織のコネクタを選ぶ。`GET /drive/v3/about` に `fields=user` を指定すると接続アカウントを確認できる。Gmail の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、接続したアカウントが同じとは限らない。
 
 ## 呼び出す
 

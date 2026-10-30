@@ -47,7 +47,7 @@ async function startConnect(userId: string, fields: Record<string, string>) {
 }
 
 // Runs the whole connect flow against the fake freee and returns the callback response.
-async function connect(userId: string, tokens: Tokens, fields: Record<string, string> = { service: "freee", label: "main" }) {
+async function connect(userId: string, tokens: Tokens, fields: Record<string, string> = { service: "freee" }) {
   const started = await startConnect(userId, fields);
   expect(started.status).toBe(303);
   const authorize = new URL(started.headers.get("location")!);
@@ -59,7 +59,7 @@ async function connect(userId: string, tokens: Tokens, fields: Record<string, st
 }
 
 async function connected(userId: string, tokens: Tokens, service = "freee") {
-  const res = await connect(userId, tokens, { service, label: "main" });
+  const res = await connect(userId, tokens, { service });
   expect(res.status).toBe(303);
   const credentials = await vaultFor(env, userId).list();
   const added = credentials[credentials.length - 1];
@@ -83,7 +83,7 @@ async function refreshCalls(refreshToken: string): Promise<number> {
 
 describe("connecting an OAuth service", () => {
   it("sends the user to the upstream with PKCE", async () => {
-    const res = await startConnect(alice, { service: "freee", label: "" });
+    const res = await startConnect(alice, { service: "freee" });
     expect(res.status).toBe(303);
     const url = new URL(res.headers.get("location")!);
     expect(url.origin + url.pathname).toBe(`${ACCOUNTS}/public_api/authorize`);
@@ -96,7 +96,7 @@ describe("connecting an OAuth service", () => {
 
   it("stores the tokens and injects the access token", async () => {
     const cred = await connected(alice, { access_token: "first-access", refresh_token: "rt-a", expires_in: 21600 });
-    expect(cred).toMatchObject({ service: "freee", label: "main" });
+    expect(cred).toMatchObject({ service: "freee" });
     expect(await upstreamAuthorization(await callFreee(alice, cred.id))).toBe("Bearer first-access");
     expect(await refreshCalls("rt-a")).toBe(0);
 
@@ -135,7 +135,7 @@ describe("connecting an OAuth service", () => {
 
   it("keeps OAuth and header services on their own forms", async () => {
     expect((await startConnect(alice, { service: "board" })).status).toBe(400);
-    expect(await vaultFor(env, alice).add(await upstream("freee"), "", { authorization: "x" })).toEqual({ error: "freee is connected with OAuth" });
+    expect(await vaultFor(env, alice).add(await upstream("freee"), { authorization: "x" })).toEqual({ error: "freee is connected with OAuth" });
     expect((await startConnect(alice, { service: "freee", credential: crypto.randomUUID() })).status).toBe(400);
   });
 
@@ -204,7 +204,7 @@ describe("refreshing upstream tokens", () => {
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe(`/?reconnected=${cred.id}`);
     const list = await vaultFor(env, alice).list();
-    expect(list).toEqual([{ id: cred.id, service: "freee", label: "main", createdAt: cred.createdAt }]);
+    expect(list).toEqual([{ id: cred.id, service: "freee", label: "freee", createdAt: cred.createdAt }]);
     expect(await upstreamAuthorization(await callFreee(alice, cred.id))).toBe("Bearer fresh");
   });
 
@@ -222,7 +222,7 @@ describe("refreshing upstream tokens", () => {
   });
 
   it("asks Google for an offline Docs token and sends batchUpdate to the Docs API", async () => {
-    const started = await startConnect(alice, { service: "docs", label: "" });
+    const started = await startConnect(alice, { service: "docs" });
     const authorize = new URL(started.headers.get("location")!);
     expect(authorize.origin + authorize.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(authorize.searchParams.get("client_id")).toBe("docs-client");
@@ -244,7 +244,7 @@ describe("refreshing upstream tokens", () => {
   });
 
   it("sends Google Analytics reports and property lookups to their own API hosts", async () => {
-    const started = await startConnect(alice, { service: "analytics", label: "" });
+    const started = await startConnect(alice, { service: "analytics" });
     const authorize = new URL(started.headers.get("location")!);
     expect(authorize.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/analytics.readonly");
     expect(authorize.searchParams.get("access_type")).toBe("offline");

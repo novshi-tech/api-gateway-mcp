@@ -7,7 +7,7 @@ description: Google ドキュメント(Google Docs)の本文の読み取り、�
 
 `api-gateway` スキルでサービス `docs` の認証情報を選び、`issue_token` の `token` と `base_url` を `GW_TOKEN` / `GW_BASE_URL` に設定する。上流の Google トークンはゲートウェイが管理する。
 
-複数の接続があれば `list_credentials` の `label` をユーザーの指定と照合する。指定済みの接続を使い、曖昧な場合だけ確認する。Drive / Gmail の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、接続したアカウントが同じとは限らない。
+接続はサービスごとに 1 つ。複数の組織のゲートウェイがつながっていれば、`api-gateway` スキルの「コネクタの選び方」で組織のコネクタを選ぶ。Drive / Gmail の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、接続したアカウントが同じとは限らない。
 
 ドキュメント ID は URL `https://docs.google.com/document/d/<ID>/edit` の `<ID>`。名前でしか分からないときは、`google-drive` スキルで `mimeType='application/vnd.google-apps.document'` を検索して ID を調べる。
 

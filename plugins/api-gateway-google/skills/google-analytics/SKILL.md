@@ -12,7 +12,7 @@ GA4 の API はホストが 2 つに分かれていて、ゲートウェイの�
 | `analytics` | レポートの取得(Data API) | `analyticsdata.googleapis.com` |
 | `analytics-admin` | アカウント・プロパティ・データストリームなどの参照(Admin API) | `analyticsadmin.googleapis.com` |
 
-`api-gateway` スキルで、使うサービスの認証情報を選んで `issue_token` する。両方使うときは、サービスごとにトークンを発行して `GW_TOKEN` / `GW_BASE_URL` を切り替える。複数の接続があれば `list_credentials` の `label` をユーザーの指定と照合し、曖昧なときだけ確認する。
+`api-gateway` スキルで、使うサービスの認証情報を選んで `issue_token` する。両方使うときは、サービスごとにトークンを発行して `GW_TOKEN` / `GW_BASE_URL` を切り替える。接続はサービスごとに 1 つ。複数の組織のゲートウェイがつながっていれば、`api-gateway` スキルの「コネクタの選び方」で組織のコネクタを選ぶ。
 
 スコープは `analytics.readonly` だけ。読み取り専用で、プロパティの作成や設定の変更はできない。
 

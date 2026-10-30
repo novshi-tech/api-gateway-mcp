@@ -62,7 +62,7 @@ describe("admin screens", () => {
 
     expect(await (await get("/connections/new", "user-1")).text()).toContain(`href="/connections/new/${name}"`);
     forgetRegistry();
-    const cred = await vaultFor(env, "user-1").add(await upstream(name), "main", { "x-api-key": "k" });
+    const cred = await vaultFor(env, "user-1").add(await upstream(name), { "x-api-key": "k" });
     if ("error" in cred) throw new Error(cred.error);
     const { token } = await signToken(env.SIGNING_KEY, BASE, "api", "user-1", { creds: { [name]: cred.id } }, 60);
     const proxied = await SELF.fetch(`${BASE}/api/${name}/v1/things`, { headers: { authorization: `Bearer ${token}` } });
@@ -85,7 +85,7 @@ describe("admin screens", () => {
     const name = unique("moving");
     await post("/admin/services", headerService(name));
     forgetRegistry();
-    const cred = await vaultFor(env, "user-2").add(await upstream(name), "main", { "x-api-key": "k" });
+    const cred = await vaultFor(env, "user-2").add(await upstream(name), { "x-api-key": "k" });
     if ("error" in cred) throw new Error(cred.error);
 
     const edit = await (await get(`/admin/services/${name}`)).text();
@@ -99,7 +99,7 @@ describe("admin screens", () => {
     const name = unique("renamed");
     await post("/admin/services", headerService(name));
     forgetRegistry();
-    const cred = await vaultFor(env, "user-5").add(await upstream(name), "main", { "x-api-key": "k" });
+    const cred = await vaultFor(env, "user-5").add(await upstream(name), { "x-api-key": "k" });
     if ("error" in cred) throw new Error(cred.error);
     const { token } = await signToken(env.SIGNING_KEY, BASE, "api", "user-5", { creds: { [name]: cred.id } }, 60);
     const call = () => SELF.fetch(`${BASE}/api/${name}/graphql`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
