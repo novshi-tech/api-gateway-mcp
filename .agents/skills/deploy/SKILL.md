@@ -27,7 +27,8 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - リポジトリの直下に古い形の `wrangler.jsonc` があれば、`deployments/<名前>.jsonc` へ移す(`$schema` と `main` のパスの先頭に `../` を付ける)。名前はユーザーに決めてもらう。
    - `npx wrangler whoami` で Cloudflare にログインしているか。していなければ、ユーザーに `npx wrangler login` を実行してもらう(ブラウザが要る。GUI のないマシンでは、SSH のポート転送で 8976 を通す)。
 2. ユーザーに決めてもらう。推測で埋めない。
-   - デプロイの名前(`deployments/<名前>.jsonc` のファイル名。英小文字・数字・ハイフン)と、Worker の名前(`name`。同じ Cloudflare アカウントの中で、ほかのデプロイと違うもの)。別のアカウントに出すなら `account_id` も。
+   - デプロイの名前(`deployments/<名前>.jsonc` のファイル名。英小文字・数字・ハイフン)と、Worker の名前(`name`。同じ Cloudflare アカウントの中で、ほかのデプロイと違うもの)。
+   - Cloudflare のアカウント(`account_id`)。**必ず書く**。ログインやトークンから複数のアカウントが見えると、wrangler はどれに出すかを聞いてきて、クラウドのセッションではそこで止まる。組織ごとにアカウントを分けているなら、その組織のアカウントにする。見えるアカウントは `npx wrangler whoami` で確かめる。
    - 組織名(`ORGANIZATION_NAME`)。1 つのデプロイ = 1 つの組織(`docs/adr/0004`)。Claude のコネクタの説明と Web 画面に出て、複数の組織のゲートウェイを並べてつないだときの見分けに使う。ユーザーがすでに別の組織のデプロイを持っていて、同じ組織のつもりなら、デプロイを分けずにそちらにサービスを足す。
    - 公開 URL(`PUBLIC_URL`)。workers.dev なら `https://api-gateway-mcp.<サブドメイン>.workers.dev`。独自ドメインなら、その設定もする。
    - IdP: Microsoft 365 の組織なら Entra ID、Google Workspace なら Google。
