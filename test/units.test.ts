@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { catalog } from "../src/catalog";
-import { oauthClient, parseServices } from "../src/config";
+import { oauthClient, organizationName, parseServices } from "../src/config";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
 import { getServices } from "../src/services";
@@ -154,6 +154,13 @@ describe("oauthClient", () => {
   it("uses the service name when no client is named", () => {
     expect(oauthClient(env, "my-api")).toEqual({ id: "mine", secret: "mine-secret" });
     expect(oauthClient(env, "freee", "freee")).toBeNull();
+  });
+});
+
+describe("organizationName", () => {
+  it("uses the configured name, or the public host when none is set", () => {
+    expect(organizationName({ ORGANIZATION_NAME: " Acme ", PUBLIC_URL: "https://gw.example.com/" } as unknown as Env)).toBe("Acme");
+    expect(organizationName({ ORGANIZATION_NAME: "", PUBLIC_URL: "https://gw.example.com/" } as unknown as Env)).toBe("gw.example.com");
   });
 });
 

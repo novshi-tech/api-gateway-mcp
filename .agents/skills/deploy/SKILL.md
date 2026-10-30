@@ -24,6 +24,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - `npx wrangler whoami` で Cloudflare にログインしているか。していなければ、ユーザーに `npx wrangler login` を実行してもらう(ブラウザが要る。GUI のないマシンでは、SSH のポート転送で 8976 を通す)。
 2. ユーザーに決めてもらう。推測で埋めない。
    - デプロイの名前(`deployments/<名前>.jsonc` のファイル名。英小文字・数字・ハイフン)と、Worker の名前(`name`。同じ Cloudflare アカウントの中で、ほかのデプロイと違うもの)。別のアカウントに出すなら `account_id` も。
+   - 組織名(`ORGANIZATION_NAME`)。1 つのデプロイ = 1 つの組織(`docs/adr/0004`)。Claude のコネクタの説明と Web 画面に出て、複数の組織のゲートウェイを並べてつないだときの見分けに使う。ユーザーがすでに別の組織のデプロイを持っていて、同じ組織のつもりなら、デプロイを分けずにそちらにサービスを足す。
    - 公開 URL(`PUBLIC_URL`)。workers.dev なら `https://api-gateway-mcp.<サブドメイン>.workers.dev`。独自ドメインなら、その設定もする。
    - IdP: Microsoft 365 の組織なら Entra ID、Google Workspace なら Google。
    - 最初に使うサービス。組み込み(`src/catalog.ts`)のうち OAuth のもの(freee、Google、Microsoft Graph)は、クライアントを登録したものだけが使えるようになるので、どれを使うかを決める。組み込みにないサービスは、デプロイのあとで add-service スキルで足す。
@@ -31,7 +32,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - リダイレクト URI: `<PUBLIC_URL>/oauth/callback` と `<PUBLIC_URL>/login/callback`
    - 受け取るもの: クライアント ID と、Entra ならテナント ID。クライアントシークレットは会話に貼らせず、手順 4 で直接 `wrangler secret put` に入れてもらう。
 4. 設定とシークレット。
-   - 設定を `wrangler.example.jsonc` から作る。`$schema` と `main` のパスの先頭に `../` を付ける(README の `sed` のとおり)。そのうえで、`name`、`PUBLIC_URL`、`IDP_TYPE`、`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`ALLOWED_TENANTS` / `ALLOWED_DOMAINS` を書く。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID`。`SERVICES` は組み込みにないサービスがあるときだけ。Google では `ALLOWED_DOMAINS` を必ず指定する(空だと誰でもサインインできてしまう)。
+   - 設定を `wrangler.example.jsonc` から作る。`$schema` と `main` のパスの先頭に `../` を付ける(README の `sed` のとおり)。そのうえで、`name`、`PUBLIC_URL`、`ORGANIZATION_NAME`、`IDP_TYPE`、`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`ALLOWED_TENANTS` / `ALLOWED_DOMAINS` を書く。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID`。`SERVICES` は組み込みにないサービスがあるときだけ。Google では `ALLOWED_DOMAINS` を必ず指定する(空だと誰でもサインインできてしまう)。
    - `npx wrangler kv namespace create OAUTH_KV` の結果の ID を `kv_namespaces` に書く。
    - シークレット: `OIDC_CLIENT_SECRET` はユーザーに対話で入れてもらう(`npm run secret -- <名前> put OIDC_CLIENT_SECRET`)。`SIGNING_KEY` と `ENCRYPTION_KEY` は `openssl rand -base64 32 | npm run secret -- <名前> put <KEY>` で作る。値を表示したり、ファイルに残したりしない。
    - OAuth の連携先は、クライアントごとに `OAUTH_<CLIENT>_CLIENT_ID` / `_CLIENT_SECRET` が要る: `FREEE`、`GOOGLE`(Google の 6 サービスで共通)、`MICROSOFT`(Graph)。README の「連携先を設定する」に従う。
@@ -43,7 +44,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - 失敗したら、エラーをそのまま見せる。`SERVICES` の検証エラー(`invalid service name`、`must be https`、`unsupported auth`)は `src/config.ts` の `parseServices` が出している。
 6. 動作を確かめる。
    - `<PUBLIC_URL>/` をユーザーに開いてもらい、サインインと認証情報の登録ができるか見てもらう。
-   - Claude にコネクタ `<PUBLIC_URL>/mcp` を追加してもらう(Pro / Max は個人の設定、Team / Enterprise は Owner が組織の設定)。
+   - Claude にコネクタ `<PUBLIC_URL>/mcp` を追加してもらう(Pro / Max は個人の設定、Team / Enterprise は Owner が組織の設定)。コネクタの名前は組織が分かるものにする(ほかの組織のゲートウェイと並べてつなぐことがあるので)。組織が契約している Claude には、その組織のゲートウェイだけをつなぐよう勧める(README の「複数の組織で使う」)。
    - プラグイン `api-gateway` を入れてもらう(README の「スキル(プラグイン)」)。Team / Enterprise では、コード実行のネットワーク設定でゲートウェイのドメインを許可する必要がある。
    - 調べるときは `npm run tail -- <名前> --format json` をバックグラウンドで流して、ユーザーに操作を再現してもらう。
 

@@ -177,6 +177,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           SERVICES,
+          ORGANIZATION_NAME: "Acme",
           SIGNING_KEY: "test-signing-key-test-signing-key-0123456789",
           IDENTITY_SIGNING_KEY,
           ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

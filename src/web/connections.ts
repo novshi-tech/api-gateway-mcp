@@ -1,4 +1,4 @@
-import { publicUrl, type ServiceConfig, type Services } from "../config";
+import { organizationName, publicUrl, type ServiceConfig, type Services } from "../config";
 import { randomToken, s256 } from "../crypto";
 import { getDirectory, getServices, getUpstream, type Directory } from "../services";
 import { signToken, verifyToken } from "../tokens";
@@ -34,7 +34,7 @@ function addable(directory: Directory): [string, ServiceConfig][] {
 }
 
 export function masthead(env: Env, user: Session): Html {
-  return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ</a>
+  return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ · ${organizationName(env)}</a>
 <div class="who">${isAdmin(env, user) && html`<a href="/admin/services">接続先の管理</a>`}<span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
 }
 
@@ -82,7 +82,7 @@ export async function home(request: Request, env: Env & { OAUTH_PROVIDER: OAuthH
   const identity = Object.values(services).filter((config) => config.auth.type === "identity");
   const rows = [...credentials.map((c) => connectionRow(c, services)), ...identity.map(identityRow)];
   return page(
-    "API ゲートウェイ",
+    `API ゲートウェイ · ${organizationName(env)}`,
     html`${masthead(env, user)}
 ${notice(new URL(request.url), credentials, services)}
 <div class="section-head"><h1>つないだサービス</h1><a class="button" href="/connections/new">接続を追加</a></div>
@@ -143,7 +143,8 @@ export async function connectForm(request: Request, env: Env, service: string): 
   const [, config] = entry;
   const name = config.display_name ?? service;
   const label = html`<input type="hidden" name="service" value="${service}">
-<label>名前(複数のアカウントを見分けるため)<input type="text" name="label" placeholder="${name}"></label>`;
+<p class="hint">${organizationName(env)} のアカウントをつなぎます。別の組織のアカウントは、その組織のゲートウェイでつなぎます。</p>
+<label>名前(このサービスに複数のアカウントをつなぐとき、見分けるため)<input type="text" name="label" placeholder="${name}"></label>`;
   const auth = config.auth;
   const form =
     auth.type === "oauth2"

@@ -292,6 +292,18 @@ describe("mcp tools", () => {
     ]);
   });
 
+  it("names the organization it serves, so connectors of several organizations can be told apart", async () => {
+    const client = await connect(alice);
+    expect(client.getServerVersion()?.title).toBe("API Gateway (Acme)");
+    expect(client.getInstructions()).toContain(`API gateway of the organization "Acme" (sign-in: Microsoft Entra ID, ${BASE})`);
+    const { tools } = await client.listTools();
+    for (const tool of tools) expect(tool.description).toContain(`"Acme"`);
+    const gateway = { organization: "Acme", idp: "Microsoft Entra ID", url: BASE };
+    expect(JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} }))).gateway).toEqual(gateway);
+    const issued = JSON.parse(text(await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:murmur"] } })));
+    expect(issued.gateway).toEqual(gateway);
+  });
+
   it("issues a token that the proxy accepts", async () => {
     const cred = await addBoard(alice);
     const client = await connect(alice);
@@ -399,6 +411,7 @@ describe("web ui", () => {
     expect(empty).toContain("Murmur");
     expect(empty).toContain("登録不要");
     expect(empty).toContain(`href="/connections/new"`);
+    expect(empty).toContain("API ゲートウェイ · Acme");
 
     const cred = await addBoard(carol, "main");
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie } })).text();
@@ -416,6 +429,11 @@ describe("web ui", () => {
     expect(page).not.toContain(`href="/connections/new/unclient"`);
     expect(page).not.toContain(`href="/connections/new/murmur"`);
     expect(page).toContain(`<script src="/assets/app.js" defer></script>`);
+  });
+
+  it("tells the user that the connection form is for this organization's accounts", async () => {
+    const page = await (await SELF.fetch(`${BASE}/connections/new/board`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    expect(page).toContain("Acme のアカウントをつなぎます。別の組織のアカウントは、その組織のゲートウェイでつなぎます。");
   });
 
   it("shows a form for one service and 404 for others", async () => {
