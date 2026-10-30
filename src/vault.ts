@@ -6,6 +6,8 @@ import { refreshTokens, UpstreamOAuthError, type TokenSet } from "./upstream-oau
 export interface CredentialInfo {
   id: string;
   service: string;
+  // The service's display name when connected. Credentials from before one-per-service
+  // (docs/adr/0004) may carry a name the user typed.
   label: string;
   createdAt: number;
   // Set when the upstream rejected the refresh token.
@@ -26,6 +28,8 @@ export type HeadersResult =
   | { error: "missing" | "reconnect" | "unavailable" }
   // The definition asks for a header this credential has no value for: it was renamed or added.
   | { error: "no_value"; header: string };
+
+export const ALREADY_CONNECTED = "already connected";
 
 // Refresh this long before the upstream says the access token expires.
 const REFRESH_MARGIN_MS = 60 * 1000;
@@ -62,7 +66,14 @@ export class UserVault extends DurableObject<Env> {
     return stored ? info(stored) : null;
   }
 
-  async add(upstream: Upstream, label: string, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
+  // One credential per service and user (docs/adr/0004): accounts of another organization
+  // belong in that organization's gateway. Checked right before writing, with no await
+  // other than storage in between, so two concurrent connects cannot both pass.
+  private async alreadyConnected(service: string): Promise<boolean> {
+    return (await this.list()).some((c) => c.service === service);
+  }
+
+  async add(upstream: Upstream, secrets: HeaderSecrets): Promise<CredentialInfo | { error: string }> {
     const { service, config } = upstream;
     if (config.auth.type === "identity") return { error: `${service} needs no credential` };
     if (config.auth.type === "client_credentials") return { error: `${service} is not connected by users` };
@@ -74,8 +85,9 @@ export class UserVault extends DurableObject<Env> {
       values[field.name.toLowerCase()] = value;
     }
     const id = crypto.randomUUID();
-    const info: CredentialInfo = { id, service, label: label.trim() || service, createdAt: Date.now() };
+    const info: CredentialInfo = { id, service, label: config.display_name ?? service, createdAt: Date.now() };
     const sealed = await encryptJson(await this.key(), values, this.aad(id));
+    if (await this.alreadyConnected(service)) return { error: ALREADY_CONNECTED };
     await this.ctx.storage.put<StoredCredential>(`cred:${id}`, { ...info, sealed, target: upstreamTarget(upstream) });
     return info;
   }
@@ -83,7 +95,6 @@ export class UserVault extends DurableObject<Env> {
   // Stores tokens from an OAuth connection; with `replaceId`, reconnects that credential.
   async addOAuth(
     upstream: Upstream,
-    label: string,
     tokens: TokenSet,
     replaceId?: string,
   ): Promise<CredentialInfo | { error: string }> {
@@ -95,9 +106,10 @@ export class UserVault extends DurableObject<Env> {
       if (!existing || existing.service !== service) return { error: "credential not found" };
       record = { id: replaceId, service, label: existing.label, createdAt: existing.createdAt };
     } else {
-      record = { id: crypto.randomUUID(), service, label: label.trim() || service, createdAt: Date.now() };
+      record = { id: crypto.randomUUID(), service, label: config.display_name ?? service, createdAt: Date.now() };
     }
     const sealed = await encryptJson(await this.key(), tokens, this.aad(record.id));
+    if (!replaceId && (await this.alreadyConnected(service))) return { error: ALREADY_CONNECTED };
     await this.ctx.storage.put<StoredCredential>(`cred:${record.id}`, { ...record, sealed, target: upstreamTarget(upstream) });
     return record;
   }

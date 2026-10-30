@@ -1,7 +1,7 @@
 {
   "name": "api-gateway",
   "displayName": "API Gateway",
-  "version": "0.13.0",
+  "version": "0.15.0",
   "description": "API ゲートウェイの共通手順(認証情報の確認、トークンの発行、REST の呼び出し)と、board・gBizINFO・Serper のスキル。ほかの api-gateway-* プラグインの前提。コネクタ(API Gateway MCP)はデプロイごとに別途追加する。",
   "author": {
     "name": "novshi-tech"

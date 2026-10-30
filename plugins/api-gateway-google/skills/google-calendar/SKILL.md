@@ -7,7 +7,7 @@ description: Google Calendar のカレンダー一覧、予定の検索・取得
 
 `api-gateway` スキルでサービス `calendar` の認証情報を選び、`issue_token` が返した `token` / `base_url` を `GW_TOKEN` / `GW_BASE_URL` に設定する。上流の Google トークンはゲートウェイが管理する。ホストやアカウント名を固定しない。
 
-複数の接続があれば `list_credentials` の `label` とユーザーの指定を照合する。指定済みの接続を使い、曖昧な場合だけ確認する。Gmail / Drive の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、同じアカウントへの接続とは限らない。
+接続はサービスごとに 1 つ。複数の組織のゲートウェイがつながっていれば、`api-gateway` スキルの「コネクタの選び方」で組織のコネクタを選ぶ。Gmail / Drive の認証情報とは別に選ぶ。同じ OAuth クライアント ID でも、同じアカウントへの接続とは限らない。
 
 まず `/calendar/v3/users/me/calendarList` を取得し、`id`, `summary`, `primary`, `timeZone`, `accessRole` から対象カレンダーを決める。`primary` は選んだ接続アカウントのメインカレンダーを指す API キーワード。共有カレンダーは取得した ID を使う。名前は一意ではない。
 

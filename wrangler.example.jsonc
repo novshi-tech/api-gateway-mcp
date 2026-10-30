@@ -21,6 +21,10 @@
   "vars": {
     // Public origin of this Worker, without a trailing slash.
     "PUBLIC_URL": "http://localhost:8787",
+    // The organization this deployment serves, e.g. "Acme". Claude and the web UI show it so that
+    // gateways of several organizations connected side by side can be told apart (docs/adr/0004).
+    // Defaults to the host of PUBLIC_URL.
+    "ORGANIZATION_NAME": "",
     // "entra" or "google".
     "IDP_TYPE": "entra",
     // Entra: https://login.microsoftonline.com/<tenant-id>/v2.0

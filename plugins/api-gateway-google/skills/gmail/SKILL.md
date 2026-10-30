@@ -7,7 +7,7 @@ description: Gmail のメール検索・取得・送信・返信・下書き・�
 
 `api-gateway` スキルでサービス `gmail` の認証情報を選び、`issue_token` の `token` と `base_url` を `GW_TOKEN` / `GW_BASE_URL` に設定する。上流の Google トークンはゲートウェイが管理する。
 
-複数の接続がある場合は `list_credentials` の `label` とユーザーの指定を照合する。ユーザーが接続先を指定済みなら、その接続を使う。曖昧な場合だけ確認する。必要なら `GET /gmail/v1/users/me/profile` の `emailAddress` で対象アカウントを確かめる。Drive と合わせて使う場合は `drive` の認証情報も別に選ぶ。共通の OAuth クライアント ID は、同じ接続アカウントを意味しない。
+接続はサービスごとに 1 つ。複数の組織のゲートウェイがつながっていれば、`api-gateway` スキルの「コネクタの選び方」で組織のコネクタを選ぶ。必要なら `GET /gmail/v1/users/me/profile` の `emailAddress` で対象アカウントを確かめる。Drive と合わせて使う場合は `drive` の認証情報も別に選ぶ。共通の OAuth クライアント ID は、同じ接続アカウントを意味しない。
 
 ## 呼び出す
 

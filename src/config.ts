@@ -113,3 +113,9 @@ export function splitList(value: string | undefined): string[] {
 export function publicUrl(env: Env): string {
   return env.PUBLIC_URL.replace(/\/+$/, "");
 }
+
+// The organization this deployment serves (ADR 0004: one deployment = one organization).
+// Falls back to the host so that gateways connected side by side stay distinguishable.
+export function organizationName(env: Env): string {
+  return env.ORGANIZATION_NAME?.trim() || new URL(publicUrl(env)).host;
+}

@@ -20,8 +20,8 @@ beforeEach(() => {
   [alice, bob, carol, mallory] = Array.from({ length: 4 }, () => crypto.randomUUID());
 });
 
-async function addBoard(userId: string, label = "main") {
-  const result = await vaultFor(env, userId).add(await upstream("board"), label, BOARD);
+async function addBoard(userId: string) {
+  const result = await vaultFor(env, userId).add(await upstream("board"), BOARD);
   if ("error" in result) throw new Error(result.error);
   return result;
 }
@@ -33,7 +33,7 @@ async function apiToken(userId: string, creds: Record<string, string>, ttl = 60)
 describe("vault", () => {
   it("stores credentials per user and builds headers from the service config", async () => {
     const cred = await addBoard(alice);
-    expect(await vaultFor(env, alice).list()).toEqual([expect.objectContaining({ id: cred.id, service: "board", label: "main" })]);
+    expect(await vaultFor(env, alice).list()).toEqual([expect.objectContaining({ id: cred.id, service: "board", label: "board" })]);
     expect(await vaultFor(env, bob).list()).toEqual([]);
     expect(await vaultFor(env, alice).headers(cred.id, await upstream("board"))).toEqual({ headers: { "x-api-key": "the-key", authorization: "Bearer board-token" } });
     expect(await vaultFor(env, bob).headers(cred.id, await upstream("board"))).toEqual({ error: "missing" });
@@ -43,7 +43,7 @@ describe("vault", () => {
   it("rejects unknown services and missing fields", async () => {
     expect(await getUpstream(env, "nope")).toBeNull();
     expect(await getUpstream(env, "constructor")).toBeNull();
-    expect(await vaultFor(env, alice).add(await upstream("board"), "", { "x-api-key": "k" })).toEqual({ error: "missing value for authorization" });
+    expect(await vaultFor(env, alice).add(await upstream("board"), { "x-api-key": "k" })).toEqual({ error: "missing value for authorization" });
   });
 
   it("sends secrets only to the upstream they were entered for", async () => {
@@ -62,15 +62,30 @@ describe("vault", () => {
   it("ties an OAuth credential to its token endpoint and client", async () => {
     const freee = await upstream("freee");
     const tokens = { access_token: "a", refresh_token: "r", expires_at: Date.now() + 3_600_000 };
-    const first = await vaultFor(env, alice).addOAuth(freee, "main", tokens);
-    const second = await vaultFor(env, alice).addOAuth(freee, "other", tokens);
+    const first = await vaultFor(env, alice).addOAuth(freee, tokens);
+    const second = await vaultFor(env, bob).addOAuth(freee, tokens);
     if ("error" in first || "error" in second) throw new Error("not stored");
     expect(await vaultFor(env, alice).headers(first.id, freee)).toEqual({ headers: { authorization: "Bearer a" } });
     const newClient = { ...freee, client: { id: "another-client", secret: "s" } };
     expect(await vaultFor(env, alice).headers(first.id, newClient)).toEqual({ error: "reconnect" });
     const auth = freee.config.auth as { token_url: string };
     const newTokenUrl = { ...freee, config: { ...freee.config, auth: { ...auth, token_url: "https://evil.example/token" } } };
-    expect(await vaultFor(env, alice).headers(second.id, newTokenUrl as typeof freee)).toEqual({ error: "reconnect" });
+    expect(await vaultFor(env, bob).headers(second.id, newTokenUrl as typeof freee)).toEqual({ error: "reconnect" });
+  });
+
+  it("keeps one credential per service for each user, but lets OAuth reconnect in place", async () => {
+    const cred = await addBoard(alice);
+    expect(cred.label).toBe("board");
+    expect(await vaultFor(env, alice).add(await upstream("board"), BOARD)).toEqual({ error: "already connected" });
+    expect(await addBoard(bob)).toHaveProperty("id");
+
+    const freee = await upstream("freee");
+    const tokens = { access_token: "a", refresh_token: "r", expires_at: Date.now() + 3_600_000 };
+    const first = await vaultFor(env, alice).addOAuth(freee, tokens);
+    if ("error" in first) throw new Error("not stored");
+    expect(await vaultFor(env, alice).addOAuth(freee, tokens)).toEqual({ error: "already connected" });
+    expect(await vaultFor(env, alice).addOAuth(freee, { ...tokens, access_token: "b" }, first.id)).toMatchObject({ id: first.id });
+    expect((await vaultFor(env, alice).list()).map((c) => c.service)).toEqual(["board", "freee"]);
   });
 
   it("records the upstream of an older credential on first use", async () => {
@@ -95,7 +110,7 @@ describe("vault", () => {
 
 describe("proxy", () => {
   it("sends the gBizINFO API token in its own header", async () => {
-    const cred = await vaultFor(env, alice).add(await upstream("gbizinfo"), "main", { "x-hojininfo-api-token": "gbiz-token" });
+    const cred = await vaultFor(env, alice).add(await upstream("gbizinfo"), { "x-hojininfo-api-token": "gbiz-token" });
     expect("error" in cred).toBe(false);
     const id = (cred as { id: string }).id;
     const res = await SELF.fetch(`${BASE}/api/gbizinfo/hojin/v2/hojin?name=%E3%83%86%E3%82%B9%E3%83%88`, {
@@ -109,7 +124,7 @@ describe("proxy", () => {
   });
 
   it("sends the Serper API key in its own header", async () => {
-    const cred = await vaultFor(env, alice).add(await upstream("serper"), "main", { "x-api-key": "serper-key" });
+    const cred = await vaultFor(env, alice).add(await upstream("serper"), { "x-api-key": "serper-key" });
     expect("error" in cred).toBe(false);
     const id = (cred as { id: string }).id;
     const res = await SELF.fetch(`${BASE}/api/serper/search`, {
@@ -262,7 +277,7 @@ describe("identity upstreams", () => {
   });
 
   it("does not store credentials for identity services", async () => {
-    expect(await vaultFor(env, alice).add(await upstream("murmur"), "", {})).toEqual({ error: "murmur needs no credential" });
+    expect(await vaultFor(env, alice).add(await upstream("murmur"), {})).toEqual({ error: "murmur needs no credential" });
   });
 });
 
@@ -290,6 +305,18 @@ describe("mcp tools", () => {
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },
     ]);
+  });
+
+  it("names the organization it serves, so connectors of several organizations can be told apart", async () => {
+    const client = await connect(alice);
+    expect(client.getServerVersion()?.title).toBe("API Gateway (Acme)");
+    expect(client.getInstructions()).toContain(`API gateway of the organization "Acme" (sign-in: Microsoft Entra ID, ${BASE})`);
+    const { tools } = await client.listTools();
+    for (const tool of tools) expect(tool.description).toContain(`"Acme"`);
+    const gateway = { organization: "Acme", idp: "Microsoft Entra ID", url: BASE };
+    expect(JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} }))).gateway).toEqual(gateway);
+    const issued = JSON.parse(text(await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:murmur"] } })));
+    expect(issued.gateway).toEqual(gateway);
   });
 
   it("issues a token that the proxy accepts", async () => {
@@ -327,16 +354,12 @@ describe("mcp tools", () => {
     expect(unknown.isError).toBe(true);
   });
 
-  it("refuses other users' credentials and duplicate services", async () => {
-    const mine = await addBoard(alice, "a");
-    const second = await addBoard(alice, "b");
+  it("refuses other users' credentials", async () => {
     const theirs = await addBoard(bob);
     const client = await connect(alice);
 
     const foreign = await client.callTool({ name: "issue_token", arguments: { credential_ids: [theirs.id] } });
     expect(foreign.isError).toBe(true);
-    const duplicate = await client.callTool({ name: "issue_token", arguments: { credential_ids: [mine.id, second.id] } });
-    expect(duplicate.isError).toBe(true);
   });
 });
 
@@ -374,7 +397,7 @@ describe("web ui", () => {
   });
 
   it("registers a credential from the form", async () => {
-    const body = new URLSearchParams({ service: "board", label: "form", "h:x-api-key": "k", "h:authorization": "t" });
+    const body = new URLSearchParams({ service: "board", "h:x-api-key": "k", "h:authorization": "t" });
     const res = await SELF.fetch(`${BASE}/credentials`, {
       method: "POST",
       headers: { cookie: await sessionCookie(carol), origin: new URL(BASE).origin },
@@ -384,13 +407,13 @@ describe("web ui", () => {
     expect(res.status).toBe(303);
     const [cred] = await vaultFor(env, carol).list();
     expect(res.headers.get("location")).toBe(`/?added=${cred.id}`);
-    expect(cred).toMatchObject({ service: "board", label: "form" });
+    expect(cred).toMatchObject({ service: "board", label: "board" });
     expect(await vaultFor(env, carol).headers(cred.id, await upstream("board"))).toEqual({ headers: { "x-api-key": "k", authorization: "Bearer t" } });
 
     const page = await (await SELF.fetch(`${BASE}/?added=${cred.id}`, { headers: { cookie: await sessionCookie(carol) } })).text();
     expect(page).toContain(cred.id);
     expect(page).not.toContain(">k<");
-    expect(page).toContain("「form」をつなぎました");
+    expect(page).toContain("board をつなぎました");
   });
 
   it("lists connections and identity services on the home page", async () => {
@@ -399,8 +422,9 @@ describe("web ui", () => {
     expect(empty).toContain("Murmur");
     expect(empty).toContain("登録不要");
     expect(empty).toContain(`href="/connections/new"`);
+    expect(empty).toContain("API ゲートウェイ · Acme");
 
-    const cred = await addBoard(carol, "main");
+    const cred = await addBoard(carol);
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie } })).text();
     expect(page).toContain(`href="/connections/${cred.id}/delete"`);
   });
@@ -418,6 +442,11 @@ describe("web ui", () => {
     expect(page).toContain(`<script src="/assets/app.js" defer></script>`);
   });
 
+  it("tells the user that the connection form is for this organization's accounts", async () => {
+    const page = await (await SELF.fetch(`${BASE}/connections/new/board`, { headers: { cookie: await sessionCookie(carol) } })).text();
+    expect(page).toContain("Acme のアカウントをつなぎます。別の組織のアカウントは、その組織のゲートウェイでつなぎます。");
+  });
+
   it("shows a form for one service and 404 for others", async () => {
     const cookie = await sessionCookie(carol);
     const board = await SELF.fetch(`${BASE}/connections/new/board`, { headers: { cookie } });
@@ -433,9 +462,9 @@ describe("web ui", () => {
 
   it("confirms before deleting a connection", async () => {
     const cookie = await sessionCookie(carol);
-    const cred = await addBoard(carol, "to-delete");
+    const cred = await addBoard(carol);
     const confirm = await (await SELF.fetch(`${BASE}/connections/${cred.id}/delete`, { headers: { cookie } })).text();
-    expect(confirm).toContain("「to-delete」を削除しますか?");
+    expect(confirm).toContain("「board」を削除しますか?");
     expect(confirm).toContain(`action="/credentials/${cred.id}/delete"`);
     expect(await vaultFor(env, carol).list()).toHaveLength(1);
 
@@ -472,10 +501,36 @@ describe("web ui", () => {
     expect(page).not.toContain(`name="credential" value="${cred.id}"`);
   });
 
-  it("escapes what the user typed when showing it back", async () => {
-    await addBoard(carol, `<script>alert("x")</script>`);
+  it("offers to replace instead of adding a second account for a connected service", async () => {
+    const cookie = await sessionCookie(carol);
+    const cred = await addBoard(carol);
+    const picker = await (await SELF.fetch(`${BASE}/connections/new`, { headers: { cookie } })).text();
+    expect(picker).toContain("API キーを入力 · つないでいます");
+    const form = await (await SELF.fetch(`${BASE}/connections/new/board`, { headers: { cookie } })).text();
+    expect(form).toContain("board はつないでいます");
+    expect(form).toContain(`href="/connections/${cred.id}/delete"`);
+    expect(form).not.toContain(`action="/credentials"`);
+
+    const res = await SELF.fetch(`${BASE}/credentials`, {
+      method: "POST",
+      headers: { cookie, origin: new URL(BASE).origin },
+      body: new URLSearchParams({ service: "board", "h:x-api-key": "k", "h:authorization": "t" }),
+      redirect: "manual",
+    });
+    expect(res.headers.get("location")).toBe("/connections/new/board");
+    expect(await vaultFor(env, carol).list()).toHaveLength(1);
+  });
+
+  it("asks to delete the extra connections left from before one account per service", async () => {
+    const cred = await addBoard(carol);
+    await runInDurableObject(vaultFor(env, carol), async (_, state) => {
+      const stored = (await state.storage.get<Record<string, unknown>>(`cred:${cred.id}`))!;
+      await state.storage.put("cred:older-extra", { ...stored, id: "older-extra", label: `<script>alert("x")</script>`, createdAt: 1 });
+    });
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(carol) } })).text();
-    expect(page).not.toContain("<script>");
+    expect(page.match(/使わないほうを削除してください/g)).toHaveLength(2);
+    // A label typed by the user before is still escaped.
+    expect(page).not.toContain("<script>alert");
     expect(page).toContain("&#60;script&#62;alert(&#34;x&#34;)&#60;/script&#62;");
   });
 

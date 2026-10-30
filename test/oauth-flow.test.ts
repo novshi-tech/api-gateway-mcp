@@ -135,7 +135,7 @@ describe("MCP authorization flow", () => {
     expect(token.body.refresh_token).toBeTruthy();
 
     const userId = `entra_tenant-1_${oid}`;
-    const added = await vaultFor(env, userId).add(await upstream("board"), "main", { "x-api-key": "k", authorization: "t" });
+    const added = await vaultFor(env, userId).add(await upstream("board"), { "x-api-key": "k", authorization: "t" });
     const listed = await callTool(token.body.access_token, "list_credentials");
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: (added as { id: string }).id }),

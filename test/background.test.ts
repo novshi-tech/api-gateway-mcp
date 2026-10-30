@@ -96,6 +96,6 @@ describe("client_credentials services and users", () => {
 
   it("cannot be stored as a user's credential", async () => {
     const target = await getUpstream(env, "graph-app");
-    expect(await vaultFor(env, "user-1").add(target!, "main", {})).toEqual({ error: "graph-app is not connected by users" });
+    expect(await vaultFor(env, "user-1").add(target!, {})).toEqual({ error: "graph-app is not connected by users" });
   });
 });

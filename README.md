@@ -45,6 +45,14 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
 5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
 
+### 複数の組織で使う
+
+ゲートウェイは 1 つのデプロイが 1 つの組織です([ADR 0004](docs/adr/0004-one-deployment-per-organization.md))。複数の組織で仕事をするなら、組織ごとにデプロイし、それぞれを別のコネクタとして Claude に並べてつなぎます。
+
+- コネクタには組織が分かる名前を付けます(「Acme Gateway」など)。ゲートウェイも、設定の `ORGANIZATION_NAME` を Claude と Web 画面に名乗ります。スキルはコネクタが複数あることを前提に書かれていて、作業する組織のコネクタを選びます。
+- 1 人がつなげるアカウントは、1 つのサービスにつき 1 つです。別の組織のアカウントは、その組織のゲートウェイでつなぎます。アカウントを替えるときは、OAuth のサービスはつなぎ直し、API キーのサービスは削除してから追加します。以前につないだ 2 つ目以降の接続は使えるまま残り、画面に「使わないほうを削除してください」と出ます。
+- コネクタを通ったデータは、そのコネクタをつないだ Claude のアカウントに入ります。どの Claude にどのゲートウェイをつなぐかは、使う側が決めます。組織が契約している Claude(Team / Enterprise)には、その組織のゲートウェイだけをつなぐのがおすすめです。
+
 ```sh
 curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/api/1/companies"
 ```
@@ -89,11 +97,11 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 - `https://<ゲートウェイ>/oauth/callback`(MCP クライアントの接続)
 - `https://<ゲートウェイ>/login/callback`(Web 画面のサインイン)
 
-Entra ID はシングルテナントのアプリとして登録し、`OIDC_ISSUER` を `https://login.microsoftonline.com/<tenant-id>/v2.0` にします。Google は、Workspace のドメインを `ALLOWED_DOMAINS` に必ず指定します(空だと、どの Google アカウントでもサインインできてしまいます)。
+アプリは、その組織の中だけで使える形で登録します(1 つのデプロイ = 1 つの組織)。Entra ID はシングルテナントのアプリとして登録し、`OIDC_ISSUER` を `https://login.microsoftonline.com/<tenant-id>/v2.0` にします。Google は、Workspace のドメインを `ALLOWED_DOMAINS` に必ず指定します(空だと、どの Google アカウントでもサインインできてしまいます)。
 
 ### 2. 設定してデプロイする
 
-デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます(`deployments/` は git の管理外です)。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます(`deployments/` は git の管理外です)。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、組織名(`ORGANIZATION_NAME`)、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
 
 wrangler は、`npm run deploy` / `npm run secret` / `npm run tail` に名前を付けて呼びます(`tools/wrangler.mjs` が `--config deployments/<名前>.jsonc` を渡します)。リポジトリの直下には `wrangler.jsonc` を置かないので、名前を付けずに `npx wrangler deploy` を打っても、どこにもデプロイされません。
 
@@ -212,7 +220,7 @@ freee のアプリ管理でアプリを作成し、コールバック URL を設
 
 #### Google(`gmail`・`drive`・`calendar`・`docs`・`analytics`・`analytics-admin`)
 
-Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API、Google Analytics Data API、Google Analytics Admin API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `src/catalog.ts` のスコープを追加します。6 つのサービスで 1 つの OAuth クライアントを共有します。
+Google Cloud のプロジェクトで、Gmail API、Google Drive API、Google Calendar API、Google Docs API、Google Analytics Data API、Google Analytics Admin API のうち使うものを有効にし、OAuth クライアントを「ウェブ アプリケーション」として作成します。OAuth 同意画面のユーザーの種類は、Workspace の「内部」にします(別の組織のアカウントはつなげなくなります。別の組織はその組織のゲートウェイで)。承認済みのリダイレクト URI に `https://<ゲートウェイ>/connect/callback` を登録し、OAuth 同意画面に `src/catalog.ts` のスコープを追加します。6 つのサービスで 1 つの OAuth クライアントを共有します。
 
 ```sh
 npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_ID
