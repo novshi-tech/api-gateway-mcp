@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: api-gateway-mcp を自分の Cloudflare アカウントにセルフホストする手順。IdP(Entra ID / Google)へのアプリ登録、デプロイごとの設定ファイル(deployments/<名前>.jsonc)の作成、KV とシークレットの登録、wrangler deploy、Claude へのコネクタ追加、プラグインの導入までを、ユーザーと対話しながら進める。設定を変えたあとの再デプロイ、1 つの clone での複数デプロイの管理、新しい版で増えた Durable Object などを各デプロイの設定に反映することも扱う。「ゲートウェイをデプロイしたい」「セルフホストしたい」「初期設定をして」「設定を変えたので出し直して」「デプロイ先をもう 1 つ増やしたい」「新しい版に上げて」などの依頼で使う。サービスを足すだけなら add-service スキル。
+description: api-gateway-mcp を自分の Cloudflare アカウントにセルフホストする手順。IdP(Entra ID / Google)へのアプリ登録、デプロイごとの設定ファイル(deployments/<名前>.jsonc。別の private リポジトリで管理して deployments/ に clone する)の作成と管理、KV とシークレットの登録、wrangler deploy、Claude へのコネクタ追加、プラグインの導入までを、ユーザーと対話しながら進める。設定を変えたあとの再デプロイ、1 つの clone での複数デプロイの管理、新しい版で増えた Durable Object などを各デプロイの設定に反映することも扱う。「ゲートウェイをデプロイしたい」「セルフホストしたい」「初期設定をして」「設定を変えたので出し直して」「デプロイ先をもう 1 つ増やしたい」「新しい版に上げて」などの依頼で使う。サービスを足すだけなら add-service スキル。
 ---
 
 # ゲートウェイをデプロイする
@@ -19,7 +19,11 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
 ## 進め方
 
 1. 現状を確かめる。
-   - `deployments/` にどんな設定があるか(git の管理外)。頼まれたデプロイの設定があれば、初回ではなく更新なので、手順 5 に進む。どれのことか分からなければ、ユーザーに聞く。
+   - `deployments/` にどんな設定があるか。頼まれたデプロイの設定があれば、初回ではなく更新なので、手順 5 に進む。どれのことか分からなければ、ユーザーに聞く。
+   - `deployments/` が設定のリポジトリの clone か(`git -C deployments rev-parse --show-toplevel` が `deployments` を指すか)。このリポジトリの git は `deployments/` を見ない。設定は private リポジトリで管理し、`deployments/` に clone するのがおすすめ(README の「設定をリポジトリで管理する」)。
+     - `deployments/` がない、または空なら、設定のリポジトリがあるかユーザーに聞き、あれば `git clone <設定のリポジトリ> deployments` する。
+     - `deployments/` にファイルはあるがリポジトリになっていなければ、リポジトリで管理するよう勧める。ユーザーが private リポジトリを作ったら、`git -C deployments init`、リモートの追加、最初のコミットとプッシュを手伝う(プッシュはユーザーの確認を取ってから)。
+     - 設定のリポジトリにまだプッシュしていない変更やコミットしていない変更があれば(`git -C deployments status`)、デプロイの前にユーザーに知らせる。
    - リポジトリの直下に古い形の `wrangler.jsonc` があれば、`deployments/<名前>.jsonc` へ移す(`$schema` と `main` のパスの先頭に `../` を付ける)。名前はユーザーに決めてもらう。
    - `npx wrangler whoami` で Cloudflare にログインしているか。していなければ、ユーザーに `npx wrangler login` を実行してもらう(ブラウザが要る。GUI のないマシンでは、SSH のポート転送で 8976 を通す)。
 2. ユーザーに決めてもらう。推測で埋めない。
@@ -55,10 +59,20 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
 - 照らし合わせるもの: `compatibility_date`、`compatibility_flags`、`observability`、`triggers`、`durable_objects`、`migrations`、`vars` のキー(値はデプロイごとに違うので、増えたキーだけ足す。既定値はひな形のもの)。
 - `migrations` は、ひな形にある tag をすべて、同じ順で持っていること。足りない tag を末尾に足す。既にある tag を書き換えたり消したりしない(Durable Object のデータを失う)。
 - 直したら、デプロイごとに `--dry-run` を通し、ユーザーにデプロイしてもらう。
+- 設定のリポジトリにコミットしてプッシュする(下の「設定の変更を残す」)。
+
+## 設定の変更を残す
+
+`deployments/` の設定を作った・直したら(初回のデプロイ、設定の変更、版を上げたときの共通部分の反映、add-service での `SERVICES` の追加)、`deployments/` が設定のリポジトリなら、そこにコミットしてプッシュする。
+
+- コミットは `git -C deployments ...` で、設定のリポジトリに対して行う。ゲートウェイのリポジトリには何も入れない。
+- 何を変えたかをメッセージに書く(例: `acme: ORGANIZATION_NAME を足す`)。
+- プッシュは外に出る操作なので、ユーザーに確認してから。ユーザーが自分でやると言ったら、変更の要約とコマンドを示すだけにする。
+- シークレットの値をファイルに書かない。差分にシークレットらしい値(`OIDC_CLIENT_SECRET` などの値)が入っていたら、コミットせずに止める。
 
 ## 注意
 
 - `ENCRYPTION_KEY` を作り直すと、登録済みの認証情報はすべて復号できなくなる。更新のデプロイでは触らない。
 - `SIGNING_KEY` を作り直すと、発行済みのトークンと MCP の接続が切れる。ユーザーは接続し直しになる。
-- `deployments/` には KV の ID やテナント ID が入る。git に入れない(`.gitignore` 済み)。
+- `deployments/` には KV の ID やテナント ID が入る。ゲートウェイのリポジトリには入れない(`.gitignore` 済み)。管理するなら、別の private リポジトリで。
 
