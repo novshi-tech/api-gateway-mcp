@@ -77,6 +77,12 @@ export function sameValue(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
+function overlaps(a: Address, b: Address): boolean {
+  const start = (x: Address) => x.validFrom ?? '';
+  const end = (x: Address) => x.validTo ?? '\uffff';
+  return start(a) < end(b) && start(b) < end(a);
+}
+
 function isValidAt(a: Address, at?: string): boolean {
   if (!at) return true;
   if (a.validFrom && at < a.validFrom) return false;
@@ -129,6 +135,20 @@ export function seedProblems(seed: Seed): string[] {
   }
   for (const l of seed.lists) {
     if (!dir.dataSource(l.dataSourceId)) problems.push(`list ${l.id}: data source ${l.dataSourceId} がない`);
+  }
+  // 1 つのアドレスは、ある時点で 1 つの Contact にしか付かない（0030）
+  const byValue = new Map<string, Address[]>();
+  for (const a of seed.addresses) {
+    if (!dir.contact(a.contactId)) problems.push(`address ${a.id}: contact ${a.contactId} がない`);
+    const k = `${a.channel}|${a.value.toLowerCase()}`;
+    byValue.set(k, [...(byValue.get(k) ?? []), a]);
+  }
+  for (const xs of byValue.values()) {
+    for (let i = 0; i < xs.length; i++) {
+      for (let j = i + 1; j < xs.length; j++) {
+        if (overlaps(xs[i]!, xs[j]!)) problems.push(`address ${xs[i]!.value}: ${xs[i]!.id} と ${xs[j]!.id} の期間が重なる`);
+      }
+    }
   }
   return problems;
 }

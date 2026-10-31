@@ -1,10 +1,14 @@
-import { asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import type { DrizzleD1Database } from 'drizzle-orm/d1';
 import {
   emptyProjections,
   parseEvent,
+  rowKey,
   Seed,
+  SEED_KINDS,
+  type MasterChange,
+  type SeedKind,
   type DomainEvent,
   type DraftEvent,
   type ProjectionChanges,
@@ -13,7 +17,7 @@ import {
   type Thread,
 } from '../domain';
 import * as schema from './schema';
-import { ConcurrencyError, type EventStore, type MasterStore, type ProjectionStore, type Repo } from './types';
+import { ConcurrencyError, type EventStore, type MasterChangeRecord, type MasterStore, type ProjectionStore, type Repo } from './types';
 
 // D1 実装（0021）。本番は Worker の D1 バインディング、テストは Miniflare の D1 で同じコードを通す。
 // D1 には対話的なトランザクションがない。原子的にまとめられるのは batch() だけ（1 文でも失敗すれば全体が戻る）。
@@ -168,8 +172,6 @@ export class D1ProjectionStore implements ProjectionStore {
   }
 }
 
-export const SEED_KINDS = ['users', 'contacts', 'addresses', 'credentialRefs', 'dataSources', 'lists', 'listMembers', 'attributeDefs'] as const;
-
 export class D1MasterStore implements MasterStore {
   constructor(private readonly db: Db) {}
 
@@ -181,8 +183,37 @@ export class D1MasterStore implements MasterStore {
   }
 
   async replaceSeed(seed: Seed): Promise<void> {
-    const rows = SEED_KINDS.flatMap((kind) => (seed[kind] as unknown[]).map((data, ord) => ({ kind, ord, data })));
-    await batch(this.db, [this.db.delete(schema.master), ...chunks(rows, 3).map((part) => this.db.insert(schema.master).values(part))]);
+    const rows = SEED_KINDS.flatMap((kind) => (seed[kind] as unknown[]).map((data, ord) => ({ kind, key: rowKey(kind, data), ord, data })));
+    await batch(this.db, [this.db.delete(schema.master), ...chunks(rows, 4).map((part) => this.db.insert(schema.master).values(part))]);
+  }
+
+  /** 差分と変更の記録を 1 つの batch で書く（どちらかが失敗すれば両方戻る） */
+  async applyChanges(changes: readonly MasterChange[], meta: { at: string; actorUserId: string | null; reason?: string }): Promise<void> {
+    if (changes.length === 0) return;
+    const items: BatchItem<'sqlite'>[] = [];
+    for (const c of changes) {
+      const where = and(eq(schema.master.kind, c.kind), eq(schema.master.key, c.key));
+      if (c.after === null) items.push(this.db.delete(schema.master).where(where));
+      else if (c.before !== null) items.push(this.db.update(schema.master).set({ data: c.after }).where(where));
+      else {
+        items.push(
+          this.db.insert(schema.master).values({
+            kind: c.kind,
+            key: c.key,
+            ord: sql`(SELECT COALESCE(MAX(ord), -1) + 1 FROM master WHERE kind = ${c.kind})`,
+            data: c.after,
+          }),
+        );
+      }
+    }
+    const log = changes.map((c) => ({ at: meta.at, actorUserId: meta.actorUserId, reason: meta.reason ?? null, kind: c.kind, key: c.key, before: c.before, after: c.after }));
+    items.push(...chunks(log, 7).map((part) => this.db.insert(schema.masterChanges).values(part)));
+    await batch(this.db, items);
+  }
+
+  async changeLog(): Promise<MasterChangeRecord[]> {
+    const rows = await this.db.select().from(schema.masterChanges).orderBy(asc(schema.masterChanges.id));
+    return rows.map((r) => ({ ...r, kind: r.kind as SeedKind, before: r.before ?? null, after: r.after ?? null }));
   }
 }
 

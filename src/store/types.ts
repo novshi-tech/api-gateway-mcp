@@ -1,4 +1,4 @@
-import type { DomainEvent, DraftEvent, ProjectionChanges, Projections, Seed } from '../domain';
+import type { DomainEvent, DraftEvent, MasterChange, ProjectionChanges, Projections, Seed } from '../domain';
 
 export class ConcurrencyError extends Error {
   constructor(expected: number) {
@@ -28,10 +28,23 @@ export interface ProjectionStore {
   clear(): Promise<void>;
 }
 
+/** 変更の記録の 1 行（0030 の 5。マスタはその場で書き換えるので、誰がいつ何を変えたかはここに残す） */
+export interface MasterChangeRecord extends MasterChange {
+  id: number;
+  at: string;
+  /** 変えた User（管理者のスクリプトなど、User でなければ null） */
+  actorUserId: string | null;
+  reason: string | null;
+}
+
 export interface MasterStore {
   loadSeed(): Promise<Seed>;
-  /** マスタを丸ごと入れ替える（プロトタイプの seed 投入用） */
+  /** マスタを丸ごと入れ替える（seed 投入用。変更の記録は残さない） */
   replaceSeed(seed: Seed): Promise<void>;
+  /** 差分を当て、同じ書き込みで変更の記録に残す */
+  applyChanges(changes: readonly MasterChange[], meta: { at: string; actorUserId: string | null; reason?: string }): Promise<void>;
+  /** 変更の記録（古い順） */
+  changeLog(): Promise<MasterChangeRecord[]>;
 }
 
 export interface Repo {

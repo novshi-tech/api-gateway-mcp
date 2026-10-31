@@ -12,6 +12,7 @@ export * from './commands';
 export * from './ingest';
 export * from './outbound';
 export * from './mirror';
+export * from './master';
 export * from './sides';
 export * from './turn';
 export * from './visibility';

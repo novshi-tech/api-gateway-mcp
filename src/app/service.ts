@@ -21,6 +21,7 @@ import {
   listThreads,
   moveSignal,
   planIngest,
+  planMasterEdit,
   prepareInbound,
   reopenThread,
   setAttribute,
@@ -34,8 +35,10 @@ import {
   type InboundSignal,
   type IngestOutcome,
   type IngestPolicy,
+  type MasterChange,
   type MoveTarget,
   type Projections,
+  type Seed,
   type ThreadFilter,
   type Viewer,
 } from '../domain';
@@ -128,6 +131,25 @@ export class MurmurService {
         throw err;
       }
     }
+  }
+
+  /**
+   * マスタの書き換え（0030 の 5）。edit はコアの関数で、今のマスタの写しを書き換える（整合性はコアが確かめる）。
+   * 差分と変更の記録を同じ書き込みで残す。イベントは出さない（fold はマスタに依存しない）
+   */
+  async changeMaster<T>(
+    actorUserId: string | null,
+    reason: string | undefined,
+    edit: (draft: Seed, ctx: CoreContext) => T,
+  ): Promise<{ result: T; changes: MasterChange[] }> {
+    const before = await this.deps.repo.master.loadSeed();
+    const ctx = this.context(new Directory(before));
+    let result!: T;
+    const { changes } = planMasterEdit(before, (d) => {
+      result = edit(d, ctx);
+    });
+    await this.deps.repo.master.applyChanges(changes, { at: ctx.now, actorUserId, reason });
+    return { result, changes };
   }
 
   async viewer(userId: string): Promise<{ viewer: Viewer; dir: Directory }> {

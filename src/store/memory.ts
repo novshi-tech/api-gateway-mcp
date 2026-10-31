@@ -1,5 +1,5 @@
-import { parseEvent, Seed, type DomainEvent, type DraftEvent, type ProjectionChanges, type Projections } from '../domain';
-import { ConcurrencyError, type EventStore, type MasterStore, type ProjectionStore, type Repo } from './types';
+import { applyMasterChanges, parseEvent, Seed, type DomainEvent, type DraftEvent, type MasterChange, type ProjectionChanges, type Projections } from '../domain';
+import { ConcurrencyError, type EventStore, type MasterChangeRecord, type MasterStore, type ProjectionStore, type Repo } from './types';
 
 /** テスト・CLI 用のインメモリ実装 */
 export class MemoryEventStore implements EventStore {
@@ -52,8 +52,18 @@ export class MemoryMasterStore implements MasterStore {
   async loadSeed() {
     return structuredClone(this.seed);
   }
+  private log: MasterChangeRecord[] = [];
   async replaceSeed(seed: Seed) {
     this.seed = structuredClone(seed);
+  }
+  async applyChanges(changes: readonly MasterChange[], meta: { at: string; actorUserId: string | null; reason?: string }) {
+    this.seed = applyMasterChanges(this.seed, changes);
+    for (const c of changes) {
+      this.log.push({ ...structuredClone(c), id: this.log.length + 1, at: meta.at, actorUserId: meta.actorUserId, reason: meta.reason ?? null });
+    }
+  }
+  async changeLog() {
+    return structuredClone(this.log);
   }
 }
 
