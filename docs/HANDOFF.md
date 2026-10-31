@@ -4,15 +4,14 @@
 
 ## いまの状態
 
-**2026-10-31: Party の作り方を議論し、`docs/adr/0030`（`0030-contacts-and-query-time-resolution.md`）に案を書いた（方向は直樹と合意、実装は未着手）。** きっかけ: マスタは seed でしか作れず、`--user u_kimura=<ゲートウェイの ID>` の差し替えで直樹が接続すると「木村」になる。要点:
+**2026-10-31: Party の作り方を議論し、`docs/adr/0030`（`0030-contacts-and-query-time-resolution.md`）を採用した（直樹。実装は未着手）。** きっかけ: マスタは seed でしか作れず、`--user u_kimura=<ゲートウェイの ID>` の差し替えで直樹が接続すると「木村」になる。要点:
 - Party を **Contact**（Outlook の連絡先と同じ形。アドレスを束ねた連絡の相手）に改め、組織の概念を外す（`kind`・`internal` を消す。どこからも読まれていなかった）。資格情報の主語 `organization` は `team` に。データソースの窓口のアドレスは値（`selfAddresses: AddressRef[]`）で持ち、チームの Contact は作らない
-- Contact の解決をクエリ層に寄せる。イベント（`SignalObserved` の `fromPartyId`・`toPartyIds`）と投影はアドレスだけを持ち、読むときにそのときのマスタで直す。マスタを変えてもイベントを消さずに済み、名寄せを後から直すと過去のスレッドにも効く
+- イベントと fold はマスタに依存しない。`SignalObserved` から `direction` と Party ID を外し、fold はボールを「どのアドレスが持っているか」（`holders`・`requestedBy`）で畳む。どちら側のボールか・誰の番かはクエリ層がそのときのマスタで解決する（「こちら」= 窓口のアドレス + 読者の Contact のアドレス）。名寄せを後から直すと過去のスレッドの誰の番も直る。`needsResponse` はすべてのシグナルに付ける（こちらからなら Ingest が AI に聞かずに true）
 - 読者は User で持つ（`ListMember = { listId, userId }`）。Contact の責務は名寄せとボールの判定だけ。個人のメモは `ownerUserId` で Contact に依存しない
 - マスタはその場で書き換え、変更の記録を表 1 つに残す
 - サインインの直後は sub だけの名無し（User の行だけ）。自分の Contact は、リストに入るときに、そのリストでのアイデンティティ（アドレス）を選んで決める。そのアドレスのゴーストがあれば sub に結ぶ。個人のリストはスタンドが API で作り（ゲートウェイの接続を先に確かめる）、共有のリストと読者は当面は管理者だけが足す
 - 名寄せはスタンドがやる: `GET /addresses/unresolved` → `GET /contacts?q=` → 本人に確かめて `POST /contacts`・`POST /contacts/:id/addresses`。Murmur は自動では付けない。0016 の段取り 1 を含む。まとめる（別名を残す）・付け替える・結びを外す操作も持つ
-- 未決: リストの「こちら」を「窓口のアドレス + 読者のアイデンティティ」と定義して ListMember に `identity` を持たせるか
-- 次: 未決 1 を決めてから「採用」にし、1（名前だけ）→ 2（イベント型。zod・fold のテスト・リプレイテストを同時に直す）→ 3・4（読者を User に）→ 5 → 6〜9 の順で実装する
+- 次: 実装。1（名前だけ。スキルの API の表も）→ 2（イベント型と fold。zod・fold のテスト・リプレイテスト・expected を同時に直す。H6 の記録は増えない見込み）→ 3・4（読者を User に）→ 5（マスタの書き換えと変更の記録）→ 6〜9（API）。CLAUDE.md の構成の説明（entities.ts の Party など）は実装に合わせて直す
 
 **2026-10-30: 組織の使い分けを「切り替える」から「並べてつなぐ」に変えた（api-gateway-mcp の `docs/adr/0004`、採用。0018 に追記）。** 1 つのデプロイ = 1 つの組織のまま、組織ごとのゲートウェイを別々のコネクタとして Claude に並べる。実装（3 つのリポジトリのブランチ `claude/eager-ride-i7ul38`、main には未反映）:
 - ゲートウェイ: 設定 `ORGANIZATION_NAME`（空なら `PUBLIC_URL` のホスト名）を、MCP の title・instructions、ツールの説明、`list_credentials` / `issue_token` の `gateway`、Web 画面の見出しに出す。登録画面のラベル欄は「同じ組織の中の使い分け」の文言に
