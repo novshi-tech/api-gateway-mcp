@@ -101,13 +101,13 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 
 ### 2. 設定してデプロイする
 
-デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます(`deployments/` は git の管理外です)。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、組織名(`ORGANIZATION_NAME`)、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`deployments/` はこのリポジトリの git の管理外です。設定は、デプロイする人の private リポジトリで管理し、`deployments/` に clone して使うのがおすすめです(下の「設定をリポジトリで管理する」)。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、組織名(`ORGANIZATION_NAME`)、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
 
 wrangler は、`npm run deploy` / `npm run secret` / `npm run tail` に名前を付けて呼びます(`tools/wrangler.mjs` が `--config deployments/<名前>.jsonc` を渡します)。リポジトリの直下には `wrangler.jsonc` を置かないので、名前を付けずに `npx wrangler deploy` を打っても、どこにもデプロイされません。
 
 ```sh
 npm ci
-mkdir -p deployments
+mkdir -p deployments   # 設定をリポジトリで管理するなら、代わりに git clone <設定のリポジトリ> deployments
 sed -e 's|"node_modules/|"../node_modules/|' -e 's|"src/index.ts"|"../src/index.ts"|' wrangler.example.jsonc > deployments/acme.jsonc
 npx wrangler login
 npx wrangler kv namespace create OAUTH_KV
@@ -120,8 +120,21 @@ npm run deploy -- acme
 - `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 - `SIGNING_KEY` を変えると、発行済みのトークンと MCP の接続が無効になり、ユーザーは接続し直しになります。
 - `IDENTITY_SIGNING_KEY` を変えると、`identity` の上流が古い公開鍵をキャッシュしている間は検証に失敗します。上流が JWKS を取り直すまで待つか、上流の公開鍵を差し替えます。
-- 設定を変えたら、`npm run deploy -- <名前>` で出し直します。
+- 設定を変えたら、`npm run deploy -- <名前>` で出し直します。設定をリポジトリで管理しているなら、コミットしてプッシュもします。
 - 新しい版で Durable Object やその migration が増えたときは(`wrangler.example.jsonc` の `durable_objects` と `migrations`)、各デプロイの設定にも同じものを足してから出し直します。deploy スキルが照らし合わせて直します。
+
+#### 設定をリポジトリで管理する
+
+`deployments/` は、このリポジトリの git が見ないディレクトリです。そこに、設定だけを入れた別の private リポジトリを clone します(サブモジュールにはしません)。
+
+```sh
+git clone git@github.com:<組織>/api-gateway-deployments.git deployments
+```
+
+- 設定ファイルの `main` などの相対パス(`../src/index.ts`)は、`deployments/` の中にあるので、そのまま動きます。`tools/wrangler.mjs` も変わりません。
+- 入れるのは `<名前>.jsonc` だけです。Worker の名前、`account_id`、`PUBLIC_URL`、`ORGANIZATION_NAME`、IdP の設定、KV の ID、`SERVICES` が入ります。秘密の値ではありませんが、テナント ID なども入るので、リポジトリは private にします。
+- シークレット(`OIDC_CLIENT_SECRET`、`SIGNING_KEY`、`ENCRYPTION_KEY`、`OAUTH_*`)は入れません。`npm run secret` で Cloudflare に入れるだけで、ファイルには残しません。
+- 別のマシンや新しい clone でデプロイするときは、ゲートウェイを clone したあと、同じように設定のリポジトリを `deployments/` に clone します。
 
 ### 3. 連携先を設定する
 

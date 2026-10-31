@@ -110,6 +110,7 @@
 ## デプロイ
 
 - デプロイごとの設定は `deployments/<名前>.jsonc` に置き、`deployments/` は gitignore する。リポジトリの直下には `wrangler.jsonc` を置かない。
+  - 2026-10-31 追記: 設定は、デプロイする人の別の private リポジトリで管理し、`deployments/` に clone する形にした(README の「設定をリポジトリで管理する」)。gitignore はそのまま。サブモジュールにはしない(デプロイする人ごとに設定のリポジトリが違うので)。
 - 設定ファイルは deploy スキルで Claude が生成する。共通部分(互換日付、Durable Object の宣言、migrations など)の書き方は、スキルと `wrangler.example.jsonc` に書いておく。合成の仕組みは作らない。
 - 共通部分が変わったとき(Durable Object のクラスや migration を足したときなど)は、deploy スキルが `deployments/` の全ファイルをひな形と照らし合わせて直す。
 - ラッパーを用意する: `npm run deploy -- <名前>`、`npm run secret -- <名前> <KEY>`、`npm run tail -- <名前>`。中で `-c deployments/<名前>.jsonc` を渡す。名前のない素の `wrangler deploy` は、設定ファイルがないので失敗する。

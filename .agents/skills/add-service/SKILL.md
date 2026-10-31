@@ -9,7 +9,7 @@ freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、
 
 それ以外のサービスを 1 つ足すには、次の 3 つをそろえる。
 
-1. ゲートウェイの設定: デプロイの設定 `deployments/<名前>.jsonc` の `vars.SERVICES` にサービスの定義を書く(OAuth ならシークレットも)。ヘッダーか OAuth 2.0 のサービスは、管理者が Web 画面の「接続先の管理」から足してもよい(デプロイし直さずに済む)。
+1. ゲートウェイの設定: デプロイの設定 `deployments/<名前>.jsonc` の `vars.SERVICES` にサービスの定義を書く(OAuth ならシークレットも)。`deployments/` が設定のリポジトリなら、deploy スキルの「設定の変更を残す」に従ってコミットする。ヘッダーか OAuth 2.0 のサービスは、管理者が Web 画面の「接続先の管理」から足してもよい(デプロイし直さずに済む)。
 2. デプロイ: `npm run deploy -- <名前>`(deploy スキルの手順 5)。管理画面から足したなら要らない。
 3. サービス別のスキル: Claude がその API をどう呼ぶかを書いた `SKILL.md`。プラグインに入れて配る。
 

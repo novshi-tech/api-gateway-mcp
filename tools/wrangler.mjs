@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Runs wrangler against one deployment's config, deployments/<name>.jsonc.
+// deployments/ is ignored by this repository; keep it as a clone of your own
+// private repository of deployment configs (README: 設定をリポジトリで管理する).
 //
 //   npm run deploy -- <name> [wrangler deploy options]
 //   npm run secret -- <name> put <KEY>        (also list, delete)
@@ -24,7 +26,7 @@ const names = existsSync(dir)
 
 if (!command || !name) {
   console.error(`usage: npm run ${command ?? "<deploy|secret|tail>"} -- <deployment> [options]`);
-  console.error(names.length ? `deployments: ${names.join(", ")}` : "no deployments yet: create deployments/<name>.jsonc (see the deploy skill)");
+  console.error(names.length ? `deployments: ${names.join(", ")}` : "no deployments yet: git clone <your deployments repository> deployments, or create deployments/<name>.jsonc (see the deploy skill)");
   process.exit(2);
 }
 const config = join(dir, `${name}.jsonc`);
