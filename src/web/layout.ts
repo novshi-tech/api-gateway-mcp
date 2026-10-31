@@ -85,7 +85,7 @@ form { margin: 0; }
 [hidden] { display: none !important; }
 .masthead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 2rem; padding-bottom: .9rem; border-bottom: 1px solid var(--line); }
 .masthead .home { font-weight: 700; color: var(--ink); text-decoration: none; }
-.who { display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .875rem; }
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; color: var(--muted); font-size: .875rem; }
 .who button { padding: .3rem .8rem; font-size: .8125rem; }
 
 a.button {
@@ -152,6 +152,17 @@ a.button.danger-link { color: var(--alert); border-color: var(--alert); margin-l
 .account summary { cursor: pointer; width: max-content; }
 .account p { margin: .4rem 0 0; overflow-wrap: anywhere; }
 
+.card.start { margin-bottom: 2rem; }
+.card.start p { max-width: none; }
+.copy { display: flex; gap: .5rem; align-items: stretch; }
+.copy input { flex: 1; min-width: 0; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .875rem; }
+.copy button { margin-top: .3rem; padding: .3rem .8rem; font-size: .8125rem; }
+.steps { margin: 0 0 1rem; padding-left: 1.25rem; }
+.steps li { margin-bottom: .5rem; }
+pre { margin: 0 0 1rem; padding: .7rem 1rem; overflow-x: auto; background: var(--bg); border: 1px solid var(--line); border-radius: .4rem; }
+pre code { font-size: .8125rem; }
+.version { font-weight: 400; color: var(--muted); font-size: .875rem; }
+input[type=file] { display: block; margin-top: .4rem; font: inherit; color: var(--ink); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: 1.5rem; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1.25rem; }
 

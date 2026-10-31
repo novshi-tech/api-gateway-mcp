@@ -35,7 +35,7 @@ function addable(directory: Directory): [string, ServiceConfig][] {
 
 export function masthead(env: Env, user: Session): Html {
   return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ · ${organizationName(env)}</a>
-<div class="who">${isAdmin(env, user) && html`<a href="/admin/services">接続先の管理</a>`}<span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
+<div class="who"><a href="/setup">Claude につなぐ</a>${isAdmin(env, user) && html`<a href="/admin/services">接続先の管理</a><a href="/admin/plugins">プラグインの配布</a>`}<span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
 }
 
 function notice(url: URL, credentials: CredentialInfo[], services: Services): Html | false {
@@ -85,10 +85,12 @@ export async function home(request: Request, env: Env & { OAUTH_PROVIDER: OAuthH
   const identity = Object.values(services).filter((config) => config.auth.type === "identity");
   const duplicated = new Set(credentials.filter((c, i) => credentials.findIndex((d) => d.service === c.service) !== i).map((c) => c.service));
   const rows = [...credentials.map((c) => connectionRow(c, services, duplicated.has(c.service))), ...identity.map(identityRow)];
+  const grants = await listGrants(env, user.sub);
   return page(
     `API ゲートウェイ · ${organizationName(env)}`,
     html`${masthead(env, user)}
 ${notice(new URL(request.url), credentials, services)}
+${grants.length === 0 && html`<div class="card start"><p><strong>はじめに、Claude にこのゲートウェイをつなぎます。</strong>コネクタの URL と、スキル(プラグイン)のダウンロードは「Claude につなぐ」にあります。</p><a class="button" href="/setup">Claude につなぐ</a></div>`}
 <div class="section-head"><h1>つないだサービス</h1><a class="button" href="/connections/new">接続を追加</a></div>
 <p>Claude が仕事で使うサービスの接続を、ここで管理します。パスワードやキーは暗号化して保管され、Claude には渡りません。</p>
 ${rows.length > 0
@@ -96,7 +98,7 @@ ${rows.length > 0
   : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}
 <h2>アクセスを許可したアプリ</h2>
 <p>Claude や Murmur など、あなたがサインインして許可したアプリです。取り消すと、そのアプリはここでつないだサービスを使えなくなります。</p>
-${grantRows(await listGrants(env, user.sub))}
+${grantRows(grants)}
 <details class="account"><summary>アカウントの情報</summary><p>ユーザー ID: <code>${user.sub}</code></p><p>管理者を設定するときに使います。</p></details>`,
   );
 }

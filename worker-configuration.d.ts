@@ -3,6 +3,7 @@
 // Runtime types generated with workerd@1.20260925.1 2026-08-20 global_fetch_strictly_public,nodejs_compat
 interface __BaseEnv_Env {
 	OAUTH_KV: KVNamespace;
+	ASSETS: Fetcher;
 	PUBLIC_URL: "http://localhost:8787";
 	ORGANIZATION_NAME: "";
 	IDP_TYPE: "entra";
