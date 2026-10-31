@@ -59,6 +59,8 @@ src/
   index.ts       Worker の入口（fetch / scheduled）と配線
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/
+tools/wrangler.mjs  デプロイの設定 deployments/<名前>.jsonc を渡して wrangler を呼ぶラッパー
+deployments/     デプロイの設定（git の管理外。デプロイする人の private リポジトリを clone する。docs/adr/0029）
 drizzle/         D1 のマイグレーション（drizzle-kit generate で作り、wrangler d1 migrations apply で当てる）
 ```
 
@@ -75,9 +77,10 @@ pnpm scenario verify development --db d1
 pnpm scenario verify all --ai replay        # 記録した Claude の判断で H6 の一致率を出す
 ANTHROPIC_API_KEY=... pnpm scenario verify all --ai record   # 記録を作る（モデルを変えたら --ai rerecord）
 pnpm db:generate                            # src/store/schema.ts からマイグレーションを作る
-pnpm db:migrate dev                         # D1 に当てる（wrangler d1 migrations apply）
-pnpm seed <scenario> --env dev              # D1 のデータを消して seed を入れる
-pnpm dev / pnpm deploy:dev / pnpm deploy:prod   # wrangler
+pnpm db:migrate <名前>                      # D1 に当てる（deployments/<名前>.jsonc で wrangler d1 migrations apply）
+pnpm seed <scenario> --deployment <名前>    # D1 のデータを消して seed を入れる
+pnpm dev                                    # wrangler dev（ひな形 wrangler.example.jsonc）
+pnpm run deploy <名前> / pnpm secret <名前> put <KEY> / pnpm tail <名前>   # デプロイの設定は deployments/（docs/adr/0029）
 ```
 
 ## 注意

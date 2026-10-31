@@ -2,5 +2,7 @@ node_modules/
 .wrangler/
 .dev.vars
 dist/
+# デプロイの設定（デプロイする人の private リポジトリを clone する。docs/adr/0029）
+deployments/
 coverage/
 *.log

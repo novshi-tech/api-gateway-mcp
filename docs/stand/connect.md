@@ -13,10 +13,10 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
    node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npx wrangler secret put IDENTITY_SIGNING_KEY
    ```
 
-2. ゲートウェイの `wrangler.jsonc` に Service Binding とサービスの定義を足して、デプロイする
+2. ゲートウェイのデプロイの設定（`deployments/<名前>.jsonc`）に Service Binding とサービスの定義を足して、デプロイする。Service Binding は同じ Cloudflare アカウントの中でしか張れないので、Murmur はゲートウェイと同じアカウントに置く
 
    ```jsonc
-   "services": [{ "binding": "MURMUR", "service": "murmur-dev" }],
+   "services": [{ "binding": "MURMUR", "service": "murmur" }],
    "vars": {
      "SERVICES": {
        "murmur": {
@@ -35,21 +35,28 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
 
 ## 本体の準備
 
+デプロイの設定は `deployments/<名前>.jsonc`（`docs/adr/0029`）。`deployments/` には、デプロイする人の private リポジトリを clone する。
+ひな形 `wrangler.example.jsonc` からデプロイの設定を作るときは、`$schema`・`main`・`migrations_dir` のパスの先頭に `../` を付け、`account_id`（ゲートウェイと同じアカウント）・`IDENTITY_ISSUER`・`GATEWAY_JWKS`・D1 の `database_id` を書く。
+受信の Webhook と管理画面を使うなら `workers_dev` を `true` にする。
+
 ```sh
 pnpm install
-# D1 を作り（日本のチームなら apac）、出力の database_id を wrangler.jsonc の env.dev.d1_databases に書く（初回だけ）
-wrangler d1 create murmur-dev --location apac
+git clone <デプロイの設定のリポジトリ> deployments
+# D1 を作り（日本のチームなら apac）、出力の database_id を deployments/<名前>.jsonc に書く（初回だけ）
+pnpm exec wrangler d1 create murmur --location apac
 # マイグレーション（drizzle/ を当てる。スキーマを変えたらデプロイの前に手で当てる）
-pnpm db:migrate dev
+pnpm db:migrate <名前>
+pnpm run deploy <名前>
 # secrets
-wrangler secret put ANTHROPIC_API_KEY --env dev
-wrangler secret put WEBHOOK_SECRET --env dev
-wrangler secret put TIMELINE_TOKEN --env dev   # 管理画面（/admin・timeline.html）を見る人だけに渡す
-pnpm deploy:dev   # dev だけ workers.dev を開けている（Webhook と管理画面用）
+pnpm secret <名前> put ANTHROPIC_API_KEY
+pnpm secret <名前> put WEBHOOK_SECRET
+pnpm secret <名前> put TIMELINE_TOKEN   # 管理画面（/admin・timeline.html）を見る人だけに渡す
 ```
 
+設定を変えたら、設定のリポジトリにコミットしてプッシュする。CI はデプロイしない。
+
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
-マスタ（seed）の投入は `pnpm seed <scenario> --env dev --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で流す）。
+マスタ（seed）の投入は `pnpm seed <scenario> --deployment <名前> --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で流す）。
 DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
 WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 
@@ -83,7 +90,7 @@ Murmur とゲートウェイは「1 つの接続 = 1 つの組織（IdP が 1 �
 
 ## 管理画面（参照専用）
 
-`https://murmur-dev.nose-0d2.workers.dev/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
+`https://<Murmur の URL>/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
 書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。全スレッドを 1 枚で見るときは `/timeline.html?token=...`
 
 H7 で absence をスタンド主導で回す手順は `docs/stand/h7-absence.md`。
