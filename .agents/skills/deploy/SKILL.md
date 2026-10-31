@@ -49,6 +49,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - 失敗したら、エラーをそのまま見せる。`SERVICES` の検証エラー(`invalid service name`、`must be https`、`unsupported auth`)は `src/config.ts` の `parseServices` が出している。
 6. 動作を確かめる。
    - `<PUBLIC_URL>/` をユーザーに開いてもらい、サインインと認証情報の登録ができるか見てもらう。
+   - コネクタとプラグインの入れ方は、Web 画面の「Claude につなぐ」(`<PUBLIC_URL>/setup`)にまとまっている。利用者にはそこを案内する。業務向けのプラグイン(別のリポジトリのもの)を配るなら、管理者が「プラグインの配布」(`<PUBLIC_URL>/admin/plugins`)に zip を追加する。
    - Claude にコネクタ `<PUBLIC_URL>/mcp` を追加してもらう(Pro / Max は個人の設定、Team / Enterprise は Owner が組織の設定)。コネクタの名前は組織が分かるものにする(ほかの組織のゲートウェイと並べてつなぐことがあるので)。組織が契約している Claude には、その組織のゲートウェイだけをつなぐよう勧める(README の「複数の組織で使う」)。
    - プラグイン `api-gateway` を入れてもらう(README の「スキル(プラグイン)」)。Team / Enterprise では、コード実行のネットワーク設定でゲートウェイのドメインを許可する必要がある。
    - 調べるときは `npm run tail -- <名前> --format json` をバックグラウンドで流して、ユーザーに操作を再現してもらう。
@@ -57,7 +58,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
 
 設定は合成せず、各デプロイのファイルに全部書いてある。ひな形 `wrangler.example.jsonc` の共通部分が変わったら、`deployments/` の全ファイルに同じ変更を入れる。
 
-- 照らし合わせるもの: `compatibility_date`、`compatibility_flags`、`observability`、`triggers`、`durable_objects`、`migrations`、`vars` のキー(値はデプロイごとに違うので、増えたキーだけ足す。既定値はひな形のもの)。
+- 照らし合わせるもの: `compatibility_date`、`compatibility_flags`、`observability`、`triggers`、`assets`(`directory` は `../dist/assets`)、`durable_objects`、`migrations`、`vars` のキー(値はデプロイごとに違うので、増えたキーだけ足す。既定値はひな形のもの)。
 - `migrations` は、ひな形にある tag をすべて、同じ順で持っていること。足りない tag を末尾に足す。既にある tag を書き換えたり消したりしない(Durable Object のデータを失う)。
 - 直したら、デプロイごとに `--dry-run` を通し、ユーザーにデプロイしてもらう。
 - 設定のリポジトリにコミットしてプッシュする(下の「設定の変更を残す」)。

@@ -17,8 +17,10 @@ import {
   deleteCredential,
   home,
 } from "./web/connections";
+import { confirmDeletePlugin, deletePlugin, listPluginsPage, uploadPlugin } from "./web/admin-plugins";
 import { confirmRevoke, revoke } from "./web/grants";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
+import { downloadPlugin, setup, SETUP_PATH } from "./web/setup";
 
 export { Background } from "./background";
 export { Registry } from "./registry";
@@ -41,6 +43,8 @@ const ROUTES: Route[] = [
   ["GET", MCP_CALLBACK_PATH, authorizeCallback],
   ["GET", APP_JS_PATH, () => appJs()],
   ["GET", "/", home],
+  ["GET", SETUP_PATH, setup],
+  ["GET", /^\/plugins\/([a-z0-9][a-z0-9-]*)\.zip$/, (request, env, [name]) => downloadPlugin(request, env, name)],
   ["GET", "/connections/new", chooseService],
   ["GET", /^\/connections\/new\/([a-z0-9][a-z0-9-]*)$/, (request, env, [service]) => connectForm(request, env, service)],
   ["GET", /^\/connections\/([0-9a-f-]+)\/delete$/, (request, env, [id]) => confirmDelete(request, env, id)],
@@ -59,6 +63,10 @@ const ROUTES: Route[] = [
   ["POST", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)$/, (request, env, [name]) => saveService(request, env, name)],
   ["GET", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => confirmDeleteService(request, env, name)],
   ["POST", /^\/admin\/services\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => deleteService(request, env, name)],
+  ["GET", "/admin/plugins", listPluginsPage],
+  ["POST", "/admin/plugins", uploadPlugin],
+  ["GET", /^\/admin\/plugins\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => confirmDeletePlugin(request, env, name)],
+  ["POST", /^\/admin\/plugins\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => deletePlugin(request, env, name)],
   ["GET", CONNECT_CALLBACK_PATH, connectCallback],
 ];
 

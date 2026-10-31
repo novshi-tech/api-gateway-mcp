@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
@@ -6,6 +7,8 @@ import { defineConfig } from "vitest/config";
 import { experimental_readRawConfig } from "wrangler";
 
 const CONFIG = "./wrangler.example.jsonc";
+// The static assets (plugin zips) the config points at.
+execFileSync("python3", ["tools/build-plugin-zip.py", "--assets"], { stdio: ["ignore", "ignore", "inherit"] });
 // Services beyond the built-in catalog: the example's own, an OAuth service whose
 // client is never configured, and an upstream that trusts the gateway's sign-in.
 const SERVICES = {

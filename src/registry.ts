@@ -15,6 +15,17 @@ export interface RegistrySnapshot {
   clients: Record<string, OAuthClient>;
 }
 
+// A plugin zip an admin uploaded for users to download (src/plugins.ts).
+export interface PluginMeta {
+  name: string;
+  version: string;
+  description: string;
+  dependencies: string[];
+  size: number;
+  updatedAt: number;
+  updatedBy: string;
+}
+
 // Services that admins register from the web UI, shared by everyone: one object
 // for the whole deployment. Callers validate definitions before putting them.
 export class Registry extends DurableObject<Env> {
@@ -40,6 +51,25 @@ export class Registry extends DurableObject<Env> {
     await this.ctx.storage.put<RegistryEntry>(`svc:${name}`, { config, updatedAt: Date.now(), updatedBy });
     if (client === null) await this.ctx.storage.delete(`client:${name}`);
     else if (client) await this.ctx.storage.put(`client:${name}`, await encryptJson(await this.key(), client, `client:${name}`));
+  }
+
+  // Metadata under "plugin:", the zip itself under "pluginzip:", so listing reads no zips.
+  async listPlugins(): Promise<PluginMeta[]> {
+    return [...(await this.ctx.storage.list<PluginMeta>({ prefix: "plugin:" })).values()];
+  }
+
+  async getPlugin(name: string): Promise<{ meta: PluginMeta; zip: ArrayBuffer } | null> {
+    const [meta, zip] = await Promise.all([this.ctx.storage.get<PluginMeta>(`plugin:${name}`), this.ctx.storage.get<ArrayBuffer>(`pluginzip:${name}`)]);
+    return meta && zip ? { meta, zip } : null;
+  }
+
+  async putPlugin(meta: Omit<PluginMeta, "updatedAt">, zip: ArrayBuffer): Promise<void> {
+    await this.ctx.storage.put({ [`plugin:${meta.name}`]: { ...meta, updatedAt: Date.now() }, [`pluginzip:${meta.name}`]: zip });
+  }
+
+  async removePlugin(name: string): Promise<boolean> {
+    await this.ctx.storage.delete(`pluginzip:${name}`);
+    return this.ctx.storage.delete(`plugin:${name}`);
   }
 
   async remove(name: string): Promise<boolean> {

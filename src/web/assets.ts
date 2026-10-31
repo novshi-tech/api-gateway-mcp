@@ -1,5 +1,5 @@
-// The only script the pages load: narrows the service picker as the user types, and
-// shows the admin form's fields for one auth type. Pages work without it.
+// The only script the pages load: narrows the service picker as the user types, shows
+// the admin form's fields for one auth type, and copies values. Pages work without it.
 const APP_JS = `
 const filter = document.getElementById("filter");
 if (filter) {
@@ -15,6 +15,18 @@ if (filter) {
       group.hidden = !group.querySelector("[data-search]:not([hidden])");
     }
     document.getElementById("no-match").hidden = any;
+  });
+}
+
+// Copy buttons copy the value of the field they name; without the script the field is still selectable.
+for (const button of document.querySelectorAll("[data-copy]")) {
+  const field = document.getElementById(button.dataset.copy);
+  if (!field || !navigator.clipboard) continue;
+  button.hidden = false;
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(field.value);
+    button.textContent = "コピーしました";
+    setTimeout(() => { button.textContent = "コピー"; }, 2000);
   });
 }
 

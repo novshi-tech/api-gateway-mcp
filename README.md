@@ -37,10 +37,12 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 
 ## 使い方
 
-1. コネクタを追加します。ゲートウェイの Web 画面(`https://<ゲートウェイ>/`)に、追加用のリンクがあります。
+ゲートウェイの Web 画面(`https://<ゲートウェイ>/`)にサインインし、「Claude につなぐ」(`/setup`)を開くと、1 と 2 に要るもの(コネクタの URL とおすすめの名前、Claude Code のコマンド、プラグインの zip)がそろっています。利用者にはこの画面を案内してください。
+
+1. コネクタを追加します。
    - Pro / Max: 個人の設定で、カスタムコネクタとして `https://<ゲートウェイ>/mcp` を追加します。
    - Team / Enterprise: Owner が組織の設定で同じ URL を追加し、各メンバーが接続します。
-2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。
+2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。「Claude につなぐ」から zip でダウンロードできます。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
 5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
@@ -82,6 +84,8 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
 - zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` と `.claude-plugin/marketplace.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
 
+- ゲートウェイの Web 画面: 「Claude につなぐ」(`/setup`)に、このリポジトリのプラグインの zip が並び、サインインした人がダウンロードできます。`npm run deploy` が `tools/build-plugin-zip.py --assets` で `dist/assets/plugins/` に zip を作り、Worker の静的アセット(デプロイの設定の `assets`。`run_worker_first` なので公開はされません)として一緒にデプロイするので、いつもそのゲートウェイの版のものです。ほかのプラグイン(自社のサービスのスキルなど)は、管理者が「プラグインの配布」(`/admin/plugins`)で zip を追加すると、同じ画面に並びます(下の「管理画面から接続先を足す」)。
+
 以前の版の `api-gateway`(0.11 まで)は、全部のスキルが 1 つに入っていました。0.12 に上げたら、使う提供元のプラグインを足してください。
 
 スキルのスクリプトが使う共通のファイル(`gwlib.py`、`gw_request.py`、`google_paging.py`)の原本は `lib/plugin/` にあります。Claude Code はプラグインごとに別の場所にインストールし、Cowork はスキルのディレクトリを `<プラグイン>:<スキル>` と名付けるので、スキルからほかのスキルのファイルには届きません。そのため、各スキルの `scripts/` にコピーを置いています。原本を変えたら `npm run plugin:sync` でコピーを更新します(テストがずれを検出します)。
@@ -120,6 +124,7 @@ npm run deploy -- acme
 - `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 - `SIGNING_KEY` を変えると、発行済みのトークンと MCP の接続が無効になり、ユーザーは接続し直しになります。
 - `IDENTITY_SIGNING_KEY` を変えると、`identity` の上流が古い公開鍵をキャッシュしている間は検証に失敗します。上流が JWKS を取り直すまで待つか、上流の公開鍵を差し替えます。
+- 設定には `assets`(`"directory": "../dist/assets"`)を入れます。プラグインの zip を Web 画面で配るためのもので、ないと「Claude につなぐ」に組み込みのプラグインが出ません(`npm run deploy` が警告します)。
 - 設定を変えたら、`npm run deploy -- <名前>` で出し直します。設定をリポジトリで管理しているなら、コミットしてプッシュもします。
 - 新しい版で Durable Object やその migration が増えたときは(`wrangler.example.jsonc` の `durable_objects` と `migrations`)、各デプロイの設定にも同じものを足してから出し直します。deploy スキルが照らし合わせて直します。
 
@@ -154,6 +159,8 @@ npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_SECRET
 ### 管理画面から接続先を足す
 
 デプロイの設定の `ADMINS` にユーザー ID をカンマ区切りで書くと、その人の画面に「接続先の管理」が出ます。ユーザー ID は、Web 画面のトップの一番下にある「アカウントの情報」を開くと表示されます(Entra は `entra_<テナント ID>_<オブジェクト ID>`、Google は `google_<sub>`)。
+
+同じ人の画面には「プラグインの配布」も出ます。プラグインの zip(`.claude-plugin/plugin.json` を含むもの、2 MB まで)を追加すると、全員の「Claude につなぐ」からダウンロードできるようになります。名前と版は zip の中の `plugin.json` から読み、同じ名前で追加し直すと置き換わります。組み込みのプラグインと同じ名前は使えません。zip は Durable Object(`Registry`)に保管します。
 
 管理画面で足した接続先(ヘッダーか OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
 

@@ -11,14 +11,14 @@ const SOURCE_LABELS: Record<ServiceSource, string> = { catalog: "組み込み", 
 const HEADER_ROWS = 3;
 
 // Admin pages answer 404 to everyone else, so they do not reveal that they exist.
-async function admin(request: Request, env: Env): Promise<Session | Response> {
+export async function admin(request: Request, env: Env): Promise<Session | Response> {
   const user = await session(request, env);
   if (!user) return redirect("/login");
   if (!isAdmin(env, user)) return new Response("not found", { status: 404 });
   return user;
 }
 
-function audit(user: Session, action: string, service: string, fields: string[] = []): void {
+export function audit(user: Session, action: string, service: string, fields: string[] = []): void {
   console.log(JSON.stringify({ type: "admin", admin: user.sub, action, service, fields }));
 }
 
@@ -60,7 +60,7 @@ export async function listServices(request: Request, env: Env): Promise<Response
     html`${masthead(env, user)}
 ${done && html`<p class="notice" role="status">「${done}」を${url.searchParams.has("saved") ? "保存" : "削除"}しました。</p>`}
 <div class="section-head"><h1>接続先の管理</h1><a class="button" href="/admin/services/new">接続先を追加</a></div>
-<p>ここで追加した接続先は、このゲートウェイの全員の「接続を追加」に出ます。組み込みと設定ファイルの接続先は、ソースか設定ファイルを変えてデプロイし直します。</p>
+<p>ここで追加した接続先は、このゲートウェイの全員の「接続を追加」に出ます。組み込みと設定ファイルの接続先は、ソースか設定ファイルを変えてデプロイし直します。利用者に配るプラグインは<a href="/admin/plugins">プラグインの配布</a>で管理します。</p>
 <ul class="list">${rows}</ul>`,
   );
 }
