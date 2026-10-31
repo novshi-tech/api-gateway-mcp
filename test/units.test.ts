@@ -152,6 +152,11 @@ describe("oauthClient", () => {
     expect(oauthClient({ ...env, OAUTH_GOOGLE_CLIENT_SECRET: "" } as Env, "gmail", "google")).toBeNull();
   });
 
+  it("trims what was pasted around the values", () => {
+    expect(oauthClient({ OAUTH_FREEE_CLIENT_ID: " 123\n", OAUTH_FREEE_CLIENT_SECRET: "s3cret \r\n" } as unknown as Env, "freee")).toEqual({ id: "123", secret: "s3cret" });
+    expect(oauthClient({ OAUTH_FREEE_CLIENT_ID: "123", OAUTH_FREEE_CLIENT_SECRET: " \n" } as unknown as Env, "freee")).toBeNull();
+  });
+
   it("uses the service name when no client is named", () => {
     expect(oauthClient(env, "my-api")).toEqual({ id: "mine", secret: "mine-secret" });
     expect(oauthClient(env, "freee", "freee")).toBeNull();

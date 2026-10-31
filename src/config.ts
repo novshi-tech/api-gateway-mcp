@@ -98,9 +98,11 @@ function requireHttps(service: string, field: string, value: string): void {
 export function oauthClient(env: Env, service: string, client?: string): { id: string; secret: string } | null {
   const vars = env as unknown as Record<string, unknown>;
   const prefix = `OAUTH_${(client ?? service).toUpperCase().replace(/-/g, "_")}_CLIENT_`;
-  const id = vars[`${prefix}ID`];
-  const secret = vars[`${prefix}SECRET`];
-  return typeof id === "string" && id && typeof secret === "string" && secret ? { id, secret } : null;
+  // Trimmed: a value pasted into `wrangler secret put` can keep a trailing space or newline,
+  // which the upstream then rejects as a wrong secret.
+  const id = typeof vars[`${prefix}ID`] === "string" ? (vars[`${prefix}ID`] as string).trim() : "";
+  const secret = typeof vars[`${prefix}SECRET`] === "string" ? (vars[`${prefix}SECRET`] as string).trim() : "";
+  return id && secret ? { id, secret } : null;
 }
 
 export function splitList(value: string | undefined): string[] {
