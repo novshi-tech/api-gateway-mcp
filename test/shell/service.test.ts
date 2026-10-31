@@ -3,7 +3,7 @@ import { canonicalJson, draft } from '../../src/domain';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
 import { makeService } from '../helpers/service';
-import { answer, email, line, seed } from '../helpers/world';
+import { answer, email, line, seed, view } from '../helpers/world';
 
 describe('MurmurService.ingest', () => {
   it('H6 受信 → 区切り → スレッド。同じ source_ref は duplicate。観測された送信は構造で決まれば AI を呼ばない', async () => {
@@ -16,7 +16,7 @@ describe('MurmurService.ingest', () => {
     const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect((await service.state()).threads.thr_2!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(view(await service.state(), 'thr_2').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {
@@ -62,20 +62,20 @@ describe('スタンドの操作', () => {
       code: 'not_found',
     });
     await expect(service.getList('u_bob', 'l_alice')).rejects.toMatchObject({ code: 'not_found' });
-    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ partyId: 'p_alice', name: 'Alice' }]);
+    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ userId: 'u_alice', name: 'Alice', contactId: 'p_alice' }]);
   });
 
-  it('/me は User と Party と、読者になっているリスト（データソース）を返す', async () => {
+  it('/me は User と Contact と、読者になっているリスト（データソース）を返す', async () => {
     const { service } = await makeService(seed);
     const me = await service.me('u_alice');
-    expect(me.party?.partyId).toBe('p_alice');
-    expect(me.party!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
+    expect(me.contact?.contactId).toBe('p_alice');
+    expect(me.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
       ['l_support', 'ds_support', 'service'],
       ['l_alice', 'ds_alice', 'service'],
       ['l_notes_alice', 'ds_notes_alice', 'notes'],
     ]);
-    // このデプロイに Party のない User は party が null
-    expect((await service.me('u_mallory')).party).toBeNull();
+    // このデプロイに Contact のない User は contact が null
+    expect((await service.me('u_mallory')).contact).toBeNull();
     await expect(service.me('u_ghost')).rejects.toMatchObject({ code: 'not_found' });
   });
 });
@@ -109,7 +109,6 @@ describe('投影と並行性', () => {
                 draft('SignalObserved', {
                   signalId: 'sig_other',
                   dataSourceId: 'ds_support',
-                  direction: 'inbound',
                   channel: 'email',
                   from: { channel: 'email', value: 'x@y' },
                   to: [],

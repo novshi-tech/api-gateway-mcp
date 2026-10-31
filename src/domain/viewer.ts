@@ -1,27 +1,25 @@
 import type { Directory } from './directory';
 
 /**
- * Viewer = User → このデプロイ（チーム）の Party → リストの読者。
+ * Viewer = User → 読者になっているリスト（0030。Contact を通らない）。
  * スタンドはユーザーと同一権限で働くので、ゲートウェイから伝搬された User からそのまま導出する。
- * User を持たないゴースト Party は Viewer になれない。Party のない User は何も見えない。
+ * contactId は本人の Contact（ボールの判定と送り主に使う。なければ null）。
  */
 export interface Viewer {
   userId: string;
-  partyId: string | null;
+  contactId: string | null;
   /** 読者になっているリストと、そのデータソース */
   listIds: string[];
   dataSourceIds: string[];
 }
 
 export function deriveViewer(dir: Directory, userId: string): Viewer {
-  const party = dir.partyOfUser(userId);
-  const lists = party
-    ? dir
-        .listIdsOfParty(party.id)
-        .map((id) => dir.list(id))
-        .filter((l) => l !== undefined)
-    : [];
-  return { userId, partyId: party?.id ?? null, listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) };
+  const contact = dir.contactOfUser(userId);
+  const lists = dir
+    .listIdsOfUser(userId)
+    .map((id) => dir.list(id))
+    .filter((l) => l !== undefined);
+  return { userId, contactId: contact?.id ?? null, listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) };
 }
 
 export function canReadDataSource(viewer: Viewer, dataSourceId: string): boolean {

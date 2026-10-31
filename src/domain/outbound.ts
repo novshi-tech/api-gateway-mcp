@@ -4,6 +4,7 @@ import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoice, type ThreadedBy } from './events';
 import { defaultTitle, resolveAnchors, type SignalPayload } from './ingest';
 import { indexKey, type Projections } from './projections';
+import { directionOf, isOurs } from './sides';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // 送信の記録（0012）と期限の見回り。本体は外に何も書かない。送信・起票・コメントはスタンドがゲートウェイ経由で行い、
@@ -13,8 +14,10 @@ export interface RecordSentInput {
   dataSourceId: string;
   /** 宛先のアドレス（チャネルはデータソースのもの） */
   to: string[];
-  /** 宛先の Party（そのチャネルの有効なアドレスに直す） */
-  toPartyIds: string[];
+  /** 宛先の Contact（そのチャネルの有効なアドレスに直す） */
+  toContactIds: string[];
+  /** 送ったアドレス。そのデータソースでこちらのアドレスであること。省けば窓口、窓口がなければ送った人の Contact のアドレス */
+  from?: string;
   subject?: string;
   body: string;
   /** メールの Message-ID・Slack の ts・LINE の sentMessages[].id・Jira の課題キーやコメント ID */
@@ -51,18 +54,23 @@ export function recordSent(
   if (!input.sentRef.trim()) throw new DomainError('invalid', 'sent_ref is required');
 
   const to: AddressRef[] = input.to.map((value) => ({ channel: ds.channel, value }));
-  for (const partyId of input.toPartyIds) {
-    const address = ctx.dir.party(partyId) ? ctx.dir.addressesOfParty(partyId, ds.channel, ctx.now)[0] : undefined;
-    if (!address) throw new DomainError('invalid', `party ${partyId} has no ${ds.channel} address`);
+  for (const contactId of input.toContactIds) {
+    const contact = ctx.dir.contact(contactId);
+    const address = contact ? ctx.dir.addressesOfContact(contact.id, ds.channel, ctx.now)[0] : undefined;
+    if (!address) throw new DomainError('invalid', `contact ${contactId} has no ${ds.channel} address`);
     if (!to.some((a) => a.value === address.value)) to.push({ channel: ds.channel, value: address.value });
   }
-  if (to.length === 0) throw new DomainError('invalid', 'to or to_party_ids is required');
-  const toPartyIds = [...new Set(to.map((a) => ctx.dir.partyIdOfAddress(a, ctx.now)).filter((x): x is string => x !== null))];
-  // 送った人のアドレスがデータソースの送信元にあればそれ（Jira のアカウントなど）、なければデータソースの代表
-  const fromAddress =
-    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && a.partyId === viewer.partyId) ??
-    ctx.dir.address(ds.selfAddressIds[0]!)!;
-  const from: AddressRef = { channel: ds.channel, value: fromAddress.value };
+  if (to.length === 0) throw new DomainError('invalid', 'to or to_contact_ids is required');
+  // 送り主: 指定があればそれ（こちらのアドレスに限る）、なければ窓口（共有メールボックスなど）、窓口がなければ（個人の箱）送った人の Contact のアドレス
+  let from: AddressRef | undefined;
+  if (input.from !== undefined) {
+    from = { channel: ds.channel, value: input.from };
+    if (!isOurs(ctx.dir, ds, from, ctx.now)) throw new DomainError('invalid', `from ${input.from} is not an address of this data source`);
+  } else {
+    const own = viewer.contactId !== null ? ctx.dir.addressesOfContact(viewer.contactId, ds.channel, ctx.now)[0] : undefined;
+    from = ds.selfAddresses[0] ?? (own ? { channel: ds.channel, value: own.value } : undefined);
+  }
+  if (!from) throw new DomainError('invalid', `data source ${ds.id} has no address to send from`);
 
   const replyTo = input.replyToThreadId !== undefined ? visibleThreadOrThrow(p, viewer, input.replyToThreadId) : undefined;
   if (replyTo && replyTo.dataSourceId !== ds.id) throw new DomainError('invalid', `reply_to thread ${replyTo.id} is in another data source`);
@@ -70,7 +78,7 @@ export function recordSent(
 
   const existing = p.signals[p.index.messageIds[indexKey(ds.id, input.sentRef)] ?? ''];
   if (existing?.recorded) return { events: [], threadId: existing.threadId!, signalId: existing.signalId };
-  if (existing && existing.direction !== 'outbound') {
+  if (existing && directionOf(ctx.dir, existing) !== 'outbound') {
     throw new DomainError('conflict', `sent_ref ${input.sentRef} is already a received message`);
   }
 
@@ -85,8 +93,6 @@ export function recordSent(
       channel: ds.channel,
       from,
       to,
-      fromPartyId: fromAddress.partyId,
-      toPartyIds,
       subject: input.subject,
       body: input.body,
       anchors,

@@ -113,7 +113,7 @@ const ThreadExpectation = z
     dismissed: z.boolean(),
     dataSourceId: z.string(),
     title: z.string(),
-    counterpartPartyIds: z.array(z.string()),
+    counterpartContactIds: z.array(z.string()),
     lastInboundAt: z.string().nullable(),
     lastOutboundAt: z.string().nullable(),
     unansweredSince: z.string().nullable(),
@@ -148,7 +148,7 @@ const VisibilityCheck = z.union([
     threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
     expect: z.array(z.string()),
   }),
-  z.object({ ghostParty: z.string() }),
+  z.object({ ghostContact: z.string() }),
 ]);
 type VisibilityCheck = z.infer<typeof VisibilityCheck>;
 
@@ -329,7 +329,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
       }
       if (step.action.tool === 'record_sent' && step.echo) {
         const ds = scenario.seed.dataSources.find((d) => d.id === input.data_source);
-        const self = ds?.kind === 'service' ? scenario.seed.addresses.find((a) => a.id === ds.selfAddressIds[0]) : undefined;
+        const self = ds?.kind === 'service' ? echoFrom(scenario, ds, step.action.as) : undefined;
         if (!ds || ds.kind !== 'service' || !self) throw new Error(`step ${step.id}: echo の data_source が不正`);
         const sentRef = String(input.sent_ref);
         const body = rec.response.body as { timeline: { signal?: { anchors: Record<string, unknown>; to: { value: string }[]; signalId: string } }[] };
@@ -360,7 +360,7 @@ export async function runScenario(scenario: Scenario, opts: { repo?: Repo; decid
 
     for (const cp of scenario.expected.checkpoints.filter((c) => c.after === step.id)) {
       const p = await service.state();
-      checkpointErrors.push(...compareThreads(p, cp.threads, resolve, `checkpoint after ${step.id}`));
+      checkpointErrors.push(...compareThreads(new Directory(scenario.seed), p, cp.threads, resolve, `checkpoint after ${step.id}`));
       checkpointErrors.push(...checkViews(new Directory(scenario.seed), p, cp.views, resolve, `checkpoint after ${step.id}`));
     }
   }
@@ -402,6 +402,7 @@ function getPath(obj: unknown, path: string): unknown {
 }
 
 function compareThreads(
+  dir: Directory,
   p: Projections,
   threads: Expected['final']['threads'],
   resolve: (s: string) => string,
@@ -415,7 +416,7 @@ function compareThreads(
       errors.push(`${where}: thread ${alias} (${id}) がない`);
       continue;
     }
-    const actual = summarizeThread(t) as unknown as Record<string, unknown>;
+    const actual = summarizeThread(dir, p, t) as unknown as Record<string, unknown>;
     actual.links = Object.fromEntries(t.links.map((l) => [l.threadId, l.route]));
     for (const [k, raw] of Object.entries(exp)) {
       const v = k === 'links' ? Object.fromEntries(Object.entries(raw as Record<string, string>).map(([a, r]) => [resolve(a), r])) : raw;
@@ -437,11 +438,10 @@ function substDeep(v: unknown, resolve: (s: string) => string): unknown {
 function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityCheck[], resolve: (s: string) => string, where: string): string[] {
   const errors: string[] = [];
   for (const check of checks) {
-    if ('ghostParty' in check) {
-      const party = dir.party(check.ghostParty);
-      if (!party) errors.push(`${where}: party ${check.ghostParty} がない`);
-      else if (party.userId) errors.push(`${where}: ${check.ghostParty} はゴーストではない`);
-      else if (deriveViewer(dir, check.ghostParty).partyId !== null) errors.push(`${where}: ${check.ghostParty} が Viewer になれる`);
+    if ('ghostContact' in check) {
+      const contact = dir.contact(check.ghostContact);
+      if (!contact) errors.push(`${where}: contact ${check.ghostContact} がない`);
+      else if (contact.userId) errors.push(`${where}: ${check.ghostContact} はゴーストではない`);
       continue;
     }
     const viewer = deriveViewer(dir, check.as);
@@ -582,7 +582,7 @@ export async function verifyScenario(run: Run): Promise<Verification> {
   };
   const p = await service.state();
   const f = scenario.expected.final;
-  errors.push(...compareThreads(p, f.threads, resolve, 'final'));
+  errors.push(...compareThreads(new Directory(scenario.seed), p, f.threads, resolve, 'final'));
   if (f.threadCount !== undefined && Object.keys(p.threads).length !== f.threadCount) {
     errors.push(`final: スレッド数 ${Object.keys(p.threads).length}（期待 ${f.threadCount}）`);
   }
@@ -605,4 +605,11 @@ export async function verifyScenario(run: Run): Promise<Verification> {
   if (!replayOk) errors.push(`H1: リプレイ後の投影が一致しない (${replay.before} != ${replay.after})`);
 
   return { errors, metrics, replayHashMatches: replayOk, threadHash: replay.before };
+}
+
+/** echo（観測された送信）の送り主。record_sent と同じく、データソースの窓口、なければ送った人の Contact のアドレス */
+export function echoFrom(scenario: Scenario, ds: Extract<Seed['dataSources'][number], { kind: 'service' }>, userId: string): { value: string } | undefined {
+  if (ds.selfAddresses[0]) return ds.selfAddresses[0];
+  const contact = scenario.seed.contacts.find((c) => c.userId === userId);
+  return scenario.seed.addresses.find((a) => a.contactId === contact?.id && a.channel === ds.channel);
 }

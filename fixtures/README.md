@@ -3,7 +3,7 @@
 ```
 fixtures/<scenario>/
   scenario.json    # タイトル・検証する仮説・状態（desk-checked / draft / stand-recorded）
-  seed.json        # User / Party / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
+  seed.json        # User / Contact / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
   signals.jsonl    # 時刻順のステップ（観測されたシグナル・スタンドの操作・Cron）。// で始まる行はコメント
   expected.json    # シグナルごとの区切りと「返事や対応を求めているか」の正解ラベル、各時点のスレッドの状態、可視性
   recordings/      # Claude 呼び出しの入出力（再生モード用）。pnpm scenario verify <name> --ai record で作る
@@ -26,7 +26,7 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 {"id":"o01","at":"...","action":{"tool":"record_sent","as":"u_sato","input":{"data_source":"ds_support","to":["ops@clean-toto.example"],"body":"...","sent_ref":"<u1@ubs.example>","source_thread_id":"$comp","reply_expected_by":"2026-10-16T22:00:00+09:00"}},"echo":true,"bind":{"partner":"thread.id"}}
 // Cron（取り込みのポーリングと期限の見回り）
 {"id":"c01","at":"...","cron":true}
-// 状態の写し（ダミーの Jira の課題の更新。ステップ 7）。fields は変わった属性（名前は seed の attributeDefs、party 型はそのチャネルのアドレス）。
+// 状態の写し（ダミーの Jira の課題の更新。ステップ 7）。fields は変わった属性（名前は seed の attributeDefs、contact 型はそのチャネルのアドレス）。
 // 課題キー（threadKey）のスレッドに写す。スレッドはシグナル（課題の作成・起票の記録）で作られ、ID を使わないので AI の記録のキーは変わらない
 {"id":"m01","at":"...","mirror":{"dataSourceId":"ds_jira","channel":"jira","threadKey":"NVT-42","fields":{"status":"進行中","assignee":"acct-kato","done":false},"sourceRef":"jira:NVT-42:u1"}}
 ```
@@ -47,7 +47,7 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 - `final`: 最終のスレッド・スレッド数・イベントの件数
 - `visibility`: Viewer ごとの見え方（H3・H8）。スレッドの詳細（`access` は full / null、`mustContain` / `mustNotContain` の `$束縛名` は置き換える）、
   クエリ層の導出（`item`: `turn`・`derivedBall`・`linkedActiveSinceDismissed` など）、結び候補（`candidates`）、見えるシグナルの件数、
-  `list_threads` の結果（filter: my_turn / mine / open / triage / all）、ゴースト Party
+  `list_threads` の結果（filter: my_turn / mine / open / triage / all）、ゴースト Contact
 
 ## 状態
 

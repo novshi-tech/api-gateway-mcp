@@ -1,30 +1,32 @@
 {
-  "users": [{ "id": "u_kimura", "name": "木村（現場マネージャー）" }],
-  "parties": [
-    { "id": "p_ubs", "name": "アーバンビルシステム", "kind": "organization", "internal": true },
-    { "id": "p_kimura", "name": "木村", "kind": "person", "userId": "u_kimura", "internal": true },
-    { "id": "p_yamamoto", "name": "山本（清掃スタッフ）", "kind": "person", "externalRefs": { "bm-next": "member-301" } },
-    { "id": "p_sasaki", "name": "佐々木（清掃スタッフ）", "kind": "person", "externalRefs": { "bm-next": "member-302" } },
-    { "id": "p_ito", "name": "伊藤（清掃スタッフ・代務可）", "kind": "person", "externalRefs": { "bm-next": "member-305" } }
+  "users": [
+    { "id": "u_kimura", "name": "木村（現場マネージャー）" }
+  ],
+  "contacts": [
+    { "id": "p_kimura", "name": "木村", "userId": "u_kimura" },
+    { "id": "p_yamamoto", "name": "山本（清掃スタッフ）", "externalRefs": { "bm-next": "member-301" } },
+    { "id": "p_sasaki", "name": "佐々木（清掃スタッフ）", "externalRefs": { "bm-next": "member-302" } },
+    { "id": "p_ito", "name": "伊藤（清掃スタッフ・代務可）", "externalRefs": { "bm-next": "member-305" } }
   ],
   "addresses": [
-    { "id": "a_oa", "channel": "line", "value": "@ubs-clean", "partyId": "p_ubs" },
-    { "id": "a_yamamoto", "channel": "line", "value": "U_yamamoto", "partyId": "p_yamamoto" },
-    { "id": "a_sasaki", "channel": "line", "value": "U_sasaki", "partyId": "p_sasaki" },
-    { "id": "a_ito", "channel": "line", "value": "U_ito", "partyId": "p_ito" }
+    { "id": "a_yamamoto", "channel": "line", "value": "U_yamamoto", "contactId": "p_yamamoto" },
+    { "id": "a_sasaki", "channel": "line", "value": "U_sasaki", "contactId": "p_sasaki" },
+    { "id": "a_ito", "channel": "line", "value": "U_ito", "contactId": "p_ito" }
   ],
-  "credentialRefs": [{ "id": "c_oa", "principal": { "kind": "organization" }, "addressId": "a_oa" }],
+  "credentialRefs": [
+    { "id": "c_oa", "principal": { "kind": "team" }, "address": { "channel": "line", "value": "@ubs-clean" } }
+  ],
   "dataSources": [
-    { "kind": "service", "id": "ds_line_oa", "channel": "line", "name": "LINE 公式アカウント @ubs-clean", "description": "清掃スタッフとの 1:1 のやりとり（勤怠の連絡、代務の打診など）", "credentialRefId": "c_oa", "selfAddressIds": ["a_oa"] },
-    { "kind": "notes", "id": "ds_notes_kimura", "name": "木村のメモ", "ownerPartyId": "p_kimura" }
+    { "kind": "service", "id": "ds_line_oa", "channel": "line", "name": "LINE 公式アカウント @ubs-clean", "description": "清掃スタッフとの 1:1 のやりとり（勤怠の連絡、代務の打診など）", "credentialRefId": "c_oa", "selfAddresses": [{ "channel": "line", "value": "@ubs-clean" }] },
+    { "kind": "notes", "id": "ds_notes_kimura", "name": "木村のメモ", "ownerUserId": "u_kimura" }
   ],
   "lists": [
     { "id": "l_line_oa", "dataSourceId": "ds_line_oa" },
     { "id": "l_notes_kimura", "dataSourceId": "ds_notes_kimura" }
   ],
   "listMembers": [
-    { "listId": "l_line_oa", "partyId": "p_kimura" },
-    { "listId": "l_notes_kimura", "partyId": "p_kimura" }
+    { "listId": "l_line_oa", "userId": "u_kimura" },
+    { "listId": "l_notes_kimura", "userId": "u_kimura" }
   ],
   "attributeDefs": []
 }

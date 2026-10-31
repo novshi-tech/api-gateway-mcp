@@ -1,22 +1,43 @@
-import type { AddressRef, Anchors, AttributeValue, Direction, FileRef, LinkRoute, ThreadedBy } from './events';
+import type { AddressRef, Anchors, AttributeValue, FileRef, LinkRoute, ThreadedBy } from './events';
 import type { Channel } from './entities';
 
 /**
- * ボールの所在（0014）。スレッドのイベントだけから決まる（fold は 1 段）。
- * - us: こちら（組織）。持ち主がいない。構造で誰の番かが決まらなければ仕分け待ち（クエリ層の turn.ts）
- * - user: 持ち主（ThreadClaimed で持った人）
- * - party: 相手（こちらが返事を待っている）
+ * 返事や対応を求めたシグナル（0030）。fold はアドレスだけで畳み、どちら側の求めかはクエリ層が決める（sides.ts）
+ * - holders: ボールを持っているアドレス（求めたシグナルの宛先）
+ * - except: 宛先のないシグナル（グループのチャネル）。「チャネルの中で except 以外」がボールを持つ
+ * - requestedBy: 求めたシグナルの送り主
+ * - since: 同じ送り主が求め続けている最初の時刻
+ */
+export interface Request {
+  holders: AddressRef[];
+  except: AddressRef | null;
+  requestedBy: AddressRef;
+  since: string;
+  signalId: string;
+}
+
+/**
+ * fold が持つボール（0030）。スレッドのイベントだけから決まる（fold は 1 段、マスタを読まない）
+ * - request: 求めたシグナルの保持者がボールを持つ（どちら側かはクエリ層）
+ * - claimed: 持った・引き継いだ（userId）、手放した（null = こちら）
  * - none: 誰の番でもない
  */
-export type Ball = { kind: 'us' } | { kind: 'user'; userId: string } | { kind: 'party'; partyIds: string[] } | { kind: 'none' };
+export type FoldedBall = { kind: 'request'; request: Request } | { kind: 'claimed'; userId: string | null } | { kind: 'none' };
 
-/** 通信状態。シグナルの向き・「返事や対応を求めているか」・片付けだけから機械的に導出される（comm.ts） */
+/**
+ * クエリ層で解決したボールの所在（API と一覧の形。sides.ts の resolveBall）
+ * - us: こちら（チーム）。持ち主がいない。構造で誰の番かが決まらなければ仕分け待ち（turn.ts）
+ * - user: 持ち主
+ * - contact: 相手（こちらが返事を待っている）
+ * - none: 誰の番でもない
+ */
+export type Ball = { kind: 'us' } | { kind: 'user'; userId: string } | { kind: 'contact'; contactIds: string[] } | { kind: 'none' };
+
+/** 通信状態。綴じたシグナルのアドレス・「返事や対応を求めているか」・持ち主・片付けだけから導出される（comm.ts） */
 export interface CommState {
-  ball: Ball;
-  lastInboundAt: string | null;
-  lastOutboundAt: string | null;
-  /** こちらの返事を待たせている最初の受信（返事をすれば消える） */
-  unansweredSince: string | null;
+  ball: FoldedBall;
+  /** 最後に求めたシグナル（片付け・持ち主の操作のあとも残る。応えた・閉じたら null） */
+  request: Request | null;
   dismissed: boolean;
   dismissedAt: string | null;
   dismissReason: string | null;
@@ -24,10 +45,11 @@ export interface CommState {
   activeSinceDismissed: boolean;
   /** 持ち主（ThreadClaimed）。手放せば null */
   ownerUserId: string | null;
-  /** 最後の送信の返事期待（記録した送信だけが持つ）。受信が来れば消える */
+  /** 返事期待（記録した送信だけが持つ）。その送り主以外からシグナルが来れば消える */
   replyExpectedBy: string | null;
   replyExpectedSignalId: string | null;
-  /** 返事期待の期限を過ぎた（ReplyOverdue）。受信が来れば解消する */
+  replyExpectedFrom: AddressRef | null;
+  /** 返事期待の期限を過ぎた（ReplyOverdue）。返事期待が消えれば解消する */
   overdue: boolean;
   /** ソースの側で完了している（写しの done）。片付けと同じくボールは「なし」 */
   closedAtSource: boolean;
@@ -42,9 +64,10 @@ export interface ThreadLogEntry {
   at: string;
   kind: ThreadLogKind;
   signalId?: string;
-  direction?: Direction;
+  /** signal / note: 送り主と宛先 */
+  from?: AddressRef;
+  to?: AddressRef[];
   needsResponse?: boolean | null;
-  toPartyIds?: string[];
   /** signal（送信の記録）: 返事期待の期限 */
   replyExpectedBy?: string | null;
   reason?: string;
@@ -75,8 +98,6 @@ export interface Thread extends CommState {
   id: string;
   dataSourceId: string;
   title: string;
-  /** 相手の Party（受信の from と送信の to から） */
-  counterpartPartyIds: string[];
   /** 時刻順（メモを含む） */
   signalIds: string[];
   log: ThreadLogEntry[];
@@ -91,12 +112,9 @@ export interface Thread extends CommState {
 export interface SignalRecord {
   signalId: string;
   dataSourceId: string;
-  direction: Direction;
   channel: Channel;
   from: AddressRef;
   to: AddressRef[];
-  fromPartyId: string | null;
-  toPartyIds: string[];
   subject?: string;
   body: string;
   anchors: Anchors;

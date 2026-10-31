@@ -46,16 +46,32 @@ export const signals = sqliteTable('signals', {
 
 // ---- マスタ ----
 
-/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / parties ...） */
+/**
+ * マスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / contacts ...）。
+ * key は kind の中で一意（rowKey）。ord は並び順で、足した行は末尾（0030 の 5。その場で書き換える）
+ */
 export const master = sqliteTable(
   'master',
   {
     kind: text('kind').notNull(),
+    key: text('key').notNull(),
     ord: integer('ord').notNull(),
     data: text('data', { mode: 'json' }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.kind, t.ord] })],
+  (t) => [primaryKey({ columns: [t.kind, t.key] })],
 );
+
+/** マスタの変更の記録（0030 の 5）。誰がいつ何を変えたか。before が null なら足した、after が null なら消した */
+export const masterChanges = sqliteTable('master_changes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  at: text('at').notNull(),
+  actorUserId: text('actor_user_id'),
+  reason: text('reason'),
+  kind: text('kind').notNull(),
+  key: text('key').notNull(),
+  before: text('before', { mode: 'json' }),
+  after: text('after', { mode: 'json' }),
+});
 
 // ---- ダミー上流 ----
 

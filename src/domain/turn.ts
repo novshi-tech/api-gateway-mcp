@@ -1,5 +1,6 @@
 import type { Directory } from './directory';
 import type { Projections, Thread } from './projections';
+import { contactsOf, requestIsOurs, resolveBall } from './sides';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // クエリ層の「誰の番か」と結び（0014 の 3）。投影のスナップショットとマスタから計算する純関数で、
@@ -9,31 +10,30 @@ import { canReadDataSource, type Viewer } from './viewer';
  * 誰の番か。スレッドのボールに、構造（担当者の写し・読者が 1 人のデータソース・宛先）を合わせたもの。
  * - user: 特定のユーザーの番（by: owner = 持ち主、assignee = ソースの担当者、reader = 読者が 1 人、addressed = 宛先・メンション）
  * - triage: こちら（組織）で、誰の番かが決まらない（仕分け待ち）
- * - party / none: ボールのまま
+ * - contact / none: ボールのまま
  */
 export type Turn =
   | { kind: 'user'; userIds: string[]; by: 'owner' | 'assignee' | 'reader' | 'addressed' }
   | { kind: 'triage' }
-  | { kind: 'party'; partyIds: string[] }
+  | { kind: 'contact'; contactIds: string[] }
   | { kind: 'none' };
 
 export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
-  const ball = t.ball;
+  const ball = resolveBall(dir, p, t);
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
   const assignee = assigneeTurn(dir, t);
   if (assignee) return assignee;
-  if (ball.kind === 'party') return { kind: 'party', partyIds: ball.partyIds };
+  if (ball.kind === 'contact') return { kind: 'contact', contactIds: ball.contactIds };
   if (ball.kind === 'none') return { kind: 'none' };
 
   const list = dir.listOfDataSource(t.dataSourceId);
-  const readers = (list ? dir.readersOfList(list.id) : []).filter((r) => r.userId);
-  if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!.userId!], by: 'reader' };
-  // 宛先・CC・メンション: 受信の to に、読者の Party が入っている
+  const readers = list ? dir.readersOfList(list.id) : [];
+  if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!], by: 'reader' };
+  // 宛先・CC・メンション: 相手が求めたシグナルの保持者に、読者の Contact のアドレスが入っている（0030）
   const addressed = new Set<string>();
-  for (const id of t.signalIds) {
-    const s = p.signals[id]!;
-    if (s.direction !== 'inbound') continue;
-    for (const r of readers) if (s.toPartyIds.includes(r.id)) addressed.add(r.userId!);
+  if (t.request && requestIsOurs(dir, p, t) === false) {
+    const held = contactsOf(dir, t.request.holders, p.signals[t.request.signalId]?.at);
+    for (const r of list ? dir.readerContactsOfList(list.id) : []) if (held.includes(r.id)) addressed.add(r.userId!);
   }
   if (addressed.size > 0) return { kind: 'user', userIds: [...addressed].sort(), by: 'addressed' };
   return { kind: 'triage' };
@@ -46,12 +46,15 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
 function assigneeTurn(dir: Directory, t: Thread): Turn | null {
   if (t.dismissed || t.closedAtSource) return null;
   const v = t.attributes.assignee;
-  if (typeof v !== 'string' || !dir.attributeDefs(t.dataSourceId).some((d) => d.name === 'assignee' && d.type === 'party')) return null;
-  const party = dir.party(v);
-  if (!party) return null;
+  if (typeof v !== 'string' || !dir.attributeDefs(t.dataSourceId).some((d) => d.name === 'assignee' && d.type === 'contact')) return null;
+  // ソースの写しはアカウントのアドレス（0030）、本人が付けた値は Contact の id
+  const ds = dir.dataSource(t.dataSourceId);
+  const contactId = dir.contact(v) ? v : ds?.kind === 'service' ? dir.contactIdOfAddress({ channel: ds.channel, value: v }) : null;
+  const contact = contactId ? dir.contact(contactId) : undefined;
+  if (!contact) return null;
   const list = dir.listOfDataSource(t.dataSourceId);
-  const reader = party.userId !== undefined && list !== undefined && dir.readersOfList(list.id).some((r) => r.id === party.id);
-  return reader ? { kind: 'user', userIds: [party.userId!], by: 'assignee' } : { kind: 'party', partyIds: [party.id] };
+  const reader = contact.userId !== undefined && list !== undefined && dir.readersOfList(list.id).includes(contact.userId);
+  return reader ? { kind: 'user', userIds: [contact.userId!], by: 'assignee' } : { kind: 'contact', contactIds: [contact.id] };
 }
 
 export function isMyTurn(turn: Turn, viewer: Viewer): boolean {
@@ -77,7 +80,7 @@ export function derivedBall(dir: Directory, viewer: Viewer, p: Projections, t: T
   const turns = linked.map((x) => ({ id: x.id, turn: turnOf(dir, p, x) }));
   const mine = turns.filter((x) => isMyTurn(x.turn, viewer)).map((x) => x.id);
   if (mine.length > 0) return { kind: 'my_turn', threadIds: mine };
-  if (turns.every((x) => x.turn.kind === 'party')) return { kind: 'waiting', threadIds: turns.map((x) => x.id) };
+  if (turns.every((x) => x.turn.kind === 'contact')) return { kind: 'waiting', threadIds: turns.map((x) => x.id) };
   return { kind: 'none' };
 }
 

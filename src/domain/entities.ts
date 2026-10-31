@@ -7,38 +7,44 @@ import { z } from 'zod';
 export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'note']);
 export type Channel = z.infer<typeof Channel>;
 
+/** チャネルと値だけのアドレス（Contact に属さない。イベント・データソースの窓口・資格情報が持つ） */
+export const AddressRef = z.object({ channel: Channel, value: z.string() });
+export type AddressRef = z.infer<typeof AddressRef>;
+
 /** 資格情報の主体 */
 export const Principal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user'), userId: z.string() }),
-  /** 組織（このデプロイのチーム、0020・0021） */
-  z.object({ kind: z.literal('organization') }),
+  /** このデプロイのチーム（0020・0021）。共有のデータソースはチームの資格情報で取る（0013） */
+  z.object({ kind: z.literal('team') }),
 ]);
 export type Principal = z.infer<typeof Principal>;
 
-/** ゲートウェイの User と 1:1。このデプロイ（チーム）の Party は 1 つまで */
+/** ゲートウェイの User と 1:1。このデプロイ（チーム）の Contact は 1 つまで */
 export const User = z.object({ id: z.string(), name: z.string() });
 export type User = z.infer<typeof User>;
 
 /**
- * 人物／組織。internal = 自分側（自社とその社員）。
- * userId を持たない Party がゴースト。
+ * 連絡の相手（0030）。アドレスを束ねたもので、人か会社の窓口かボットかは区別しない。
+ * 自分も Contact の 1 つで、User に結ばれている。userId を持たない Contact がゴースト。
  */
-export const Party = z.object({
+export const Contact = z.object({
   id: z.string(),
   name: z.string(),
-  kind: z.enum(['person', 'organization']),
   userId: z.string().optional(),
-  internal: z.boolean().default(false),
   /** 外部マスタ（bm-next・board・freee など）へのポインタの束 */
   externalRefs: z.record(z.string(), z.string()).default({}),
 });
-export type Party = z.infer<typeof Party>;
+export type Contact = z.infer<typeof Contact>;
+
+/** まとめて消えた Contact の ID と、まとめ先（0030 の 9）。イベントに残る古い ID をクエリ層が読み替える */
+export const ContactAlias = z.object({ id: z.string(), contactId: z.string() });
+export type ContactAlias = z.infer<typeof ContactAlias>;
 
 export const Address = z.object({
   id: z.string(),
   channel: Channel,
   value: z.string(),
-  partyId: z.string(),
+  contactId: z.string(),
   validFrom: z.string().optional(),
   validTo: z.string().optional(),
 });
@@ -47,7 +53,8 @@ export type Address = z.infer<typeof Address>;
 export const CredentialRef = z.object({
   id: z.string(),
   principal: Principal,
-  addressId: z.string(),
+  /** 資格情報のアカウントのアドレス */
+  address: AddressRef,
   /** ゲートウェイ側の資格情報の識別子（プロトでは未使用） */
   gatewayCredentialId: z.string().optional(),
 });
@@ -56,7 +63,7 @@ export type CredentialRef = z.infer<typeof CredentialRef>;
 /**
  * データソース（0014）。リスト 1 つに対応する。
  * - service: 外のサービス（メールボックス、Slack のチャネルや DM、LINE 公式アカウント、Jira のプロジェクト）。
- *   資格情報で取り込み、selfAddressIds（送信元のアドレス = こちら）で受信と観測された送信を分ける
+ *   資格情報で取り込み、selfAddresses（窓口のアドレス）と読者の Contact のアドレスが「こちら」（0030。クエリ層の sides.ts）
  * - notes: 個人のメモ。ユーザーごとに 1 つ、読者は本人だけ
  */
 export const DataSource = z.discriminatedUnion('kind', [
@@ -67,7 +74,8 @@ export const DataSource = z.discriminatedUnion('kind', [
     name: z.string(),
     description: z.string().default(''),
     credentialRefId: z.string(),
-    selfAddressIds: z.array(z.string()).min(1),
+    /** 窓口のアドレス（共有メールボックス・LINE 公式アカウント・Jira のサイトなど）。個人の箱では空でよい */
+    selfAddresses: z.array(AddressRef).default([]),
     /** グループのチャネル。区切りの「同じ相手」がチャネルになる */
     group: z.boolean().default(false),
   }),
@@ -76,7 +84,8 @@ export const DataSource = z.discriminatedUnion('kind', [
     id: z.string(),
     name: z.string(),
     description: z.string().default(''),
-    ownerPartyId: z.string(),
+    /** 持ち主の User（0030。読者は本人だけ。Contact がなくても使える） */
+    ownerUserId: z.string(),
   }),
 ]);
 export type DataSource = z.infer<typeof DataSource>;
@@ -86,11 +95,11 @@ export type ServiceDataSource = Extract<DataSource, { kind: 'service' }>;
 export const List = z.object({ id: z.string(), dataSourceId: z.string() });
 export type List = z.infer<typeof List>;
 
-/** リストの読者 */
-export const ListMember = z.object({ listId: z.string(), partyId: z.string() });
+/** リストの読者。見えるかどうかは User で決める（0030。ゴーストが読者になることはない） */
+export const ListMember = z.object({ listId: z.string(), userId: z.string() });
 export type ListMember = z.infer<typeof ListMember>;
 
-export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'party']);
+export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'contact']);
 /** 本人が付ける属性の定義。データソースに付く（ステップ 3 で使う） */
 export const AttributeDef = z.object({
   dataSourceId: z.string(),
@@ -105,7 +114,8 @@ export type AttributeDef = z.infer<typeof AttributeDef>;
 
 export const Seed = z.object({
   users: z.array(User),
-  parties: z.array(Party),
+  contacts: z.array(Contact),
+  contactAliases: z.array(ContactAlias).default([]),
   addresses: z.array(Address),
   credentialRefs: z.array(CredentialRef).default([]),
   dataSources: z.array(DataSource).default([]),

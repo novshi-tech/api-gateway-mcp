@@ -3,7 +3,15 @@ import { ZodError } from 'zod';
 import { DomainError } from '../domain';
 import type { MurmurService } from '../app/service';
 import {
+  AddAddressBody,
   AddNoteBody,
+  ContactsQuery,
+  CreateContactBody,
+  CreateDataSourceBody,
+  EndAddressBody,
+  IdentityBody,
+  MergeContactBody,
+  RenameBody,
   ClaimBody,
   DismissBody,
   GetThreadQuery,
@@ -59,6 +67,8 @@ export function createApp(opts: HttpOptions) {
     const userId = token ? await opts.authenticate(token) : null;
     if (!userId) return c.json({ error: 'unauthenticated' }, 401);
     c.set('userId', userId);
+    // サインインした sub の User がなければ作る（名前は空、Contact はなし。0030 の 6）
+    await c.var.service.ensureUser(userId);
     await next();
   });
 
@@ -71,6 +81,68 @@ export function createApp(opts: HttpOptions) {
   };
 
   api.get('/me', async (c) => c.json(await c.var.service.me(c.var.userId)));
+
+  api.patch('/me', async (c) => c.json(await c.var.service.renameMe(c.var.userId, RenameBody.parse(await json(c)).name)));
+
+  // ---- リストとアイデンティティ（0030 の 7） ----
+
+  api.post('/data-sources', async (c) => {
+    const b = CreateDataSourceBody.parse(await json(c));
+    return c.json(
+      await c.var.service.createDataSource(c.var.userId, {
+        channel: b.channel,
+        name: b.name,
+        description: b.description,
+        identity: b.identity,
+        gatewayCredentialId: b.gateway_credential_id,
+        group: b.group,
+      }),
+    );
+  });
+
+  api.post('/lists/:id/identity', async (c) => {
+    const b = IdentityBody.parse(await json(c));
+    return c.json(await c.var.service.setIdentity(c.var.userId, c.req.param('id'), b.identity));
+  });
+
+  // ---- 名寄せと直す操作（0030 の 8・9） ----
+
+  api.get('/addresses/unresolved', async (c) => c.json(await c.var.service.unresolvedAddresses(c.var.userId)));
+
+  api.get('/contacts', async (c) => c.json(await c.var.service.searchContacts(c.var.userId, ContactsQuery.parse(c.req.query()).q)));
+
+  api.get('/contacts/:id', async (c) => c.json(await c.var.service.getContact(c.var.userId, c.req.param('id'))));
+
+  api.post('/contacts', async (c) => c.json(await c.var.service.createContact(c.var.userId, CreateContactBody.parse(await json(c)))));
+
+  api.patch('/contacts/:id', async (c) =>
+    c.json(await c.var.service.renameContact(c.var.userId, c.req.param('id'), RenameBody.parse(await json(c)).name)),
+  );
+
+  api.post('/contacts/:id/addresses', async (c) => {
+    const b = AddAddressBody.parse(await json(c));
+    return c.json(
+      await c.var.service.addContactAddress(c.var.userId, c.req.param('id'), {
+        address: { channel: b.channel, value: b.value },
+        validFrom: b.valid_from,
+        reason: b.reason,
+      }),
+    );
+  });
+
+  api.post('/contacts/:id/addresses/:addressId/end', async (c) => {
+    const b = EndAddressBody.parse(await json(c));
+    return c.json(
+      await c.var.service.endContactAddress(c.var.userId, c.req.param('id'), c.req.param('addressId'), { validTo: b.valid_to, reason: b.reason }),
+    );
+  });
+
+  api.post('/contacts/:id/merge', async (c) => {
+    const b = MergeContactBody.parse(await json(c));
+    return c.json(await c.var.service.mergeContacts(c.var.userId, c.req.param('id'), b.from, b.reason));
+  });
+
+  api.post('/contacts/:id/unbind', async (c) => c.json(await c.var.service.unbindContact(c.var.userId, c.req.param('id'))));
 
   api.get('/threads', async (c) => {
     const q = ListThreadsQuery.parse(c.req.query());
@@ -110,7 +182,8 @@ export function createApp(opts: HttpOptions) {
       await c.var.service.recordSent(c.var.userId, {
         dataSourceId: b.data_source,
         to: b.to,
-        toPartyIds: b.to_party_ids,
+        toContactIds: b.to_contact_ids,
+        from: b.from,
         subject: b.subject,
         body: b.body,
         sentRef: b.sent_ref,

@@ -24,7 +24,7 @@
       ]
     },
     { "after": "s02", "threads": { "$clientThread": { "ball": { "kind": "us" }, "signalCount": 2 } } },
-    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } },
+    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] } } } },
     {
       "after": "s04",
       "threads": { "$prThread": { "ball": { "kind": "us" } } },
@@ -35,14 +35,14 @@
     },
     {
       "after": "m01",
-      "threads": { "$issueThread": { "ball": { "kind": "none" }, "attributes": { "status": "未着手", "assignee": "p_kato", "priority": "高", "done": false }, "closedAtSource": false } },
+      "threads": { "$issueThread": { "ball": { "kind": "none" }, "attributes": { "status": "未着手", "assignee": "acct-kato", "priority": "高", "done": false }, "closedAtSource": false } },
       "views": [
         { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "assignee" } } },
         { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$issueThread"] },
         { "as": "u_nose", "threads": { "filter": "my_turn", "dataSource": "ds_jira" }, "expect": [] }
       ]
     },
-    { "after": "m02", "threads": { "$issueThread": { "attributes": { "status": "進行中", "assignee": "p_kato", "priority": "高", "done": false } } } },
+    { "after": "m02", "threads": { "$issueThread": { "attributes": { "status": "進行中", "assignee": "acct-kato", "priority": "高", "done": false } } } },
     { "after": "s05", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
     { "after": "s06", "threads": { "$issueThread": { "ball": { "kind": "none" }, "signalCount": 2 } } },
     {
@@ -55,13 +55,13 @@
     },
     {
       "after": "m04",
-      "threads": { "$docThread": { "attributes": { "status": "未着手", "assignee": "p_nose", "priority": "低", "done": false } } },
+      "threads": { "$docThread": { "attributes": { "status": "未着手", "assignee": "acct-nose", "priority": "低", "done": false } } },
       "views": [{ "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] }]
     },
-    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] } } } },
+    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] } } } },
     {
       "after": "o03",
-      "threads": { "$clientThread": { "ball": { "kind": "party", "partyIds": ["p_mori"] }, "links": {} } },
+      "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] }, "links": {} } },
       "views": [{ "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$issueThread", "$prThread", "$docThread"] }]
     },
     {
@@ -76,14 +76,14 @@
     {
       "after": "o04",
       "threads": {
-        "$regThread": { "dataSourceId": "ds_jira", "title": "ログインの回帰テストを追加", "ball": { "kind": "party", "partyIds": ["p_kato"] }, "signalCount": 1, "links": { "$clientThread": "sent" } },
+        "$regThread": { "dataSourceId": "ds_jira", "title": "ログインの回帰テストを追加", "ball": { "kind": "contact", "contactIds": ["p_kato"] }, "signalCount": 1, "links": { "$clientThread": "sent" } },
         "$clientThread": { "links": { "$issueThread": "anchor", "$regThread": "sent" } }
       }
     },
     { "after": "c01", "threads": { "$regThread": { "signalCount": 1 } } },
     {
       "after": "m05",
-      "threads": { "$regThread": { "attributes": { "status": "未着手", "assignee": "p_kato", "priority": "中", "done": false } } },
+      "threads": { "$regThread": { "attributes": { "status": "未着手", "assignee": "acct-kato", "priority": "中", "done": false } } },
       "views": [
         { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$regThread"] },
         { "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "assignee" } } },
@@ -92,10 +92,10 @@
     },
     {
       "after": "o05",
-      "threads": { "$regThread": { "ball": { "kind": "party", "partyIds": ["p_nose"] }, "signalCount": 2 } },
+      "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_nose"] }, "signalCount": 2 } },
       "views": [{ "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "assignee" } } }]
     },
-    { "after": "c02", "threads": { "$regThread": { "ball": { "kind": "party", "partyIds": ["p_kato"] }, "signalCount": 3 } } },
+    { "after": "c02", "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_kato"] }, "signalCount": 3 } } },
     {
       "after": "m06",
       "threads": { "$regThread": { "ball": { "kind": "none" }, "closedAtSource": true } },
@@ -106,8 +106,8 @@
     "threads": {
       "$clientThread": {
         "dataSourceId": "ds_slack_client",
-        "ball": { "kind": "party", "partyIds": ["p_mori"] },
-        "counterpartPartyIds": ["p_mori"],
+        "ball": { "kind": "contact", "contactIds": ["p_mori"] },
+        "counterpartContactIds": ["p_mori"],
         "signalCount": 6,
         "unansweredSince": null,
         "links": { "$issueThread": "anchor", "$regThread": "sent" }
@@ -115,10 +115,10 @@
       "$issueThread": {
         "dataSourceId": "ds_jira",
         "ball": { "kind": "none" },
-        "counterpartPartyIds": ["p_jira"],
+        "counterpartContactIds": ["p_jira"],
         "signalCount": 2,
         "closedAtSource": true,
-        "attributes": { "status": "完了", "assignee": "p_kato", "priority": "高", "done": true },
+        "attributes": { "status": "完了", "assignee": "acct-kato", "priority": "高", "done": true },
         "links": { "$clientThread": "anchor", "$prThread": "anchor" }
       },
       "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2, "links": { "$issueThread": "anchor" } },
@@ -129,8 +129,8 @@
         "ball": { "kind": "none" },
         "closedAtSource": true,
         "signalCount": 3,
-        "counterpartPartyIds": ["p_kato", "p_nose"],
-        "attributes": { "status": "完了", "assignee": "p_kato", "priority": "中", "done": true },
+        "counterpartContactIds": ["p_kato", "p_nose"],
+        "attributes": { "status": "完了", "assignee": "acct-kato", "priority": "中", "done": true },
         "links": { "$clientThread": "sent" }
       }
     },
@@ -149,7 +149,7 @@
     { "as": "u_kato", "threads": { "filter": "all", "dataSource": "ds_jira" }, "expect": ["$issueThread", "$docThread", "$regThread"] },
     { "as": "u_nose", "threads": { "filter": "triage" }, "expect": [] },
     { "as": "u_nose", "threads": { "filter": "all", "dataSource": "ds_bitbucket" }, "expect": ["$prThread", "$pipelineThread"] },
-    { "ghostParty": "p_mori" },
+    { "ghostContact": "p_mori" },
     { "as": "u_nose", "thread": "$docThread", "access": "full", "candidates": ["$clientThread"] },
     { "as": "u_kato", "thread": "$docThread", "access": "full", "candidates": [] },
     { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] },

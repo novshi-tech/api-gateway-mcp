@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { canonicalJson, draft, foldChanges } from '../../src/domain';
+import { canonicalJson, draft, foldChanges, planMasterEdit } from '../../src/domain';
 import { d1Repo } from '../../src/store/d1';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
@@ -117,5 +117,26 @@ describe.each(impls)('Repo 契約（%s）', (_name, make) => {
   it('マスタを丸ごと入れ替えて読み出せる', async () => {
     await repo.master.replaceSeed(seed);
     expect(await repo.master.loadSeed()).toEqual(seed);
+  });
+
+  it('H3 マスタの差分を当てると、読み出したマスタはその場で書き換えたものと同じで、変更の記録が残る（0030 の 5）', async () => {
+    await repo.master.replaceSeed(seed);
+    const { after, changes } = planMasterEdit(seed, (d) => {
+      d.contacts.push({ id: 'p_frank', name: 'Frank', externalRefs: {} });
+      d.addresses.push({ id: 'a_frank', channel: 'email', value: 'frank@example.com', contactId: 'p_frank' });
+      d.contacts.find((c) => c.id === 'p_carol')!.name = 'Carol（田中ビル）';
+      d.listMembers = d.listMembers.filter((m) => !(m.listId === 'l_line' && m.userId === 'u_bob'));
+    });
+    expect(changes.map((c) => [c.kind, c.key, c.before === null ? 'add' : c.after === null ? 'remove' : 'update'])).toEqual([
+      ['contacts', 'p_carol', 'update'],
+      ['contacts', 'p_frank', 'add'],
+      ['addresses', 'a_frank', 'add'],
+      ['listMembers', 'l_line|u_bob', 'remove'],
+    ]);
+    await repo.master.applyChanges(changes, { at: AT, actorUserId: 'u_alice', reason: '名寄せ' });
+    expect(await repo.master.loadSeed()).toEqual(after);
+    const log = await repo.master.changeLog();
+    expect(log.map((r) => [r.kind, r.key, r.actorUserId, r.reason])).toEqual(changes.map((c) => [c.kind, c.key, 'u_alice', '名寄せ']));
+    expect(log[0]).toMatchObject({ at: AT, before: { name: 'Carol（顧客）' }, after: { name: 'Carol（田中ビル）' } });
   });
 });

@@ -4,6 +4,7 @@ import type { AttributeDef, DataSource } from './entities';
 import { DomainError } from './errors';
 import { AttributeValue, draft, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
+import { directionOf } from './sides';
 import { linkCandidates } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
@@ -69,10 +70,11 @@ export function moveSignal(
     if (!input.to.title.trim()) throw new DomainError('invalid', 'title is required');
     choice = { kind: 'new', threadId: ctx.newId('thr'), title: input.to.title };
   }
-  if (sig.direction === 'outbound' && input.needsResponse !== undefined) {
+  const ours = directionOf(ctx.dir, sig) === 'outbound';
+  if (ours && input.needsResponse !== undefined) {
     throw new DomainError('invalid', 'needs_response is not judged for outbound signals');
   }
-  const needsResponse = sig.direction === 'outbound' ? null : (input.needsResponse ?? sig.needsResponse ?? true);
+  const needsResponse = ours ? null : (input.needsResponse ?? sig.needsResponse ?? true);
   if (choice.kind === 'existing' && choice.threadId === sig.threadId && needsResponse === sig.needsResponse) {
     return { events: [], threadId: choice.threadId };
   }
@@ -96,10 +98,9 @@ export function moveSignal(
 
 /** Viewer の個人のメモのデータソース */
 export function notesDataSourceOf(dir: Directory, viewer: Viewer): Extract<DataSource, { kind: 'notes' }> | undefined {
-  if (viewer.partyId === null) return undefined;
   return dir.seed.dataSources.find(
     (d): d is Extract<DataSource, { kind: 'notes' }> =>
-      d.kind === 'notes' && d.ownerPartyId === viewer.partyId && viewer.dataSourceIds.includes(d.id),
+      d.kind === 'notes' && d.ownerUserId === viewer.userId && viewer.dataSourceIds.includes(d.id),
   );
 }
 
@@ -129,7 +130,7 @@ export function addNote(
     choice = { kind: 'new', threadId: ctx.newId('thr'), title };
   }
   const signalId = ctx.newId('sig');
-  const self = { channel: 'note' as const, value: ds.ownerPartyId };
+  const self = { channel: 'note' as const, value: ds.ownerUserId };
   return {
     threadId: choice.threadId,
     signalId,
@@ -137,12 +138,9 @@ export function addNote(
       draft('SignalObserved', {
         signalId,
         dataSourceId: ds.id,
-        direction: 'outbound',
         channel: 'note',
         from: self,
         to: [],
-        fromPartyId: ds.ownerPartyId,
-        toPartyIds: [],
         body: input.body,
         sourceRef: `note:${signalId}`,
       }),
@@ -167,7 +165,7 @@ function firstLine(body: string): string {
 // ---- 持ち主（ThreadClaimed） ----
 
 /**
- * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Party）だけ。
+ * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Contact）だけ。
  * 個人のメモのスレッドは持ち主を持たない（本人のもの。ボールはリンク先から導出する）
  */
 export function claimThread(
@@ -182,7 +180,7 @@ export function claimThread(
   if (input.userId !== null) {
     const list = dir.listOfDataSource(t.dataSourceId);
     const readers = list ? dir.readersOfList(list.id) : [];
-    if (!readers.some((r) => r.userId === input.userId)) {
+    if (!readers.includes(input.userId)) {
       throw new DomainError('invalid', `user ${input.userId} is not a reader of data source ${t.dataSourceId}`);
     }
   }
@@ -266,8 +264,8 @@ export function checkAttribute(dir: Directory, def: AttributeDef, raw: unknown):
     case 'enum':
       if (typeof v !== 'string' || !(def.options ?? []).includes(v)) throw bad(`not one of ${(def.options ?? []).join(', ')}`);
       return v;
-    case 'party': {
-      if (typeof v !== 'string' || !dir.party(v)) throw bad('unknown party');
+    case 'contact': {
+      if (typeof v !== 'string' || !dir.contact(v)) throw bad('unknown contact');
       return v;
     }
   }

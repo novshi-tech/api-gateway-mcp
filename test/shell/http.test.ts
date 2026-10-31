@@ -78,6 +78,58 @@ describe('HTTP API', () => {
     return { ...ctx, call, http };
   }
 
+  it('H3 H7 初めて接続した人は名無し。個人のリストを作ると、先に名寄せされていたゴーストに結ばれる（0030 の 6・7）', async () => {
+    const { call } = await app();
+    // サインインしただけ: User の行だけで、Contact もリストもない（seed の誰かにもならない）
+    const me = (await call('GET', '/api/me', 'u_carol')).body;
+    expect(me).toEqual({ user: { id: 'u_carol', name: '' }, contact: null, lists: [] });
+    expect((await call('GET', '/api/threads', 'u_carol')).body).toEqual([]);
+    // チームのメンバー（どれかのリストの読者）でなければ連絡先は読めない
+    expect((await call('GET', '/api/contacts', 'u_carol')).status).toBe(403);
+    expect((await call('PATCH', '/api/me', 'u_carol', { name: 'Carol' })).body.user.name).toBe('Carol');
+
+    // 個人のリスト（LINE）を作る。U_carol はチームが Carol のゴーストとして名寄せ済み
+    const created = await call('POST', '/api/data-sources', 'u_carol', {
+      channel: 'line',
+      name: 'Carol の LINE',
+      identity: 'U_carol',
+      gateway_credential_id: 'gw-1',
+    });
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({ identity: { kind: 'bound', contactId: 'p_carol' }, readers: [{ userId: 'u_carol', contactId: 'p_carol' }] });
+    expect((await call('GET', '/api/me', 'u_carol')).body).toMatchObject({ contact: { contactId: 'p_carol' }, lists: [{ kind: 'service' }] });
+    // メモは最初に書くときに作られる
+    expect((await call('POST', '/api/notes', 'u_carol', { body: 'メモ' })).status).toBe(200);
+    expect((await call('GET', '/api/me', 'u_carol')).body.lists).toHaveLength(2);
+    // 別の User のアドレスは選べない
+    expect((await call('POST', '/api/data-sources', 'u_carol', { channel: 'email', name: 'x', identity: 'alice@ubs.example', gateway_credential_id: 'g' })).status).toBe(409);
+  });
+
+  it('H3 名寄せ: 未解決のアドレスを探し、ゴーストを作ってアドレスを付け、まとめる（0030 の 8・9）', async () => {
+    const { call, service } = await app();
+    await service.ingest(email({ from: 'frank@example.com', sourceRef: 'r1' }));
+    const unresolved = (await call('GET', '/api/addresses/unresolved', 'u_alice')).body;
+    expect(unresolved).toMatchObject([{ channel: 'email', value: 'frank@example.com', count: 1 }]);
+    const frank = (await call('POST', '/api/contacts', 'u_alice', { name: 'Frank', address: { channel: 'email', value: 'frank@example.com' } })).body;
+    expect(frank).toMatchObject({ name: 'Frank', userId: null, addresses: [{ value: 'frank@example.com' }] });
+    expect((await call('GET', '/api/addresses/unresolved', 'u_alice')).body).toEqual([]);
+    const threads = (await call('GET', '/api/threads', 'u_alice')).body as { counterpartContactIds: string[] }[];
+    expect(threads[0]!.counterpartContactIds).toEqual([frank.id]);
+
+    expect((await call('POST', `/api/contacts/${frank.id}/addresses`, 'u_alice', { channel: 'line', value: 'U_frank' })).body.addresses).toHaveLength(2);
+    expect((await call('POST', `/api/contacts/${frank.id}/addresses`, 'u_alice', { channel: 'line', value: 'U_carol' })).status).toBe(409);
+    expect((await call('GET', '/api/contacts?q=frank', 'u_alice')).body).toHaveLength(1);
+    expect((await call('PATCH', `/api/contacts/${frank.id}`, 'u_bob', { name: 'Frank（工務店）' })).body.name).toBe('Frank（工務店）');
+
+    const merged = (await call('POST', '/api/contacts/p_dave/merge', 'u_alice', { from: frank.id })).body;
+    expect(merged.addresses.map((a: { value: string }) => a.value)).toContain('frank@example.com');
+    expect((await call('GET', `/api/contacts/${frank.id}`, 'u_alice')).body.id).toBe('p_dave');
+    expect((await call('POST', '/api/contacts/p_alice/unbind', 'u_bob')).status).toBe(403);
+    // 変更の記録が残る
+    const log = await service.deps.repo.master.changeLog();
+    expect(log.filter((r) => r.actorUserId === 'u_alice').map((r) => r.kind)).toEqual(expect.arrayContaining(['contacts', 'addresses', 'contactAliases']));
+  });
+
   it('伝搬されたユーザー識別がなければ 401', async () => {
     const { call, http } = await app();
     expect((await call('GET', '/api/me')).status).toBe(401);
@@ -90,7 +142,7 @@ describe('HTTP API', () => {
 
   it('/me・スレッドの一覧と詳細・片付け・開き直し・移し替え・リストの一通り', async () => {
     const { call, service } = await app();
-    expect((await call('GET', '/api/me', 'u_alice')).body.party.partyId).toBe('p_alice');
+    expect((await call('GET', '/api/me', 'u_alice')).body.contact.contactId).toBe('p_alice');
 
     await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     const r2 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
@@ -182,7 +234,7 @@ describe('HTTP API', () => {
       reply_expected_by: '2026-10-16T21:00:00+09:00',
     });
     expect(res.status).toBe(200);
-    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'party', partyIds: ['p_carol'] } });
+    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'contact', contactIds: ['p_carol'] } });
     expect((await call('POST', '/api/sent', 'u_eve', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's' })).status).toBe(404);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', body: 'b', sent_ref: 's' })).status).toBe(400);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's', reply_expected_by: '明日' })).status).toBe(400);
