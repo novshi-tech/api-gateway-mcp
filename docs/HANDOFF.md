@@ -19,6 +19,11 @@
   - 共有のリストに読者を足す管理者の入口（スクリプト）。いまは `MurmurService.addListMember` だけ
   - ゲートウェイの JWT に `name` を足すか（足しても Contact を作るときの名前の初期値だけ）
 
+**2026-10-31: UBS の Murmur を新しい Cloudflare アカウントに立てた（`docs/adr/0029`）。** デプロイの設定はリポジトリの外（`deployments/`。設定の private リポジトリを clone）に出し、CI のデプロイはやめた。
+- UBS: ゲートウェイ https://gateway.urban-b.com（Entra）と Murmur（Service Binding でつなぐ）を同じアカウントに置いた。ゲートウェイ → Service Binding → JWT の検証までは通った（`/me` がマスタなしの 404）
+- マスタは 0030（上）の流れで作る（空で始め、データソースを入れ、サインインした人がリストに入るときにアイデンティティを選ぶ）。シナリオの seed は架空のユーザなので使わない。それまで UBS の Murmur の D1 は空。0030 の実装を入れたら `pnpm db:migrate ubs` してからデプロイする
+- novshi-tech のアカウントの `murmur-dev` は削除した（Worker・D1・Queue `murmur-dev-sync`）。nvt のゲートウェイ（https://gateway.novshi-tech.com、Google）用の Murmur は、あとで新しく立てる
+
 **2026-10-30: 組織の使い分けを「切り替える」から「並べてつなぐ」に変えた（api-gateway-mcp の `docs/adr/0004`、採用。0018 に追記）。** 1 つのデプロイ = 1 つの組織のまま、組織ごとのゲートウェイを別々のコネクタとして Claude に並べる。実装（3 つのリポジトリのブランチ `claude/eager-ride-i7ul38`、main には未反映）:
 - ゲートウェイ: 設定 `ORGANIZATION_NAME`（空なら `PUBLIC_URL` のホスト名）を、MCP の title・instructions、ツールの説明、`list_credentials` / `issue_token` の `gateway`、Web 画面の見出しに出す。登録画面のラベル欄は「同じ組織の中の使い分け」の文言に
 - スキル: `api-gateway` に「コネクタの選び方」（api-gateway 0.14.0）。murmur・bm-next はそれを参照（nvt-api-gateway 0.7.0）。`docs/stand/skill-murmur.md` と `connect.md` も合わせた
