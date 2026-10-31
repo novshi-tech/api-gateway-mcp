@@ -169,7 +169,7 @@ describe("token request errors", () => {
     try {
       const error = await refreshTokens(auth, client, { access_token: "a", refresh_token: "r" }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(UpstreamOAuthError);
-      expect((error as UpstreamOAuthError).message).toBe("token request failed: invalid_grant (redirect_uri does not match)");
+      expect((error as UpstreamOAuthError).message).toBe("token request failed: invalid_grant, status 400 (redirect_uri does not match)");
       expect((error as UpstreamOAuthError).invalidGrant).toBe(true);
     } finally {
       fetch.mockRestore();

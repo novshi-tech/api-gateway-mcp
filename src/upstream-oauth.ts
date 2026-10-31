@@ -50,10 +50,11 @@ async function tokenRequest(auth: { token_url: string }, client: OAuthClient, gr
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok || typeof body.access_token !== "string") {
     const code = typeof body.error === "string" ? body.error : `status ${res.status}`;
-    // The upstream's explanation tells apart causes that share a code (for invalid_grant: a
-    // redirect URI that differs from the registered one, an expired or reused code, ...).
+    // The status and the upstream's explanation tell apart causes that share a code: freee, for
+    // one, answers a wrong client secret with invalid_grant too, but with 401 rather than 400.
+    const detail = typeof body.error === "string" ? `, status ${res.status}` : "";
     const description = typeof body.error_description === "string" ? ` (${body.error_description.slice(0, 300)})` : "";
-    throw new UpstreamOAuthError(`token request failed: ${code}${description}`, body.error === "invalid_grant");
+    throw new UpstreamOAuthError(`token request failed: ${code}${detail}${description}`, body.error === "invalid_grant");
   }
   const expiresIn = Number(body.expires_in);
   return {
