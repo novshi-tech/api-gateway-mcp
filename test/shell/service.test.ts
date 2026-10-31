@@ -16,7 +16,7 @@ describe('MurmurService.ingest', () => {
     const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect((await service.state()).threads.thr_2!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect((await service.state()).threads.thr_2!.ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {
@@ -62,20 +62,20 @@ describe('スタンドの操作', () => {
       code: 'not_found',
     });
     await expect(service.getList('u_bob', 'l_alice')).rejects.toMatchObject({ code: 'not_found' });
-    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ partyId: 'p_alice', name: 'Alice' }]);
+    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ contactId: 'p_alice', name: 'Alice' }]);
   });
 
-  it('/me は User と Party と、読者になっているリスト（データソース）を返す', async () => {
+  it('/me は User と Contact と、読者になっているリスト（データソース）を返す', async () => {
     const { service } = await makeService(seed);
     const me = await service.me('u_alice');
-    expect(me.party?.partyId).toBe('p_alice');
-    expect(me.party!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
+    expect(me.contact?.contactId).toBe('p_alice');
+    expect(me.contact!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
       ['l_support', 'ds_support', 'service'],
       ['l_alice', 'ds_alice', 'service'],
       ['l_notes_alice', 'ds_notes_alice', 'notes'],
     ]);
-    // このデプロイに Party のない User は party が null
-    expect((await service.me('u_mallory')).party).toBeNull();
+    // このデプロイに Contact のない User は contact が null
+    expect((await service.me('u_mallory')).contact).toBeNull();
     await expect(service.me('u_ghost')).rejects.toMatchObject({ code: 'not_found' });
   });
 });

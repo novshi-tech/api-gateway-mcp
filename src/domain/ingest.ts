@@ -63,9 +63,9 @@ export function prepareInbound(p: Projections, ctx: CoreContext, inbound: Inboun
     channel: inbound.channel,
     from: inbound.from,
     to: inbound.to,
-    fromPartyId: ctx.dir.partyIdOfAddress(inbound.from, ctx.now),
-    toPartyIds: inbound.to
-      .map((a) => ctx.dir.partyIdOfAddress(a, ctx.now))
+    fromContactId: ctx.dir.contactIdOfAddress(inbound.from, ctx.now),
+    toContactIds: inbound.to
+      .map((a) => ctx.dir.contactIdOfAddress(a, ctx.now))
       .filter((x): x is string => x !== null),
     subject: inbound.subject,
     body: inbound.body,
@@ -161,7 +161,7 @@ function withSameCounterpart(p: Projections, ds: ServiceDataSource, t: Thread, s
 export function awaitingThread(p: Projections, ds: ServiceDataSource, sig: SignalPayload): Thread | null {
   if (sig.direction !== 'inbound') return null;
   const waiting = threadsOf(p, ds.id).filter((t) => {
-    if (t.ball.kind !== 'party') return false;
+    if (t.ball.kind !== 'contact') return false;
     if (ds.group) return true;
     const lastOut = [...t.signalIds].reverse().map((id) => p.signals[id]!).find((s) => s.direction === 'outbound');
     return lastOut !== undefined && lastOut.to.some((r) => r.channel === sig.from.channel && sameValue(r.value, sig.from.value));

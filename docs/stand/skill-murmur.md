@@ -43,7 +43,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 | ツール | メソッドとパス | 入力 | 返すもの |
 | --- | --- | --- | --- |
-| me | `GET /me` | | User と、このデプロイの Party(`party`。Party がなければ `null`)・読者になっているリスト(データソース) |
+| me | `GET /me` | | User と、このデプロイの Contact(`contact`。Contact がなければ `null`)・読者になっているリスト(データソース) |
 | list_lists | `GET /lists` | | 見えるリストの一覧(データソース・読者・属性定義) |
 | get_list | `GET /lists/{list_id}` | | データソース・読者・属性定義 |
 | list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(更新の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `assignee` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
@@ -66,7 +66,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 {
   "data_source": "ds_support",
   "to": ["owner@tanaka-bldg.example"],
-  "to_party_ids": [],
+  "to_contact_ids": [],
   "subject": "Re: エントランスの床について",
   "body": "送った本文",
   "sent_ref": "<20261016.0925@ubs.example>",
@@ -78,12 +78,12 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 ```
 
 - `data_source`: 送ったデータソース(送信元のメールボックス・LINE 公式アカウントなど)。`get_thread` の `dataSource.id`、または `list_lists`
-- `to` か `to_party_ids` のどちらかは必須。`to` はそのチャネルのアドレス
+- `to` か `to_contact_ids` のどちらかは必須。`to` はそのチャネルのアドレス
 - `reply_to_thread_id`: 返事をしているスレッド(同じデータソース)。送ったシグナルはそこに入る。省略すると、アンカーで決まらなければ新しいスレッドになる
 - `source_thread_id`: 送る元になったスレッド(どのデータソースでもよい。メモのスレッドや、LINE の欠勤のスレッドから打診を送るときなど)。送ったスレッドと経路 `sent` で結ばれる
 - `reply_expected_by`: 返事期待の期限(ISO 8601、オフセット付きでよい)。過ぎると `overdue` になり、返事が来れば消える
 - ボールは相手へ移る。返事は同じデータソースに戻り、送ったスレッドに入る
-- **Jira の起票**: `sent_ref` に課題キー、`anchors.thread_key` にも同じ課題キーを入れる。`to_party_ids` は担当者、`source_thread_id` に起票の元になったスレッド(LINE・メール・Slack など)。課題のスレッドができて元のスレッドと経路 `sent` で結ばれ、課題の状態(写し)とコメントはそのスレッドに入る
+- **Jira の起票**: `sent_ref` に課題キー、`anchors.thread_key` にも同じ課題キーを入れる。`to_contact_ids` は担当者、`source_thread_id` に起票の元になったスレッド(LINE・メール・Slack など)。課題のスレッドができて元のスレッドと経路 `sent` で結ばれ、課題の状態(写し)とコメントはそのスレッドに入る
 - **Jira のコメント**: `sent_ref` にコメント ID、`anchors.thread_key` に課題キー、`reply_to_thread_id` に課題のスレッド
 
 ## よくある流れ

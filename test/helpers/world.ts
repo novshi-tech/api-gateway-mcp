@@ -27,7 +27,7 @@ import {
  *   ds_line      LINE 公式アカウント（組織、読者は Bob だけ）
  *   ds_notes_*   個人のメモ（Alice と Bob）
  *   ds_slack     Slack の #general（グループ、組織の資格情報、読者は Eve だけ。Eve はメモを持たない）
- * u_mallory: ゲートウェイの User だが、このデプロイに Party がない（チームの外）
+ * u_mallory: ゲートウェイの User だが、このデプロイに Contact がない（チームの外）
  */
 export const seed = Seed.parse({
   users: [
@@ -36,43 +36,43 @@ export const seed = Seed.parse({
     { id: 'u_eve', name: 'Eve' },
     { id: 'u_mallory', name: 'Mallory（チームの外）' },
   ],
-  parties: [
-    { id: 'p_ubs', name: 'UBS', kind: 'organization', internal: true },
-    { id: 'p_alice', name: 'Alice', kind: 'person', userId: 'u_alice', internal: true },
-    { id: 'p_bob', name: 'Bob', kind: 'person', userId: 'u_bob', internal: true },
-    { id: 'p_carol', name: 'Carol（顧客）', kind: 'person' },
-    { id: 'p_dave', name: 'Dave 工務店', kind: 'organization' },
-    { id: 'p_eve', name: 'Eve', kind: 'person', userId: 'u_eve', internal: true },
+  contacts: [
+    { id: 'p_ubs', name: 'UBS' },
+    { id: 'p_alice', name: 'Alice', userId: 'u_alice' },
+    { id: 'p_bob', name: 'Bob', userId: 'u_bob' },
+    { id: 'p_carol', name: 'Carol（顧客）' },
+    { id: 'p_dave', name: 'Dave 工務店' },
+    { id: 'p_eve', name: 'Eve', userId: 'u_eve' },
   ],
   addresses: [
-    { id: 'a_support', channel: 'email', value: 'support@ubs.example', partyId: 'p_ubs' },
-    { id: 'a_alice', channel: 'email', value: 'alice@ubs.example', partyId: 'p_alice' },
-    { id: 'a_carol', channel: 'email', value: 'carol@example.com', partyId: 'p_carol' },
-    { id: 'a_dave', channel: 'email', value: 'info@dave.example', partyId: 'p_dave' },
+    { id: 'a_support', channel: 'email', value: 'support@ubs.example', contactId: 'p_ubs' },
+    { id: 'a_alice', channel: 'email', value: 'alice@ubs.example', contactId: 'p_alice' },
+    { id: 'a_carol', channel: 'email', value: 'carol@example.com', contactId: 'p_carol' },
+    { id: 'a_dave', channel: 'email', value: 'info@dave.example', contactId: 'p_dave' },
     {
       id: 'a_dave_old',
       channel: 'email',
       value: 'old@dave.example',
-      partyId: 'p_dave',
+      contactId: 'p_dave',
       validTo: '2026-01-01T00:00:00.000Z',
     },
-    { id: 'a_oa', channel: 'line', value: '@ubs', partyId: 'p_ubs' },
-    { id: 'a_carol_line', channel: 'line', value: 'U_carol', partyId: 'p_carol' },
-    { id: 'a_slack', channel: 'slack', value: 'T_UBS/C_GENERAL', partyId: 'p_ubs' },
-    { id: 'a_eve', channel: 'slack', value: 'T_UBS/U_EVE', partyId: 'p_eve' },
+    { id: 'a_oa', channel: 'line', value: '@ubs', contactId: 'p_ubs' },
+    { id: 'a_carol_line', channel: 'line', value: 'U_carol', contactId: 'p_carol' },
+    { id: 'a_slack', channel: 'slack', value: 'T_UBS/C_GENERAL', contactId: 'p_ubs' },
+    { id: 'a_eve', channel: 'slack', value: 'T_UBS/U_EVE', contactId: 'p_eve' },
   ],
   credentialRefs: [
-    { id: 'c_support', principal: { kind: 'organization' }, addressId: 'a_support' },
+    { id: 'c_support', principal: { kind: 'team' }, addressId: 'a_support' },
     { id: 'c_alice', principal: { kind: 'user', userId: 'u_alice' }, addressId: 'a_alice' },
-    { id: 'c_oa', principal: { kind: 'organization' }, addressId: 'a_oa' },
-    { id: 'c_slack', principal: { kind: 'organization' }, addressId: 'a_slack' },
+    { id: 'c_oa', principal: { kind: 'team' }, addressId: 'a_oa' },
+    { id: 'c_slack', principal: { kind: 'team' }, addressId: 'a_slack' },
   ],
   dataSources: [
     { kind: 'service', id: 'ds_support', channel: 'email', name: 'support@', credentialRefId: 'c_support', selfAddressIds: ['a_support'] },
     { kind: 'service', id: 'ds_alice', channel: 'email', name: 'Alice のメールボックス', credentialRefId: 'c_alice', selfAddressIds: ['a_alice'] },
     { kind: 'service', id: 'ds_line', channel: 'line', name: 'LINE 公式アカウント', credentialRefId: 'c_oa', selfAddressIds: ['a_oa'] },
-    { kind: 'notes', id: 'ds_notes_alice', name: 'Alice のメモ', ownerPartyId: 'p_alice' },
-    { kind: 'notes', id: 'ds_notes_bob', name: 'Bob のメモ', ownerPartyId: 'p_bob' },
+    { kind: 'notes', id: 'ds_notes_alice', name: 'Alice のメモ', ownerContactId: 'p_alice' },
+    { kind: 'notes', id: 'ds_notes_bob', name: 'Bob のメモ', ownerContactId: 'p_bob' },
     {
       kind: 'service',
       id: 'ds_slack',
@@ -92,13 +92,13 @@ export const seed = Seed.parse({
     { id: 'l_slack', dataSourceId: 'ds_slack' },
   ],
   listMembers: [
-    { listId: 'l_support', partyId: 'p_alice' },
-    { listId: 'l_support', partyId: 'p_bob' },
-    { listId: 'l_alice', partyId: 'p_alice' },
-    { listId: 'l_line', partyId: 'p_bob' },
-    { listId: 'l_notes_alice', partyId: 'p_alice' },
-    { listId: 'l_notes_bob', partyId: 'p_bob' },
-    { listId: 'l_slack', partyId: 'p_eve' },
+    { listId: 'l_support', contactId: 'p_alice' },
+    { listId: 'l_support', contactId: 'p_bob' },
+    { listId: 'l_alice', contactId: 'p_alice' },
+    { listId: 'l_line', contactId: 'p_bob' },
+    { listId: 'l_notes_alice', contactId: 'p_alice' },
+    { listId: 'l_notes_bob', contactId: 'p_bob' },
+    { listId: 'l_slack', contactId: 'p_eve' },
   ],
   attributeDefs: [{ dataSourceId: 'ds_notes_alice', name: 'status', type: 'enum', options: ['todo', 'done'], description: '作業の進み具合' }],
 });

@@ -16,7 +16,7 @@ export interface InboundMirror {
   channel: Channel;
   /** ソースの区切り（課題キー） */
   threadKey: string;
-  /** 写す値（null は空）。名前はデータソースの AttributeDef。party 型はそのチャネルのアドレスで渡す（Party に直す） */
+  /** 写す値（null は空）。名前はデータソースの AttributeDef。contact 型はそのチャネルのアドレスで渡す（Contact に直す） */
   fields: Record<string, AttributeValue | null>;
   /** ソースの更新の識別子（監査用） */
   sourceRef: string;
@@ -55,10 +55,10 @@ export function planMirror(p: Projections, ctx: CoreContext, m: InboundMirror): 
     if (!def) throw new DomainError('invalid', `attribute ${name} is not defined for data source ${ds.id}`);
     let value: AttributeValue | null;
     if (raw === null) value = null;
-    else if (def.type === 'party') {
-      if (typeof raw !== 'string') throw new DomainError('invalid', `attribute ${name} (party): not an address`);
+    else if (def.type === 'contact') {
+      if (typeof raw !== 'string') throw new DomainError('invalid', `attribute ${name} (contact): not an address`);
       // 知らないアカウントは誰の番にもならないので空として写す
-      value = ctx.dir.partyIdOfAddress({ channel: ds.channel, value: raw }, ctx.now);
+      value = ctx.dir.contactIdOfAddress({ channel: ds.channel, value: raw }, ctx.now);
     } else value = checkAttribute(ctx.dir, def, raw);
     if ((t.attributes[name] ?? null) !== value) changed[name] = value;
   }

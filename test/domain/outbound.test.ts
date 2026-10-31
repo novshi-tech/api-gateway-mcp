@@ -16,7 +16,7 @@ function world() {
 const sent = (over: Partial<RecordSentInput> = {}): RecordSentInput => ({
   dataSourceId: 'ds_support',
   to: ['carol@example.com'],
-  toPartyIds: [],
+  toContactIds: [],
   body: 'ご連絡ありがとうございます。調査します。',
   sentRef: '<u1@ubs.example>',
   ...over,
@@ -36,7 +36,7 @@ describe('record_sent', () => {
     expect(r.events.map((e) => e.type)).toEqual(['OutboundRecorded', 'SignalThreaded']);
     push(log, ctx, T(9, 10), r);
     let t = log.state().threads[cust]!;
-    expect(t).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, replyExpectedBy: T(12), replyExpectedSignalId: r.signalId, overdue: false });
+    expect(t).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, replyExpectedBy: T(12), replyExpectedSignalId: r.signalId, overdue: false });
     expect(log.state().signals[r.signalId]).toMatchObject({
       direction: 'outbound',
       threadedBy: 'self',
@@ -58,7 +58,7 @@ describe('record_sent', () => {
     push(log, ctx, T(9, 10), r);
     const p = log.state();
     expect(r.threadId).not.toBe(cust);
-    expect(p.threads[r.threadId]).toMatchObject({ title: '見積依頼', ball: { kind: 'party', partyIds: ['p_dave'] }, links: [{ threadId: note.threadId, route: 'sent' }] });
+    expect(p.threads[r.threadId]).toMatchObject({ title: '見積依頼', ball: { kind: 'contact', contactIds: ['p_dave'] }, links: [{ threadId: note.threadId, route: 'sent' }] });
     expect(p.threads[note.threadId]!.links).toMatchObject([{ threadId: r.threadId, route: 'sent' }]);
     // 返事は送信元（support@）に戻り、送ったスレッドに入る
     ingestPure(log, ctx, email({ from: 'info@dave.example', sourceRef: 'r3', anchors: { inReplyTo: '<u2@ubs.example>' } }), () => answer({ thread: null }));
@@ -74,12 +74,12 @@ describe('record_sent', () => {
     expect(viaAnchor.threadId).toBe(cust);
   });
 
-  it('H4 宛先は Party でも渡せる。宛先なし・見えないデータソース・別データソースの reply_to は不可。同じ sent_ref は冪等', () => {
+  it('H4 宛先は Contact でも渡せる。宛先なし・見えないデータソース・別データソースの reply_to は不可。同じ sent_ref は冪等', () => {
     const { log, ctx, cust } = world();
-    const byParty = recordSent(log.state(), alice, ctx, sent({ to: [], toPartyIds: ['p_dave'] }));
-    expect(byParty.events[0]!.type === 'OutboundRecorded' && byParty.events[0]!.payload.to).toEqual([{ channel: 'email', value: 'info@dave.example' }]);
+    const byContact = recordSent(log.state(), alice, ctx, sent({ to: [], toContactIds: ['p_dave'] }));
+    expect(byContact.events[0]!.type === 'OutboundRecorded' && byContact.events[0]!.payload.to).toEqual([{ channel: 'email', value: 'info@dave.example' }]);
     expect(() => recordSent(log.state(), alice, ctx, sent({ to: [] }))).toThrow(/to/);
-    expect(() => recordSent(log.state(), alice, ctx, sent({ toPartyIds: ['p_eve'] }))).toThrow(/address/);
+    expect(() => recordSent(log.state(), alice, ctx, sent({ toContactIds: ['p_eve'] }))).toThrow(/address/);
     expect(() => recordSent(log.state(), eve, ctx, sent())).toThrow(/not found/);
     expect(() => recordSent(log.state(), bob, ctx, sent({ dataSourceId: 'ds_alice' }))).toThrow(/not found/);
     expect(() => recordSent(log.state(), alice, ctx, sent({ dataSourceId: 'ds_notes_alice' }))).toThrow(/add_note/);
@@ -130,7 +130,7 @@ describe('観測された送信の統合（H5）', () => {
     const r = recordSent(log.state(), bob, ctx, {
       dataSourceId: 'ds_line',
       to: ['U_carol'],
-      toPartyIds: [],
+      toContactIds: [],
       body: '本文',
       sentRef: 'line:s1',
       replyToThreadId: other.outcome!.threadId,

@@ -96,10 +96,10 @@ export function moveSignal(
 
 /** Viewer の個人のメモのデータソース */
 export function notesDataSourceOf(dir: Directory, viewer: Viewer): Extract<DataSource, { kind: 'notes' }> | undefined {
-  if (viewer.partyId === null) return undefined;
+  if (viewer.contactId === null) return undefined;
   return dir.seed.dataSources.find(
     (d): d is Extract<DataSource, { kind: 'notes' }> =>
-      d.kind === 'notes' && d.ownerPartyId === viewer.partyId && viewer.dataSourceIds.includes(d.id),
+      d.kind === 'notes' && d.ownerContactId === viewer.contactId && viewer.dataSourceIds.includes(d.id),
   );
 }
 
@@ -129,7 +129,7 @@ export function addNote(
     choice = { kind: 'new', threadId: ctx.newId('thr'), title };
   }
   const signalId = ctx.newId('sig');
-  const self = { channel: 'note' as const, value: ds.ownerPartyId };
+  const self = { channel: 'note' as const, value: ds.ownerContactId };
   return {
     threadId: choice.threadId,
     signalId,
@@ -141,8 +141,8 @@ export function addNote(
         channel: 'note',
         from: self,
         to: [],
-        fromPartyId: ds.ownerPartyId,
-        toPartyIds: [],
+        fromContactId: ds.ownerContactId,
+        toContactIds: [],
         body: input.body,
         sourceRef: `note:${signalId}`,
       }),
@@ -167,7 +167,7 @@ function firstLine(body: string): string {
 // ---- 持ち主（ThreadClaimed） ----
 
 /**
- * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Party）だけ。
+ * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Contact）だけ。
  * 個人のメモのスレッドは持ち主を持たない（本人のもの。ボールはリンク先から導出する）
  */
 export function claimThread(
@@ -266,8 +266,8 @@ export function checkAttribute(dir: Directory, def: AttributeDef, raw: unknown):
     case 'enum':
       if (typeof v !== 'string' || !(def.options ?? []).includes(v)) throw bad(`not one of ${(def.options ?? []).join(', ')}`);
       return v;
-    case 'party': {
-      if (typeof v !== 'string' || !dir.party(v)) throw bad('unknown party');
+    case 'contact': {
+      if (typeof v !== 'string' || !dir.contact(v)) throw bad('unknown contact');
       return v;
     }
   }

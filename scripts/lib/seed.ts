@@ -3,7 +3,7 @@ import { SEED_KINDS } from '../../src/store/d1';
 
 /**
  * seed の User ID を付け替える（仮の u_xxx → ゲートウェイの User ID）。
- * users[].id と、それを指す文字列（parties[].userId、listMembers など）を同じ値で置き換える
+ * users[].id と、それを指す文字列（contacts[].userId、listMembers など）を同じ値で置き換える
  */
 export function renameUsers(seed: Seed, map: Record<string, string>): Seed {
   const known = new Set(seed.users.map((u) => u.id));

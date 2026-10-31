@@ -113,7 +113,7 @@ const ThreadExpectation = z
     dismissed: z.boolean(),
     dataSourceId: z.string(),
     title: z.string(),
-    counterpartPartyIds: z.array(z.string()),
+    counterpartContactIds: z.array(z.string()),
     lastInboundAt: z.string().nullable(),
     lastOutboundAt: z.string().nullable(),
     unansweredSince: z.string().nullable(),
@@ -148,7 +148,7 @@ const VisibilityCheck = z.union([
     threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
     expect: z.array(z.string()),
   }),
-  z.object({ ghostParty: z.string() }),
+  z.object({ ghostContact: z.string() }),
 ]);
 type VisibilityCheck = z.infer<typeof VisibilityCheck>;
 
@@ -437,11 +437,11 @@ function substDeep(v: unknown, resolve: (s: string) => string): unknown {
 function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityCheck[], resolve: (s: string) => string, where: string): string[] {
   const errors: string[] = [];
   for (const check of checks) {
-    if ('ghostParty' in check) {
-      const party = dir.party(check.ghostParty);
-      if (!party) errors.push(`${where}: party ${check.ghostParty} がない`);
-      else if (party.userId) errors.push(`${where}: ${check.ghostParty} はゴーストではない`);
-      else if (deriveViewer(dir, check.ghostParty).partyId !== null) errors.push(`${where}: ${check.ghostParty} が Viewer になれる`);
+    if ('ghostContact' in check) {
+      const contact = dir.contact(check.ghostContact);
+      if (!contact) errors.push(`${where}: contact ${check.ghostContact} がない`);
+      else if (contact.userId) errors.push(`${where}: ${check.ghostContact} はゴーストではない`);
+      else if (deriveViewer(dir, check.ghostContact).contactId !== null) errors.push(`${where}: ${check.ghostContact} が Viewer になれる`);
       continue;
     }
     const viewer = deriveViewer(dir, check.as);

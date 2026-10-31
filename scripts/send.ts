@@ -55,8 +55,8 @@ function echoOf(scenario: Scenario, step: Extract<Step, { action: unknown }>, se
   const a = (input.anchors ?? {}) as Record<string, unknown>;
   const to = [
     ...((input.to as string[] | undefined) ?? []),
-    ...((input.to_party_ids as string[] | undefined) ?? []).flatMap((pid) =>
-      scenario.seed.addresses.filter((x) => x.partyId === pid && x.channel === ds.channel).slice(0, 1).map((x) => x.value),
+    ...((input.to_contact_ids as string[] | undefined) ?? []).flatMap((pid) =>
+      scenario.seed.addresses.filter((x) => x.contactId === pid && x.channel === ds.channel).slice(0, 1).map((x) => x.value),
     ),
   ];
   return {

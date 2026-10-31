@@ -46,9 +46,9 @@ export const SignalObserved = z.object({
   channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef),
-  /** Ingest 時に Directory で解決した Party（未知のアドレスなら null / 空） */
-  fromPartyId: z.string().nullable().default(null),
-  toPartyIds: z.array(z.string()).default([]),
+  /** Ingest 時に Directory で解決した Contact（未知のアドレスなら null / 空） */
+  fromContactId: z.string().nullable().default(null),
+  toContactIds: z.array(z.string()).default([]),
   subject: z.string().optional(),
   body: z.string(),
   anchors: Anchors.default({}),
@@ -139,7 +139,7 @@ export const ThreadAttributeSet = z.object({
 /**
  * 状態の写し（0010・0014）。状態を持つデータソース（Jira の課題など）の状態を、スレッドの属性に片方向で写す。
  * fields は変わった属性だけ（null は空になった）。名前はデータソースの AttributeDef。Murmur が読むのは
- * `done`（boolean。完了ならボールは「なし」）と `assignee`（party。誰の番か）だけで、ほかは見せるだけ
+ * `done`（boolean。完了ならボールは「なし」）と `assignee`（contact。誰の番か）だけで、ほかは見せるだけ
  */
 export const ThreadMirrored = z.object({
   threadId: z.string(),
@@ -164,8 +164,8 @@ export const OutboundRecorded = z.object({
   channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef),
-  fromPartyId: z.string().nullable().default(null),
-  toPartyIds: z.array(z.string()).default([]),
+  fromContactId: z.string().nullable().default(null),
+  toContactIds: z.array(z.string()).default([]),
   subject: z.string().optional(),
   body: z.string(),
   anchors: Anchors.default({}),

@@ -16,7 +16,7 @@ function observed(signalId: string, extra: Record<string, unknown> = {}) {
     channel: 'email',
     from: { channel: 'email', value: 'carol@example.com' },
     to: [{ channel: 'email', value: 'support@ubs.example' }],
-    fromPartyId: 'p_carol',
+    fromContactId: 'p_carol',
     body: '雨漏りしています',
     subject: '修繕のお願い',
     sourceRef: `src-${signalId}`,
@@ -25,13 +25,13 @@ function observed(signalId: string, extra: Record<string, unknown> = {}) {
   });
 }
 
-const sent = (signalId: string, toPartyIds = ['p_carol']) =>
+const sent = (signalId: string, toContactIds = ['p_carol']) =>
   observed(signalId, {
     direction: 'outbound',
     from: { channel: 'email', value: 'support@ubs.example' },
     to: [{ channel: 'email', value: 'carol@example.com' }],
-    fromPartyId: 'p_ubs',
-    toPartyIds,
+    fromContactId: 'p_ubs',
+    toContactIds,
   });
 
 const intoNew = (signalId: string, threadId: string, needsResponse: boolean | null = true) =>
@@ -56,7 +56,7 @@ describe('fold', () => {
       dataSourceId: 'ds_support',
       title: '雨漏り',
       ball: { kind: 'us' },
-      counterpartPartyIds: ['p_carol'],
+      counterpartContactIds: ['p_carol'],
       signalIds: ['s1'],
       unansweredSince: T0,
       lastInboundAt: T0,
@@ -71,7 +71,7 @@ describe('fold', () => {
     const log = new EventLog();
     log.push([observed('s1'), intoNew('s1', 't1')], T0);
     log.push([sent('o1'), into('o1', 't1', null)], T1);
-    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, lastOutboundAt: T1, unansweredSince: null });
+    expect(log.state().threads.t1).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, lastOutboundAt: T1, unansweredSince: null });
     expect(log.state().signals.o1!.needsResponse).toBeNull();
 
     log.push([observed('s2'), into('s2', 't1', false)], T2);
@@ -84,7 +84,7 @@ describe('fold', () => {
     const log = new EventLog();
     log.push([sent('o1'), intoNew('o1', 't1', true)], T0);
     expect(log.state().signals.o1!.needsResponse).toBeNull();
-    expect(log.state().threads.t1!.ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(log.state().threads.t1!.ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
   });
 
   it('H1 片付けるとボールは「なし」、その後のシグナルは綴じるが片付けたまま（開き直しで戻る）', () => {
@@ -158,7 +158,7 @@ describe('fold', () => {
     log.push([note('n1'), draft('SignalThreaded', { signalId: 'n1', thread: { kind: 'new', threadId: 'm1', title: '雨漏りの件' }, by: 'self', confidence: 1, reason: 'r', needsResponse: null })], T0);
     log.push([note('n2'), draft('SignalThreaded', { signalId: 'n2', thread: { kind: 'existing', threadId: 'm1' }, by: 'self', confidence: 1, reason: 'r', needsResponse: null })], T1);
     const t = log.state().threads.m1!;
-    expect(t).toMatchObject({ dataSourceId: 'ds_notes_alice', ball: { kind: 'none' }, signalIds: ['n1', 'n2'], counterpartPartyIds: [], lastOutboundAt: null });
+    expect(t).toMatchObject({ dataSourceId: 'ds_notes_alice', ball: { kind: 'none' }, signalIds: ['n1', 'n2'], counterpartContactIds: [], lastOutboundAt: null });
     expect(t.log.map((l) => l.kind)).toEqual(['note', 'note']);
   });
 
@@ -209,7 +209,7 @@ describe('fold', () => {
     let p = log.state();
     expect(p.signals.o1).toMatchObject({ direction: 'outbound', sourceRef: 'sent:<o1@x>', anchors: { messageId: '<o1@x>' }, recorded: { actorUserId: 'u_alice', replyExpectedBy: T2 } });
     expect(p.index.messageIds['ds_support|<o1@x>']).toBe('o1');
-    expect(p.threads.t1).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, replyExpectedBy: T2, replyExpectedSignalId: 'o1', overdue: false });
+    expect(p.threads.t1).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, replyExpectedBy: T2, replyExpectedSignalId: 'o1', overdue: false });
     log.push([draft('ReplyOverdue', { threadId: 't1', signalId: 'o1', replyExpectedBy: T2 })], '2026-10-16T12:00:00.000Z');
     expect(log.state().threads.t1!.overdue).toBe(true);
     log.push([observed('s2'), into('s2', 't1', false)], '2026-10-16T13:00:00.000Z');
@@ -245,7 +245,7 @@ describe('fold', () => {
     t = log.state().threads.t1!;
     expect(t).toMatchObject({ attributes: { status: '完了', done: true }, ball: { kind: 'none' }, closedAtSource: true, overdue: false, dismissed: false });
     log.push([mirrored({ done: false })], '2026-10-16T14:00:00.000Z');
-    expect(log.state().threads.t1).toMatchObject({ closedAtSource: false, ball: { kind: 'party', partyIds: ['p_carol'] }, overdue: true });
+    expect(log.state().threads.t1).toMatchObject({ closedAtSource: false, ball: { kind: 'contact', contactIds: ['p_carol'] }, overdue: true });
     expect(() => fold([...log.events, { ...mirrored({ done: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, seq: 99, at: T2 } as DomainEvent])).toThrow(
       /mirror of ds_line/,
     );
@@ -260,8 +260,8 @@ function recorded(signalId: string, merged: boolean, replyExpectedBy: string | n
     channel: 'email',
     from: { channel: 'email', value: 'support@ubs.example' },
     to: [{ channel: 'email', value: 'carol@example.com' }],
-    fromPartyId: 'p_ubs',
-    toPartyIds: ['p_carol'],
+    fromContactId: 'p_ubs',
+    toContactIds: ['p_carol'],
     body: '調査します',
     sentRef: `<${signalId}@x>`,
     replyExpectedBy,
@@ -278,7 +278,7 @@ function note(signalId: string) {
     channel: 'note',
     from: { channel: 'note', value: 'p_alice' },
     to: [],
-    fromPartyId: 'p_alice',
+    fromContactId: 'p_alice',
     body: '電話で聞いた',
     sourceRef: `note:${signalId}`,
   });

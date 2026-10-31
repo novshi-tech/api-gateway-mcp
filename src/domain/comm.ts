@@ -5,7 +5,7 @@ import type { CommState, ThreadLogEntry } from './projections';
  * 時刻順に畳み込む。本文や属性・リンク・メモは読まない。
  *
  * ボールの所在:
- * - 送った（観測された送信） → 宛先の Party
+ * - 送った（観測された送信） → 宛先の Contact
  * - 返事や対応を求める受信 → こちら。持ち主がいればその人
  * - 求めていない受信（お礼・スタンプ・了解・通知） → 相手を待っていたなら「なし」、そうでなければ変わらない
  * - 持った・引き継いだ → その人。手放した → こちら（組織）
@@ -37,7 +37,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
     switch (e.kind) {
       case 'signal':
         if (e.direction === 'outbound') {
-          ball = { kind: 'party', partyIds: e.toPartyIds ?? [] };
+          ball = { kind: 'contact', contactIds: e.toContactIds ?? [] };
           state.lastOutboundAt = e.at;
           state.unansweredSince = null;
           state.replyExpectedBy = e.replyExpectedBy ?? null;
@@ -49,7 +49,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
           state.replyExpectedSignalId = null;
           state.overdue = false;
           if (e.needsResponse === false) {
-            if (ball.kind === 'party') ball = { kind: 'none' };
+            if (ball.kind === 'contact') ball = { kind: 'none' };
           } else {
             ball = ours();
             state.unansweredSince ??= e.at;

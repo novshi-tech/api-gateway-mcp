@@ -110,7 +110,7 @@ export function createApp(opts: HttpOptions) {
       await c.var.service.recordSent(c.var.userId, {
         dataSourceId: b.data_source,
         to: b.to,
-        toPartyIds: b.to_party_ids,
+        toContactIds: b.to_contact_ids,
         subject: b.subject,
         body: b.body,
         sentRef: b.sent_ref,

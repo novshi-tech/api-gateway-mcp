@@ -214,12 +214,12 @@ export class MurmurService {
     if (!user) throw new DomainError('not_found', `user ${userId} not found`);
     return {
       user,
-      party:
-        viewer.partyId === null
+      contact:
+        viewer.contactId === null
           ? null
           : {
-              partyId: viewer.partyId,
-              name: dir.party(viewer.partyId)?.name ?? '',
+              contactId: viewer.contactId,
+              name: dir.contact(viewer.contactId)?.name ?? '',
               lists: viewer.listIds.map((id) => {
                 const ds = dir.dataSource(dir.list(id)?.dataSourceId ?? '');
                 return { id, dataSourceId: ds?.id ?? '', name: ds?.name ?? id, kind: ds?.kind ?? 'service' };

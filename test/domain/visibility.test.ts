@@ -54,7 +54,7 @@ describe('可視性', () => {
   it('H3 getListView は読者にだけ、データソースと読者と属性定義を返す', () => {
     expect(getListView(dir, alice, 'l_notes_alice')).toMatchObject({
       dataSource: { id: 'ds_notes_alice', kind: 'notes', channel: 'note' },
-      readers: [{ partyId: 'p_alice', name: 'Alice' }],
+      readers: [{ contactId: 'p_alice', name: 'Alice' }],
       attributeDefs: [{ name: 'status' }],
     });
     expect(getListView(dir, bob, 'l_notes_alice')).toBeNull();

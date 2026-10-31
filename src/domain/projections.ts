@@ -5,10 +5,10 @@ import type { Channel } from './entities';
  * ボールの所在（0014）。スレッドのイベントだけから決まる（fold は 1 段）。
  * - us: こちら（組織）。持ち主がいない。構造で誰の番かが決まらなければ仕分け待ち（クエリ層の turn.ts）
  * - user: 持ち主（ThreadClaimed で持った人）
- * - party: 相手（こちらが返事を待っている）
+ * - contact: 相手（こちらが返事を待っている）
  * - none: 誰の番でもない
  */
-export type Ball = { kind: 'us' } | { kind: 'user'; userId: string } | { kind: 'party'; partyIds: string[] } | { kind: 'none' };
+export type Ball = { kind: 'us' } | { kind: 'user'; userId: string } | { kind: 'contact'; contactIds: string[] } | { kind: 'none' };
 
 /** 通信状態。シグナルの向き・「返事や対応を求めているか」・片付けだけから機械的に導出される（comm.ts） */
 export interface CommState {
@@ -44,7 +44,7 @@ export interface ThreadLogEntry {
   signalId?: string;
   direction?: Direction;
   needsResponse?: boolean | null;
-  toPartyIds?: string[];
+  toContactIds?: string[];
   /** signal（送信の記録）: 返事期待の期限 */
   replyExpectedBy?: string | null;
   reason?: string;
@@ -75,8 +75,8 @@ export interface Thread extends CommState {
   id: string;
   dataSourceId: string;
   title: string;
-  /** 相手の Party（受信の from と送信の to から） */
-  counterpartPartyIds: string[];
+  /** 相手の Contact（受信の from と送信の to から） */
+  counterpartContactIds: string[];
   /** 時刻順（メモを含む） */
   signalIds: string[];
   log: ThreadLogEntry[];
@@ -95,8 +95,8 @@ export interface SignalRecord {
   channel: Channel;
   from: AddressRef;
   to: AddressRef[];
-  fromPartyId: string | null;
-  toPartyIds: string[];
+  fromContactId: string | null;
+  toContactIds: string[];
   subject?: string;
   body: string;
   anchors: Anchors;

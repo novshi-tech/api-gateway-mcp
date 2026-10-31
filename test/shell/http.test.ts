@@ -90,7 +90,7 @@ describe('HTTP API', () => {
 
   it('/me・スレッドの一覧と詳細・片付け・開き直し・移し替え・リストの一通り', async () => {
     const { call, service } = await app();
-    expect((await call('GET', '/api/me', 'u_alice')).body.party.partyId).toBe('p_alice');
+    expect((await call('GET', '/api/me', 'u_alice')).body.contact.contactId).toBe('p_alice');
 
     await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     const r2 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
@@ -182,7 +182,7 @@ describe('HTTP API', () => {
       reply_expected_by: '2026-10-16T21:00:00+09:00',
     });
     expect(res.status).toBe(200);
-    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'party', partyIds: ['p_carol'] } });
+    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'contact', contactIds: ['p_carol'] } });
     expect((await call('POST', '/api/sent', 'u_eve', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's' })).status).toBe(404);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', body: 'b', sent_ref: 's' })).status).toBe(400);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's', reply_expected_by: '明日' })).status).toBe(400);

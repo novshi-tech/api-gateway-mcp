@@ -16,17 +16,17 @@ export const adminHref =
 function names(dir: Directory, p: Projections) {
   return {
     ds: (id: string) => dir.dataSource(id)?.name ?? id,
-    party: (id: string) => dir.party(id)?.name ?? id,
+    contact: (id: string) => dir.contact(id)?.name ?? id,
     user: (id: string) => dir.seed.users.find((u) => u.id === id)?.name ?? id,
     thread: (id: string) => p.threads[id]?.title ?? id,
   };
 }
 
-/** 属性の値。party 型は名前で出す */
+/** 属性の値。contact 型は名前で出す */
 function attrValue(dir: Directory, dataSourceId: string, name: string, v: AttributeValue | null): string {
   if (v === null) return '(空)';
   const def = dir.attributeDefs(dataSourceId).find((d) => d.name === name);
-  return def?.type === 'party' && typeof v === 'string' ? (dir.party(v)?.name ?? v) : String(v);
+  return def?.type === 'contact' && typeof v === 'string' ? (dir.contact(v)?.name ?? v) : String(v);
 }
 
 function ballLabel(dir: Directory, p: Projections, b: Thread['ball']): string {
@@ -35,8 +35,8 @@ function ballLabel(dir: Directory, p: Projections, b: Thread['ball']): string {
     ? 'こちら'
     : b.kind === 'user'
       ? `持ち主: ${esc(n.user(b.userId))}`
-      : b.kind === 'party'
-        ? `相手: ${b.partyIds.map((id) => esc(n.party(id))).join(', ') || '(不明)'}`
+      : b.kind === 'contact'
+        ? `相手: ${b.contactIds.map((id) => esc(n.contact(id))).join(', ') || '(不明)'}`
         : 'なし';
 }
 
@@ -48,8 +48,8 @@ function turnLabel(dir: Directory, p: Projections, t: Turn): string {
       return `${t.userIds.map((id) => esc(n.user(id))).join(', ')}（${by[t.by]}）`;
     case 'triage':
       return '仕分け待ち';
-    case 'party':
-      return `相手待ち: ${t.partyIds.map((id) => esc(n.party(id))).join(', ') || '(不明)'}`;
+    case 'contact':
+      return `相手待ち: ${t.contactIds.map((id) => esc(n.contact(id))).join(', ') || '(不明)'}`;
     case 'none':
       return 'なし';
   }
@@ -124,7 +124,7 @@ ${body}
 /** 運用者の Viewer: 全データソースの読者として見る（管理画面だけで使う） */
 function operator(dir: Directory): Viewer {
   const lists = dir.seed.lists;
-  return { userId: '', partyId: null, listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) };
+  return { userId: '', contactId: null, listIds: lists.map((l) => l.id), dataSourceIds: lists.map((l) => l.dataSourceId) };
 }
 
 // ---- リスト一覧 ----

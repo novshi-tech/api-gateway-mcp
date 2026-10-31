@@ -9,7 +9,7 @@ import { canReadDataSource, type Viewer } from './viewer';
 // クエリ層の可視性。投影のスナップショットと Viewer から「見えるもの」だけを返す純関数。
 // - リストの読者には、そのデータソースのスレッドの生の中身が見える。個人のメモは本人だけ
 // - 持ち主とリンク（結び先の id）はスレッドの側にあるので、スレッドが見える人に見える。結び先の中身はその先の可視性に従う
-// - Party のない User は 0 件、ゴースト Party は Viewer になれない
+// - Contact のない User は 0 件、ゴースト Contact は Viewer になれない
 
 /**
  * - my_turn: Viewer の番（持ち主・読者が 1 人・宛先）で、片付けていないもの
@@ -28,7 +28,7 @@ export interface ThreadSummary {
   dataSourceId: string;
   title: string;
   ball: Thread['ball'];
-  counterpartPartyIds: string[];
+  counterpartContactIds: string[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
   unansweredSince: string | null;
@@ -60,7 +60,7 @@ export function summarizeThread(t: Thread): ThreadSummary {
     dataSourceId: t.dataSourceId,
     title: t.title,
     ball: t.ball,
-    counterpartPartyIds: t.counterpartPartyIds,
+    counterpartContactIds: t.counterpartContactIds,
     lastInboundAt: t.lastInboundAt,
     lastOutboundAt: t.lastOutboundAt,
     unansweredSince: t.unansweredSince,
@@ -111,7 +111,7 @@ export function listThreads(
     if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
     if (filter === 'mine') {
       const ds = dir.dataSource(t.dataSourceId);
-      if (ds?.kind !== 'notes' || ds.ownerPartyId !== viewer.partyId) continue;
+      if (ds?.kind !== 'notes' || ds.ownerContactId !== viewer.contactId) continue;
     }
     if (opts.since !== undefined && !movedSince(viewer, p, t, opts.since)) continue;
     out.push(threadItem(dir, viewer, p, t));
@@ -239,7 +239,7 @@ export function visibleSignals(viewer: Viewer, p: Projections): SignalRecord[] {
 export interface ListView {
   id: string;
   dataSource: { id: string; kind: DataSource['kind']; name: string; description: string; channel: string };
-  readers: { partyId: string; name: string }[];
+  readers: { contactId: string; name: string }[];
   attributeDefs: AttributeDef[];
 }
 
@@ -255,7 +255,7 @@ export function getListView(dir: Directory, viewer: Viewer, listId: string): Lis
   return {
     id: list.id,
     dataSource: { id: ds.id, kind: ds.kind, name: ds.name, description: ds.description, channel: ds.kind === 'service' ? ds.channel : 'note' },
-    readers: dir.readersOfList(list.id).map((p) => ({ partyId: p.id, name: p.name })),
+    readers: dir.readersOfList(list.id).map((p) => ({ contactId: p.id, name: p.name })),
     attributeDefs: dir.attributeDefs(ds.id),
   };
 }

@@ -160,8 +160,8 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): vo
     channel: p.channel,
     from: p.from,
     to: p.to,
-    fromPartyId: p.fromPartyId,
-    toPartyIds: p.toPartyIds,
+    fromContactId: p.fromContactId,
+    toContactIds: p.toContactIds,
     subject: p.subject,
     body: p.body,
     anchors: p.anchors,
@@ -213,7 +213,7 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
     signalId: sig.signalId,
     direction: sig.direction,
     needsResponse: sig.needsResponse,
-    toPartyIds: sig.direction === 'outbound' ? sig.toPartyIds : undefined,
+    toContactIds: sig.direction === 'outbound' ? sig.toContactIds : undefined,
     replyExpectedBy: sig.recorded?.replyExpectedBy ?? undefined,
   });
   recompute(s, t, e.at, c);
@@ -224,13 +224,13 @@ function recompute(s: Projections, t: Thread, at: string, c: Changes): void {
   t.log = sortLog(t.log);
   t.signalIds = t.log.filter((l) => l.kind === 'signal' || l.kind === 'note').map((l) => l.signalId!);
   Object.assign(t, deriveComm(t.log));
-  const parties = new Set<string>();
+  const contacts = new Set<string>();
   for (const id of t.signalIds) {
     const sig = s.signals[id]!;
-    if (sig.direction === 'inbound' && sig.fromPartyId) parties.add(sig.fromPartyId);
-    if (sig.direction === 'outbound') for (const p of sig.toPartyIds) parties.add(p);
+    if (sig.direction === 'inbound' && sig.fromContactId) contacts.add(sig.fromContactId);
+    if (sig.direction === 'outbound') for (const p of sig.toContactIds) contacts.add(p);
   }
-  t.counterpartPartyIds = [...parties].sort();
+  t.counterpartContactIds = [...contacts].sort();
   if (at > t.updatedAt) t.updatedAt = at;
 }
 
@@ -239,7 +239,7 @@ function newThread(id: string, dataSourceId: string, title: string, at: string):
     id,
     dataSourceId,
     title,
-    counterpartPartyIds: [],
+    counterpartContactIds: [],
     signalIds: [],
     log: [],
     links: [],

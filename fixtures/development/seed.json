@@ -2,38 +2,38 @@
   "users": [
     { "id": "u_nose", "name": "能勢" },
     { "id": "u_kato", "name": "加藤" },
-    { "id": "u_ubs_only", "name": "チームの外の人（このデプロイに Party がない）" }
+    { "id": "u_ubs_only", "name": "チームの外の人（このデプロイに Contact がない）" }
   ],
-  "parties": [
-    { "id": "p_nvt", "name": "ノブシテック", "kind": "organization", "internal": true },
-    { "id": "p_nose", "name": "能勢", "kind": "person", "userId": "u_nose", "internal": true },
-    { "id": "p_kato", "name": "加藤", "kind": "person", "userId": "u_kato", "internal": true },
-    { "id": "p_mori", "name": "森（クライアント PM）", "kind": "person" },
-    { "id": "p_jira", "name": "Jira", "kind": "organization" },
-    { "id": "p_bitbucket", "name": "Bitbucket", "kind": "organization" }
+  "contacts": [
+    { "id": "p_nvt", "name": "ノブシテック" },
+    { "id": "p_nose", "name": "能勢", "userId": "u_nose" },
+    { "id": "p_kato", "name": "加藤", "userId": "u_kato" },
+    { "id": "p_mori", "name": "森（クライアント PM）" },
+    { "id": "p_jira", "name": "Jira" },
+    { "id": "p_bitbucket", "name": "Bitbucket" }
   ],
   "addresses": [
-    { "id": "a_nose_slack", "channel": "slack", "value": "T_NVT/U_NOSE", "partyId": "p_nose" },
-    { "id": "a_kato_slack", "channel": "slack", "value": "T_NVT/U_KATO", "partyId": "p_kato" },
-    { "id": "a_mori_slack", "channel": "slack", "value": "T_CLIENT/U_MORI", "partyId": "p_mori" },
-    { "id": "a_jira_site", "channel": "jira", "value": "nvt.atlassian.net", "partyId": "p_nvt" },
-    { "id": "a_jira_bot", "channel": "jira", "value": "jira-automation@nvt.atlassian.net", "partyId": "p_jira" },
-    { "id": "a_nose_jira", "channel": "jira", "value": "acct-nose", "partyId": "p_nose" },
-    { "id": "a_kato_jira", "channel": "jira", "value": "acct-kato", "partyId": "p_kato" },
-    { "id": "a_bb_ws", "channel": "bitbucket", "value": "bitbucket.org/nvt", "partyId": "p_nvt" },
-    { "id": "a_bb_bot", "channel": "bitbucket", "value": "bitbucket-notifications@bitbucket.org", "partyId": "p_bitbucket" }
+    { "id": "a_nose_slack", "channel": "slack", "value": "T_NVT/U_NOSE", "contactId": "p_nose" },
+    { "id": "a_kato_slack", "channel": "slack", "value": "T_NVT/U_KATO", "contactId": "p_kato" },
+    { "id": "a_mori_slack", "channel": "slack", "value": "T_CLIENT/U_MORI", "contactId": "p_mori" },
+    { "id": "a_jira_site", "channel": "jira", "value": "nvt.atlassian.net", "contactId": "p_nvt" },
+    { "id": "a_jira_bot", "channel": "jira", "value": "jira-automation@nvt.atlassian.net", "contactId": "p_jira" },
+    { "id": "a_nose_jira", "channel": "jira", "value": "acct-nose", "contactId": "p_nose" },
+    { "id": "a_kato_jira", "channel": "jira", "value": "acct-kato", "contactId": "p_kato" },
+    { "id": "a_bb_ws", "channel": "bitbucket", "value": "bitbucket.org/nvt", "contactId": "p_nvt" },
+    { "id": "a_bb_bot", "channel": "bitbucket", "value": "bitbucket-notifications@bitbucket.org", "contactId": "p_bitbucket" }
   ],
   "credentialRefs": [
     { "id": "c_nose_slack", "principal": { "kind": "user", "userId": "u_nose" }, "addressId": "a_nose_slack" },
-    { "id": "c_jira", "principal": { "kind": "organization" }, "addressId": "a_jira_site" },
-    { "id": "c_bb", "principal": { "kind": "organization" }, "addressId": "a_bb_ws" }
+    { "id": "c_jira", "principal": { "kind": "team" }, "addressId": "a_jira_site" },
+    { "id": "c_bb", "principal": { "kind": "team" }, "addressId": "a_bb_ws" }
   ],
   "dataSources": [
     { "kind": "service", "id": "ds_slack_client", "channel": "slack", "name": "Slack 共有チャンネル #client-mori", "description": "クライアント PM（森さん）との共有チャンネル。能勢の資格情報で取り込む", "credentialRefId": "c_nose_slack", "selfAddressIds": ["a_nose_slack"], "group": true },
     { "kind": "service", "id": "ds_jira", "channel": "jira", "name": "Jira プロジェクト NVT", "description": "開発の課題。1 課題 1 スレッド", "credentialRefId": "c_jira", "selfAddressIds": ["a_jira_site", "a_nose_jira", "a_kato_jira"] },
     { "kind": "service", "id": "ds_bitbucket", "channel": "bitbucket", "name": "Bitbucket nvt/web", "description": "プルリクエストとパイプラインの通知", "credentialRefId": "c_bb", "selfAddressIds": ["a_bb_ws"] },
-    { "kind": "notes", "id": "ds_notes_nose", "name": "能勢のメモ", "ownerPartyId": "p_nose" },
-    { "kind": "notes", "id": "ds_notes_kato", "name": "加藤のメモ", "ownerPartyId": "p_kato" }
+    { "kind": "notes", "id": "ds_notes_nose", "name": "能勢のメモ", "ownerContactId": "p_nose" },
+    { "kind": "notes", "id": "ds_notes_kato", "name": "加藤のメモ", "ownerContactId": "p_kato" }
   ],
   "lists": [
     { "id": "l_slack_client", "dataSourceId": "ds_slack_client" },
@@ -43,17 +43,17 @@
     { "id": "l_notes_kato", "dataSourceId": "ds_notes_kato" }
   ],
   "listMembers": [
-    { "listId": "l_slack_client", "partyId": "p_nose" },
-    { "listId": "l_jira", "partyId": "p_nose" },
-    { "listId": "l_jira", "partyId": "p_kato" },
-    { "listId": "l_bitbucket", "partyId": "p_nose" },
-    { "listId": "l_bitbucket", "partyId": "p_kato" },
-    { "listId": "l_notes_nose", "partyId": "p_nose" },
-    { "listId": "l_notes_kato", "partyId": "p_kato" }
+    { "listId": "l_slack_client", "contactId": "p_nose" },
+    { "listId": "l_jira", "contactId": "p_nose" },
+    { "listId": "l_jira", "contactId": "p_kato" },
+    { "listId": "l_bitbucket", "contactId": "p_nose" },
+    { "listId": "l_bitbucket", "contactId": "p_kato" },
+    { "listId": "l_notes_nose", "contactId": "p_nose" },
+    { "listId": "l_notes_kato", "contactId": "p_kato" }
   ],
   "attributeDefs": [
     { "dataSourceId": "ds_jira", "name": "status", "type": "string", "description": "課題のステータス（Jira の写し）" },
-    { "dataSourceId": "ds_jira", "name": "assignee", "type": "party", "description": "担当者（Jira の写し）。読者のユーザーならその人の番" },
+    { "dataSourceId": "ds_jira", "name": "assignee", "type": "contact", "description": "担当者（Jira の写し）。読者のユーザーならその人の番" },
     { "dataSourceId": "ds_jira", "name": "priority", "type": "string", "description": "優先度（Jira の写し）" },
     { "dataSourceId": "ds_jira", "name": "due", "type": "date", "description": "期日（Jira の写し）" },
     { "dataSourceId": "ds_jira", "name": "done", "type": "boolean", "description": "完了しているか（Jira の写し）。完了ならボールは「なし」" }

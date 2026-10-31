@@ -43,7 +43,7 @@ export class MemoryProjectionStore implements ProjectionStore {
 export class MemoryMasterStore implements MasterStore {
   private seed: Seed = Seed.parse({
     users: [],
-    parties: [],
+    contacts: [],
     addresses: [],
     lists: [],
     listMembers: [],

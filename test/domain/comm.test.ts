@@ -6,7 +6,7 @@ import { deriveComm, type ThreadLogEntry } from '../../src/domain';
 const at = (h: number) => `2026-10-16T${String(h).padStart(2, '0')}:00:00.000Z`;
 let seq = 0;
 const inbound = (h: number, needsResponse: boolean | null = true): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'signal', direction: 'inbound', needsResponse });
-const outbound = (h: number, toPartyIds = ['p_carol']): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'signal', direction: 'outbound', needsResponse: null, toPartyIds });
+const outbound = (h: number, toContactIds = ['p_carol']): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'signal', direction: 'outbound', needsResponse: null, toContactIds });
 const dismissed = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'dismissed', reason: 'r' });
 const reopened = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'reopened' });
 const claimed = (h: number, userId: string | null): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'claimed', userId });
@@ -19,7 +19,7 @@ describe('deriveComm', () => {
 
   it('求める受信 → こちら、送信 → 相手、求めない受信 → 相手待ちなら「なし」', () => {
     expect(deriveComm([inbound(9)]).ball).toEqual({ kind: 'us' });
-    expect(deriveComm([inbound(9), outbound(10)]).ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(deriveComm([inbound(9), outbound(10)]).ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
     expect(deriveComm([inbound(9), outbound(10), inbound(11, false)]).ball).toEqual({ kind: 'none' });
   });
 
@@ -48,14 +48,14 @@ describe('deriveComm', () => {
     expect(deriveComm(xs)).toMatchObject({ ball: { kind: 'none' }, dismissed: true, dismissedAt: at(10), activeSinceDismissed: false });
     const later = [...xs, outbound(11)];
     expect(deriveComm(later)).toMatchObject({ ball: { kind: 'none' }, activeSinceDismissed: true, lastOutboundAt: at(11) });
-    expect(deriveComm([...later, reopened(12)])).toMatchObject({ ball: { kind: 'party', partyIds: ['p_carol'] }, dismissed: false });
+    expect(deriveComm([...later, reopened(12)])).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, dismissed: false });
   });
 
   it('H4 持つとボールはその人へ、こちらの番はその後も持ち主へ。手放すとこちら（組織）、引き継ぐと移る', () => {
     expect(deriveComm([inbound(9), claimed(10, 'u_alice')])).toMatchObject({ ball: { kind: 'user', userId: 'u_alice' }, ownerUserId: 'u_alice' });
     // 送れば相手、返事が来れば持ち主に戻る
     const xs = [inbound(9), claimed(10, 'u_alice'), outbound(11)];
-    expect(deriveComm(xs).ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(deriveComm(xs).ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
     expect(deriveComm([...xs, inbound(12)]).ball).toEqual({ kind: 'user', userId: 'u_alice' });
     expect(deriveComm([...xs, inbound(12), claimed(13, 'u_bob')]).ball).toEqual({ kind: 'user', userId: 'u_bob' });
     expect(deriveComm([...xs, inbound(12), claimed(13, null)])).toMatchObject({ ball: { kind: 'us' }, ownerUserId: null });
@@ -65,6 +65,6 @@ describe('deriveComm', () => {
 
   it('H2 メモ・リンク・属性はボールを動かさない', () => {
     expect(deriveComm([other(9, 'note'), other(10, 'linked'), other(11, 'attribute')])).toEqual(deriveComm([]));
-    expect(deriveComm([inbound(9), outbound(10), other(11, 'linked')]).ball).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(deriveComm([inbound(9), outbound(10), other(11, 'linked')]).ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
   });
 });

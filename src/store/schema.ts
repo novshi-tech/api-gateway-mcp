@@ -46,7 +46,7 @@ export const signals = sqliteTable('signals', {
 
 // ---- マスタ ----
 
-/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / parties ...） */
+/** プロトタイプのマスタは seed.json の形をそのまま 1 行ずつ置く（kind = users / contacts ...） */
 export const master = sqliteTable(
   'master',
   {

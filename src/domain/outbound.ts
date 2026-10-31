@@ -13,8 +13,8 @@ export interface RecordSentInput {
   dataSourceId: string;
   /** 宛先のアドレス（チャネルはデータソースのもの） */
   to: string[];
-  /** 宛先の Party（そのチャネルの有効なアドレスに直す） */
-  toPartyIds: string[];
+  /** 宛先の Contact（そのチャネルの有効なアドレスに直す） */
+  toContactIds: string[];
   subject?: string;
   body: string;
   /** メールの Message-ID・Slack の ts・LINE の sentMessages[].id・Jira の課題キーやコメント ID */
@@ -51,16 +51,16 @@ export function recordSent(
   if (!input.sentRef.trim()) throw new DomainError('invalid', 'sent_ref is required');
 
   const to: AddressRef[] = input.to.map((value) => ({ channel: ds.channel, value }));
-  for (const partyId of input.toPartyIds) {
-    const address = ctx.dir.party(partyId) ? ctx.dir.addressesOfParty(partyId, ds.channel, ctx.now)[0] : undefined;
-    if (!address) throw new DomainError('invalid', `party ${partyId} has no ${ds.channel} address`);
+  for (const contactId of input.toContactIds) {
+    const address = ctx.dir.contact(contactId) ? ctx.dir.addressesOfContact(contactId, ds.channel, ctx.now)[0] : undefined;
+    if (!address) throw new DomainError('invalid', `contact ${contactId} has no ${ds.channel} address`);
     if (!to.some((a) => a.value === address.value)) to.push({ channel: ds.channel, value: address.value });
   }
-  if (to.length === 0) throw new DomainError('invalid', 'to or to_party_ids is required');
-  const toPartyIds = [...new Set(to.map((a) => ctx.dir.partyIdOfAddress(a, ctx.now)).filter((x): x is string => x !== null))];
+  if (to.length === 0) throw new DomainError('invalid', 'to or to_contact_ids is required');
+  const toContactIds = [...new Set(to.map((a) => ctx.dir.contactIdOfAddress(a, ctx.now)).filter((x): x is string => x !== null))];
   // 送った人のアドレスがデータソースの送信元にあればそれ（Jira のアカウントなど）、なければデータソースの代表
   const fromAddress =
-    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && a.partyId === viewer.partyId) ??
+    ds.selfAddressIds.map((id) => ctx.dir.address(id)).find((a) => a !== undefined && a.contactId === viewer.contactId) ??
     ctx.dir.address(ds.selfAddressIds[0]!)!;
   const from: AddressRef = { channel: ds.channel, value: fromAddress.value };
 
@@ -85,8 +85,8 @@ export function recordSent(
       channel: ds.channel,
       from,
       to,
-      fromPartyId: fromAddress.partyId,
-      toPartyIds,
+      fromContactId: fromAddress.contactId,
+      toContactIds,
       subject: input.subject,
       body: input.body,
       anchors,

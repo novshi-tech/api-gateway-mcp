@@ -39,7 +39,7 @@ export const RecordSentBody = z
     data_source: z.string(),
     /** 宛先のアドレス（チャネルはデータソースのもの） */
     to: z.array(z.string()).default([]),
-    to_party_ids: z.array(z.string()).default([]),
+    to_contact_ids: z.array(z.string()).default([]),
     subject: z.string().optional(),
     body: z.string().min(1),
     sent_ref: z.string().min(1),
@@ -57,7 +57,7 @@ export const RecordSentBody = z
     source_thread_id: z.string().optional(),
     reply_expected_by: Instant.optional(),
   })
-  .refine((b) => b.to.length + b.to_party_ids.length > 0, { message: 'to か to_party_ids のどちらかが要る' });
+  .refine((b) => b.to.length + b.to_contact_ids.length > 0, { message: 'to か to_contact_ids のどちらかが要る' });
 
 export const SetAttributeBody = z.object({ name: z.string(), value: z.unknown() });
 
@@ -88,7 +88,7 @@ export const InboundSignalBody = z.object({
   sourceRef: z.string(),
 });
 
-/** 状態の写し（ダミーの Jira など）。fields の party 型はそのチャネルのアドレス */
+/** 状態の写し（ダミーの Jira など）。fields の contact 型はそのチャネルのアドレス */
 export const InboundMirrorBody = z.object({
   kind: z.literal('mirror'),
   dataSourceId: z.string(),

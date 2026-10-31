@@ -25,13 +25,13 @@ describe('prepareInbound', () => {
     expect(prepareInbound(log.state(), ctx, email({ dataSourceId: 'ds_alice', from: 'carol@example.com', sourceRef: 'r1', to: ['alice@ubs.example'] })).kind).toBe('signal');
   });
 
-  it('H6 direction は from がデータソースの送信元かどうかで機械的に決まり、Party を解決する', () => {
+  it('H6 direction は from がデータソースの送信元かどうかで機械的に決まり、Contact を解決する', () => {
     const p = new EventLog().state();
     const ctx = makeCtx();
     const out = prepareInbound(p, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'r1' }));
-    expect(out.kind === 'signal' && out.payload).toMatchObject({ direction: 'outbound', fromPartyId: 'p_ubs', toPartyIds: ['p_carol'] });
+    expect(out.kind === 'signal' && out.payload).toMatchObject({ direction: 'outbound', fromContactId: 'p_ubs', toContactIds: ['p_carol'] });
     const inb = prepareInbound(p, ctx, email({ from: 'stranger@example.com', sourceRef: 'r2' }));
-    expect(inb.kind === 'signal' && inb.payload).toMatchObject({ direction: 'inbound', fromPartyId: null, toPartyIds: ['p_ubs'] });
+    expect(inb.kind === 'signal' && inb.payload).toMatchObject({ direction: 'inbound', fromContactId: null, toContactIds: ['p_ubs'] });
     // 社員の個人アドレスからでも、support@ のデータソースでは受信
     const staff = prepareInbound(p, ctx, email({ from: 'alice@ubs.example', sourceRef: 'r3' }));
     expect(staff.kind === 'signal' && staff.payload.direction).toBe('inbound');
@@ -122,7 +122,7 @@ describe('区切り（H6）', () => {
     const abs = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l1' }), () => answer({ title: '欠勤' }));
     const ask = ingestPure(log, ctx, line({ from: '@ubs', to: 'U_dave', sourceRef: 'l2', body: '代わりに入れますか？' }));
     expect(ask.outcome).toMatchObject({ newThread: true, by: 'no_match', needsResponse: null });
-    expect(log.state().threads[ask.outcome!.threadId]!.ball).toEqual({ kind: 'party', partyIds: [] });
+    expect(log.state().threads[ask.outcome!.threadId]!.ball).toEqual({ kind: 'contact', contactIds: [] });
 
     // Dave（未知のアドレス）の返事は、Dave を待っている打診のスレッドに入る
     const yes = ingestPure(log, ctx, line({ from: 'U_dave', sourceRef: 'l3', body: '入れます' }), (req) => {
@@ -169,7 +169,7 @@ describe('区切り（H6）', () => {
     expect(other.outcome).toMatchObject({ by: 'no_match', newThread: true });
 
     // 片付けたスレッドは候補から外れる。直近の順に並ぶ
-    const threads = Object.values(log.state().threads).filter((x) => x.counterpartPartyIds.includes('p_carol'));
+    const threads = Object.values(log.state().threads).filter((x) => x.counterpartContactIds.includes('p_carol'));
     log.push([draft('ThreadDismissed', { threadId: threads.at(-1)!.id, actorUserId: 'u_alice', reason: 'x' })], t(6));
     ctx.setNow(t(7));
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'c9' }), (req) => {

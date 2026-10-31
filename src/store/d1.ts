@@ -168,7 +168,7 @@ export class D1ProjectionStore implements ProjectionStore {
   }
 }
 
-export const SEED_KINDS = ['users', 'parties', 'addresses', 'credentialRefs', 'dataSources', 'lists', 'listMembers', 'attributeDefs'] as const;
+export const SEED_KINDS = ['users', 'contacts', 'addresses', 'credentialRefs', 'dataSources', 'lists', 'listMembers', 'attributeDefs'] as const;
 
 export class D1MasterStore implements MasterStore {
   constructor(private readonly db: Db) {}

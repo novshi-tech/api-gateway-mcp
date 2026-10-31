@@ -21,12 +21,12 @@ const seed = Seed.parse({
   ...base,
   addresses: [
     ...base.addresses,
-    { id: 'a_jira_site', channel: 'jira', value: 'ubs.atlassian.net', partyId: 'p_ubs' },
-    { id: 'a_alice_jira', channel: 'jira', value: 'jira:alice', partyId: 'p_alice' },
-    { id: 'a_bob_jira', channel: 'jira', value: 'jira:bob', partyId: 'p_bob' },
-    { id: 'a_carol_jira', channel: 'jira', value: 'jira:carol', partyId: 'p_carol' },
+    { id: 'a_jira_site', channel: 'jira', value: 'ubs.atlassian.net', contactId: 'p_ubs' },
+    { id: 'a_alice_jira', channel: 'jira', value: 'jira:alice', contactId: 'p_alice' },
+    { id: 'a_bob_jira', channel: 'jira', value: 'jira:bob', contactId: 'p_bob' },
+    { id: 'a_carol_jira', channel: 'jira', value: 'jira:carol', contactId: 'p_carol' },
   ],
-  credentialRefs: [...base.credentialRefs, { id: 'c_jira', principal: { kind: 'organization' }, addressId: 'a_jira_site' }],
+  credentialRefs: [...base.credentialRefs, { id: 'c_jira', principal: { kind: 'team' }, addressId: 'a_jira_site' }],
   dataSources: [
     ...base.dataSources,
     {
@@ -39,11 +39,11 @@ const seed = Seed.parse({
     },
   ],
   lists: [...base.lists, { id: 'l_jira', dataSourceId: 'ds_jira' }],
-  listMembers: [...base.listMembers, { listId: 'l_jira', partyId: 'p_alice' }, { listId: 'l_jira', partyId: 'p_bob' }],
+  listMembers: [...base.listMembers, { listId: 'l_jira', contactId: 'p_alice' }, { listId: 'l_jira', contactId: 'p_bob' }],
   attributeDefs: [
     ...base.attributeDefs,
     { dataSourceId: 'ds_jira', name: 'status', type: 'string', description: '課題のステータス' },
-    { dataSourceId: 'ds_jira', name: 'assignee', type: 'party', description: '担当者' },
+    { dataSourceId: 'ds_jira', name: 'assignee', type: 'contact', description: '担当者' },
     { dataSourceId: 'ds_jira', name: 'due', type: 'date', description: '期日' },
     { dataSourceId: 'ds_jira', name: 'done', type: 'boolean', description: '完了しているか' },
   ],
@@ -81,7 +81,7 @@ const mirror = (key: string, fields: InboundMirror['fields'], ref = 'u1'): Inbou
 const answer = (needs_response: boolean) => () => ({ thread: null, thread_id: null, title: null, needs_response, reason: 'r', confidence: 1 });
 
 describe('状態の写し（planMirror）', () => {
-  it('H9 課題キーのスレッドに、変わった属性だけを写す。担当者のアカウントは Party に直す。同じ値なら何もしない', () => {
+  it('H9 課題キーのスレッドに、変わった属性だけを写す。担当者のアカウントは Contact に直す。同じ値なら何もしない', () => {
     const log = new EventLog();
     const ctx = ctxAt();
     expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手' }))).toEqual({ kind: 'no_thread', threadKey: 'UBS-1' });
@@ -125,7 +125,7 @@ describe('担当者で決まる誰の番（turnOf）', () => {
     expect(turn()).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'owner' });
     log.push([draft('ThreadClaimed', { threadId: id, userId: null, actorUserId: 'u_bob' })], '2026-10-16T09:30:00.000Z');
     apply({ assignee: 'jira:carol' }, 'u2', '2026-10-16T09:40:00.000Z');
-    expect(turn()).toEqual({ kind: 'party', partyIds: ['p_carol'] });
+    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
     apply({ assignee: 'jira:alice', done: true }, 'u3', '2026-10-16T09:50:00.000Z');
     expect(turn()).toEqual({ kind: 'none' });
   });
@@ -146,7 +146,7 @@ describe('起票とコメントの記録（Jira）', () => {
     const filed = recordSent(log.state(), alice, ctx, {
       dataSourceId: 'ds_jira',
       to: [],
-      toPartyIds: ['p_bob'],
+      toContactIds: ['p_bob'],
       subject: '雨漏りの修繕',
       body: 'Carol さんから雨漏りの連絡。Bob さん現地確認をお願いします',
       sentRef: 'UBS-9',
@@ -154,7 +154,7 @@ describe('起票とコメントの記録（Jira）', () => {
     });
     log.push(filed.events, ctx.now);
     let p = log.state();
-    expect(p.signals[filed.signalId]).toMatchObject({ direction: 'outbound', from: { value: 'jira:alice' }, toPartyIds: ['p_bob'] });
+    expect(p.signals[filed.signalId]).toMatchObject({ direction: 'outbound', from: { value: 'jira:alice' }, toContactIds: ['p_bob'] });
     expect(p.threads[filed.threadId]!.links).toMatchObject([{ threadId: support.outcome!.threadId, route: 'sent' }]);
 
     const plan = planMirror(p, ctx, mirror('UBS-9', { status: '未着手', assignee: 'jira:bob', done: false }));
@@ -183,7 +183,7 @@ describe('起票とコメントの記録（Jira）', () => {
     const rec = recordSent(log.state(), alice, ctx, {
       dataSourceId: 'ds_jira',
       to: ['jira:carol'],
-      toPartyIds: [],
+      toContactIds: [],
       body: '明日伺います',
       sentRef: 'UBS-1#c7',
       anchors: { threadKey: 'UBS-1' },

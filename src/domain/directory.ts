@@ -1,4 +1,4 @@
-import type { Address, AttributeDef, Channel, DataSource, List, Party, Seed } from './entities';
+import type { Address, AttributeDef, Channel, DataSource, List, Contact, Seed } from './entities';
 import type { AddressRef } from './events';
 
 /**
@@ -8,8 +8,8 @@ import type { AddressRef } from './events';
 export class Directory {
   constructor(readonly seed: Seed) {}
 
-  party(partyId: string): Party | undefined {
-    return this.seed.parties.find((p) => p.id === partyId);
+  contact(contactId: string): Contact | undefined {
+    return this.seed.contacts.find((p) => p.id === contactId);
   }
 
   dataSource(dataSourceId: string): DataSource | undefined {
@@ -24,18 +24,18 @@ export class Directory {
     return this.seed.lists.find((l) => l.dataSourceId === dataSourceId);
   }
 
-  /** User の Party（このデプロイに 1 つまで）。ゴースト Party は User を持たないので出てこない */
-  partyOfUser(userId: string): Party | undefined {
-    return this.seed.parties.find((p) => p.userId === userId);
+  /** User の Contact（このデプロイに 1 つまで）。ゴースト Contact は User を持たないので出てこない */
+  contactOfUser(userId: string): Contact | undefined {
+    return this.seed.contacts.find((p) => p.userId === userId);
   }
 
-  listIdsOfParty(partyId: string): string[] {
-    return this.seed.listMembers.filter((m) => m.partyId === partyId).map((m) => m.listId);
+  listIdsOfContact(contactId: string): string[] {
+    return this.seed.listMembers.filter((m) => m.contactId === contactId).map((m) => m.listId);
   }
 
-  readersOfList(listId: string): Party[] {
-    const ids = new Set(this.seed.listMembers.filter((m) => m.listId === listId).map((m) => m.partyId));
-    return this.seed.parties.filter((p) => ids.has(p.id));
+  readersOfList(listId: string): Contact[] {
+    const ids = new Set(this.seed.listMembers.filter((m) => m.listId === listId).map((m) => m.contactId));
+    return this.seed.contacts.filter((p) => ids.has(p.id));
   }
 
   attributeDefs(dataSourceId: string): AttributeDef[] {
@@ -51,13 +51,13 @@ export class Directory {
     return this.seed.addresses.find((a) => a.channel === ref.channel && sameValue(a.value, ref.value) && isValidAt(a, at));
   }
 
-  partyIdOfAddress(ref: AddressRef, at?: string): string | null {
-    return this.findAddress(ref, at)?.partyId ?? null;
+  contactIdOfAddress(ref: AddressRef, at?: string): string | null {
+    return this.findAddress(ref, at)?.contactId ?? null;
   }
 
-  addressesOfParty(partyId: string, channel?: Channel, at?: string): Address[] {
+  addressesOfContact(contactId: string, channel?: Channel, at?: string): Address[] {
     return this.seed.addresses.filter(
-      (a) => a.partyId === partyId && (channel === undefined || a.channel === channel) && isValidAt(a, at),
+      (a) => a.contactId === contactId && (channel === undefined || a.channel === channel) && isValidAt(a, at),
     );
   }
 
@@ -84,7 +84,7 @@ function isValidAt(a: Address, at?: string): boolean {
 
 /**
  * マスタの整合性（H3 の前提）。問題の一覧を返す（空なら整合している）。
- * - User の Party は 1 つまで（1 デプロイ = 1 チーム、0020・0021）
+ * - User の Contact は 1 つまで（1 デプロイ = 1 チーム、0020・0021）
  * - データソース 1 つにリスト 1 つ
  * - 個人のメモのリストの読者は本人だけ
  * - 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない。共有のデータソースは組織の資格情報（0013）
@@ -93,8 +93,8 @@ export function seedProblems(seed: Seed): string[] {
   const dir = new Directory(seed);
   const problems: string[] = [];
   for (const u of seed.users) {
-    const parties = seed.parties.filter((p) => p.userId === u.id);
-    if (parties.length > 1) problems.push(`user ${u.id}: Party が ${parties.length} 個（1 個まで）`);
+    const contacts = seed.contacts.filter((p) => p.userId === u.id);
+    if (contacts.length > 1) problems.push(`user ${u.id}: Contact が ${contacts.length} 個（1 個まで）`);
   }
   for (const ds of seed.dataSources) {
     const lists = seed.lists.filter((l) => l.dataSourceId === ds.id);
@@ -108,8 +108,8 @@ export function seedProblems(seed: Seed): string[] {
       if (!r.userId) problems.push(`list ${list.id}: 読者 ${r.id} がゴースト（User を持たない）`);
     }
     if (ds.kind === 'notes') {
-      if (readers.length !== 1 || readers[0]!.id !== ds.ownerPartyId) {
-        problems.push(`data source ${ds.id}: 個人のメモの読者は本人（${ds.ownerPartyId}）だけ`);
+      if (readers.length !== 1 || readers[0]!.id !== ds.ownerContactId) {
+        problems.push(`data source ${ds.id}: 個人のメモの読者は本人（${ds.ownerContactId}）だけ`);
       }
       continue;
     }

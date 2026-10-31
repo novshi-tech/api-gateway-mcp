@@ -10,35 +10,33 @@ export type Channel = z.infer<typeof Channel>;
 /** 資格情報の主体 */
 export const Principal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user'), userId: z.string() }),
-  /** 組織（このデプロイのチーム、0020・0021） */
-  z.object({ kind: z.literal('organization') }),
+  /** このデプロイのチーム（0020・0021）。共有のデータソースはチームの資格情報で取る（0013） */
+  z.object({ kind: z.literal('team') }),
 ]);
 export type Principal = z.infer<typeof Principal>;
 
-/** ゲートウェイの User と 1:1。このデプロイ（チーム）の Party は 1 つまで */
+/** ゲートウェイの User と 1:1。このデプロイ（チーム）の Contact は 1 つまで */
 export const User = z.object({ id: z.string(), name: z.string() });
 export type User = z.infer<typeof User>;
 
 /**
- * 人物／組織。internal = 自分側（自社とその社員）。
- * userId を持たない Party がゴースト。
+ * 連絡の相手（0030）。アドレスを束ねたもので、人か会社の窓口かボットかは区別しない。
+ * 自分も Contact の 1 つで、User に結ばれている。userId を持たない Contact がゴースト。
  */
-export const Party = z.object({
+export const Contact = z.object({
   id: z.string(),
   name: z.string(),
-  kind: z.enum(['person', 'organization']),
   userId: z.string().optional(),
-  internal: z.boolean().default(false),
   /** 外部マスタ（bm-next・board・freee など）へのポインタの束 */
   externalRefs: z.record(z.string(), z.string()).default({}),
 });
-export type Party = z.infer<typeof Party>;
+export type Contact = z.infer<typeof Contact>;
 
 export const Address = z.object({
   id: z.string(),
   channel: Channel,
   value: z.string(),
-  partyId: z.string(),
+  contactId: z.string(),
   validFrom: z.string().optional(),
   validTo: z.string().optional(),
 });
@@ -76,7 +74,7 @@ export const DataSource = z.discriminatedUnion('kind', [
     id: z.string(),
     name: z.string(),
     description: z.string().default(''),
-    ownerPartyId: z.string(),
+    ownerContactId: z.string(),
   }),
 ]);
 export type DataSource = z.infer<typeof DataSource>;
@@ -87,10 +85,10 @@ export const List = z.object({ id: z.string(), dataSourceId: z.string() });
 export type List = z.infer<typeof List>;
 
 /** リストの読者 */
-export const ListMember = z.object({ listId: z.string(), partyId: z.string() });
+export const ListMember = z.object({ listId: z.string(), contactId: z.string() });
 export type ListMember = z.infer<typeof ListMember>;
 
-export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'party']);
+export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'contact']);
 /** 本人が付ける属性の定義。データソースに付く（ステップ 3 で使う） */
 export const AttributeDef = z.object({
   dataSourceId: z.string(),
@@ -105,7 +103,7 @@ export type AttributeDef = z.infer<typeof AttributeDef>;
 
 export const Seed = z.object({
   users: z.array(User),
-  parties: z.array(Party),
+  contacts: z.array(Contact),
   addresses: z.array(Address),
   credentialRefs: z.array(CredentialRef).default([]),
   dataSources: z.array(DataSource).default([]),
