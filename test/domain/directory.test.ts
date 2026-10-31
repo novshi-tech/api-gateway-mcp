@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, canReadDataSource, deriveViewer, isOurs, Seed, seedProblems, type SeedInput } from '../../src/domain';
+import { canonicalJson, canReadDataSource, deriveViewer, Directory, isOurs, Seed, seedProblems, type SeedInput } from '../../src/domain';
 import { bearerToken, checkClaims, selectKey, splitCompactJws, base64UrlEncode, base64UrlDecode } from '../../src/auth/claims';
 import { dir, seed } from '../helpers/world';
 
@@ -21,7 +21,7 @@ describe('Directory', () => {
     // 読者でない User の Contact（Eve は LINE の読者ではない）はこちらではない
     expect(isOurs(dir, dir.dataSource('ds_line')!, { channel: 'line', value: 'U_carol' })).toBe(false);
     expect(isOurs(dir, dir.dataSource('ds_notes_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
-    expect(isOurs(dir, dir.dataSource('ds_notes_alice')!, { channel: 'note', value: 'p_alice' })).toBe(true);
+    expect(isOurs(dir, dir.dataSource('ds_notes_alice')!, { channel: 'note', value: 'u_alice' })).toBe(true);
   });
 
   it('H3 Viewer は User の Contact と、読者になっているリスト・データソースを束ねる', () => {
@@ -34,7 +34,7 @@ describe('Directory', () => {
     });
     expect(canReadDataSource(v, 'ds_alice')).toBe(true);
     expect(canReadDataSource(v, 'ds_line')).toBe(false);
-    // このデプロイに Contact のない User（チームの外）は何も読めない
+    // 読者になっているリストがない User（チームの外）は何も読めない
     expect(deriveViewer(dir, 'u_mallory')).toEqual({ userId: 'u_mallory', contactId: null, listIds: [], dataSourceIds: [] });
     // ゴースト Contact は Viewer になれない
     expect(deriveViewer(dir, 'p_carol').contactId).toBeNull();
@@ -58,17 +58,20 @@ describe('H3 マスタの整合性（seedProblems）', () => {
   });
 
   it('個人のメモの読者は本人だけ', () => {
-    expect(broken((s) => s.listMembers!.push({ listId: 'l_notes_alice', contactId: 'p_bob' })).join()).toMatch(/個人のメモの読者は本人/);
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_notes_alice', userId: 'u_bob' })).join()).toMatch(/個人のメモの読者は本人/);
   });
 
   it('個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない', () => {
-    expect(broken((s) => s.listMembers!.push({ listId: 'l_alice', contactId: 'p_bob' })).join()).toMatch(/個人の資格情報/);
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_alice', userId: 'u_bob' })).join()).toMatch(/個人の資格情報/);
     // 組織の資格情報なら読者が複数でよい
-    expect(broken((s) => s.listMembers!.push({ listId: 'l_line', contactId: 'p_alice' }))).toEqual([]);
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_line', userId: 'u_alice' }))).toEqual([]);
   });
 
-  it('読者は User を持つ Contact だけ（ゴーストは読者になれない）', () => {
-    expect(broken((s) => s.listMembers!.push({ listId: 'l_support', contactId: 'p_carol' })).join()).toMatch(/ゴースト/);
+  it('H3 読者は User（0030。ゴーストの Contact は読者になれない）。Contact のない User も読者になれる', () => {
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_support', userId: 'u_carol' })).join()).toMatch(/読者 u_carol が User ではない/);
+    expect(broken((s) => s.listMembers!.push({ listId: 'l_line', userId: 'u_mallory' }))).toEqual([]);
+    const s = Seed.parse({ ...seed, listMembers: [...seed.listMembers, { listId: 'l_line', userId: 'u_mallory' }] });
+    expect(deriveViewer(new Directory(s), 'u_mallory')).toMatchObject({ contactId: null, listIds: ['l_line'] });
   });
 
   it('User の Contact は 1 つまで（1 デプロイ = 1 チーム）', () => {

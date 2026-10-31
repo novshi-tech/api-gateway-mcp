@@ -62,14 +62,14 @@ describe('スタンドの操作', () => {
       code: 'not_found',
     });
     await expect(service.getList('u_bob', 'l_alice')).rejects.toMatchObject({ code: 'not_found' });
-    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ contactId: 'p_alice', name: 'Alice' }]);
+    expect((await service.getList('u_alice', 'l_alice')).readers).toEqual([{ userId: 'u_alice', name: 'Alice', contactId: 'p_alice' }]);
   });
 
   it('/me は User と Contact と、読者になっているリスト（データソース）を返す', async () => {
     const { service } = await makeService(seed);
     const me = await service.me('u_alice');
     expect(me.contact?.contactId).toBe('p_alice');
-    expect(me.contact!.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
+    expect(me.lists.map((l) => [l.id, l.dataSourceId, l.kind])).toEqual([
       ['l_support', 'ds_support', 'service'],
       ['l_alice', 'ds_alice', 'service'],
       ['l_notes_alice', 'ds_notes_alice', 'notes'],

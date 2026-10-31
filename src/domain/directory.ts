@@ -1,4 +1,4 @@
-import type { Address, AttributeDef, Channel, DataSource, List, Contact, Seed } from './entities';
+import type { Address, AttributeDef, Channel, DataSource, List, Contact, Seed, User } from './entities';
 import type { AddressRef } from './events';
 
 /**
@@ -29,13 +29,24 @@ export class Directory {
     return this.seed.contacts.find((p) => p.userId === userId);
   }
 
-  listIdsOfContact(contactId: string): string[] {
-    return this.seed.listMembers.filter((m) => m.contactId === contactId).map((m) => m.listId);
+  user(userId: string): User | undefined {
+    return this.seed.users.find((u) => u.id === userId);
   }
 
-  readersOfList(listId: string): Contact[] {
-    const ids = new Set(this.seed.listMembers.filter((m) => m.listId === listId).map((m) => m.contactId));
-    return this.seed.contacts.filter((p) => ids.has(p.id));
+  listIdsOfUser(userId: string): string[] {
+    return this.seed.listMembers.filter((m) => m.userId === userId).map((m) => m.listId);
+  }
+
+  /** リストの読者の User ID（ListMember の順） */
+  readersOfList(listId: string): string[] {
+    return this.seed.listMembers.filter((m) => m.listId === listId).map((m) => m.userId);
+  }
+
+  /** 読者の Contact（ボールの判定に使う。Contact のない読者は出てこない） */
+  readerContactsOfList(listId: string): Contact[] {
+    return this.readersOfList(listId)
+      .map((u) => this.contactOfUser(u))
+      .filter((c): c is Contact => c !== undefined);
   }
 
   attributeDefs(dataSourceId: string): AttributeDef[] {
@@ -96,11 +107,11 @@ export function seedProblems(seed: Seed): string[] {
     const list = lists[0]!;
     const readers = dir.readersOfList(list.id);
     for (const r of readers) {
-      if (!r.userId) problems.push(`list ${list.id}: 読者 ${r.id} がゴースト（User を持たない）`);
+      if (!dir.user(r)) problems.push(`list ${list.id}: 読者 ${r} が User ではない`);
     }
     if (ds.kind === 'notes') {
-      if (readers.length !== 1 || readers[0]!.id !== ds.ownerContactId) {
-        problems.push(`data source ${ds.id}: 個人のメモの読者は本人（${ds.ownerContactId}）だけ`);
+      if (readers.length !== 1 || readers[0] !== ds.ownerUserId) {
+        problems.push(`data source ${ds.id}: 個人のメモの読者は本人（${ds.ownerUserId}）だけ`);
       }
       continue;
     }
@@ -108,8 +119,7 @@ export function seedProblems(seed: Seed): string[] {
     if (!cred) {
       problems.push(`data source ${ds.id}: 資格情報 ${ds.credentialRefId} がない`);
     } else if (cred.principal.kind === 'user') {
-      const owner = readers[0];
-      if (readers.length !== 1 || owner?.userId !== cred.principal.userId) {
+      if (readers.length !== 1 || readers[0] !== cred.principal.userId) {
         problems.push(`data source ${ds.id}: 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない`);
       }
     }

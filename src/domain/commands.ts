@@ -98,10 +98,9 @@ export function moveSignal(
 
 /** Viewer の個人のメモのデータソース */
 export function notesDataSourceOf(dir: Directory, viewer: Viewer): Extract<DataSource, { kind: 'notes' }> | undefined {
-  if (viewer.contactId === null) return undefined;
   return dir.seed.dataSources.find(
     (d): d is Extract<DataSource, { kind: 'notes' }> =>
-      d.kind === 'notes' && d.ownerContactId === viewer.contactId && viewer.dataSourceIds.includes(d.id),
+      d.kind === 'notes' && d.ownerUserId === viewer.userId && viewer.dataSourceIds.includes(d.id),
   );
 }
 
@@ -131,7 +130,7 @@ export function addNote(
     choice = { kind: 'new', threadId: ctx.newId('thr'), title };
   }
   const signalId = ctx.newId('sig');
-  const self = { channel: 'note' as const, value: ds.ownerContactId };
+  const self = { channel: 'note' as const, value: ds.ownerUserId };
   return {
     threadId: choice.threadId,
     signalId,
@@ -181,7 +180,7 @@ export function claimThread(
   if (input.userId !== null) {
     const list = dir.listOfDataSource(t.dataSourceId);
     const readers = list ? dir.readersOfList(list.id) : [];
-    if (!readers.some((r) => r.userId === input.userId)) {
+    if (!readers.includes(input.userId)) {
       throw new DomainError('invalid', `user ${input.userId} is not a reader of data source ${t.dataSourceId}`);
     }
   }

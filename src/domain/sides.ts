@@ -20,7 +20,7 @@ export function isOurs(dir: Directory, ds: DataSource | undefined, ref: AddressR
   const contactId = dir.contactIdOfAddress(ref, at);
   if (contactId === null) return false;
   const list = dir.listOfDataSource(ds.id);
-  return list !== undefined && dir.readersOfList(list.id).some((r) => r.id === contactId);
+  return list !== undefined && dir.readerContactsOfList(list.id).some((r) => r.id === contactId);
 }
 
 /** シグナルの向き（シグナルの時刻のマスタで決める） */

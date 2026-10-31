@@ -100,7 +100,7 @@ describe('個人のメモ（add_note）', () => {
     const first = addNote(log.state(), alice, ctx, { body: 'Carol さんの雨漏り\n電話で状況を聞いた' });
     log.push(first.events, '2026-10-16T10:00:00.000Z');
     expect(log.state().threads[first.threadId]).toMatchObject({ dataSourceId: 'ds_notes_alice', title: 'Carol さんの雨漏り', ball: { kind: 'none' } });
-    expect(log.state().signals[first.signalId]).toMatchObject({ channel: 'note', threadedBy: 'self', from: { channel: 'note', value: 'p_alice' } });
+    expect(log.state().signals[first.signalId]).toMatchObject({ channel: 'note', threadedBy: 'self', from: { channel: 'note', value: 'u_alice' } });
 
     const second = addNote(log.state(), alice, ctx, { threadId: first.threadId, body: '見積を頼む' });
     log.push(second.events, '2026-10-16T11:00:00.000Z');

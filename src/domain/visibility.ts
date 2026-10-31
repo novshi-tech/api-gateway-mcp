@@ -114,7 +114,7 @@ export function listThreads(
     if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
     if (filter === 'mine') {
       const ds = dir.dataSource(t.dataSourceId);
-      if (ds?.kind !== 'notes' || ds.ownerContactId !== viewer.contactId) continue;
+      if (ds?.kind !== 'notes' || ds.ownerUserId !== viewer.userId) continue;
     }
     if (opts.since !== undefined && !movedSince(viewer, p, t, opts.since)) continue;
     out.push(threadItem(dir, viewer, p, t));
@@ -242,7 +242,8 @@ export function visibleSignals(viewer: Viewer, p: Projections): SignalRecord[] {
 export interface ListView {
   id: string;
   dataSource: { id: string; kind: DataSource['kind']; name: string; description: string; channel: string };
-  readers: { contactId: string; name: string }[];
+  /** 読者（User）と、その Contact（あれば） */
+  readers: { userId: string; name: string; contactId: string | null }[];
   attributeDefs: AttributeDef[];
 }
 
@@ -258,7 +259,10 @@ export function getListView(dir: Directory, viewer: Viewer, listId: string): Lis
   return {
     id: list.id,
     dataSource: { id: ds.id, kind: ds.kind, name: ds.name, description: ds.description, channel: ds.kind === 'service' ? ds.channel : 'note' },
-    readers: dir.readersOfList(list.id).map((p) => ({ contactId: p.id, name: p.name })),
+    readers: dir.readersOfList(list.id).map((u) => {
+      const c = dir.contactOfUser(u);
+      return { userId: u, name: c?.name ?? dir.user(u)?.name ?? u, contactId: c?.id ?? null };
+    }),
     attributeDefs: dir.attributeDefs(ds.id),
   };
 }

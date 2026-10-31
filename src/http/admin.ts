@@ -143,7 +143,7 @@ export function renderAdminIndex(dir: Directory, p: Projections, href: Href): st
       const triage = ts.filter((t) => !t.dismissed && turnOf(dir, p, t).kind === 'triage').length;
       return `<tr><td><a href="${esc(href(`/admin/lists/${l.id}`))}">${esc(ds?.name ?? l.dataSourceId)}</a><br><small>${esc(l.id)}</small></td>
 <td>${ds?.kind === 'notes' ? '個人のメモ' : esc(ds?.channel ?? '')}</td>
-<td>${dir.readersOfList(l.id).map((r) => esc(r.name)).join(', ')}</td>
+<td>${dir.readersOfList(l.id).map((u) => esc(names(dir, p).user(u))).join(', ')}</td>
 <td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => t.overdue).length}</td></tr>`;
     })
     .join('\n');
@@ -177,7 +177,7 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
     `${ds?.name ?? listId} — Murmur 管理`,
     `<nav><a href="${esc(href('/admin'))}">リスト一覧</a></nav>
 <h1>${esc(ds?.name ?? list.dataSourceId)} <small>${esc(list.id)} · ${ds?.kind === 'notes' ? '個人のメモ' : esc(ds?.channel ?? '')}</small></h1>
-<p class="muted">${esc(ds?.description ?? '')} 読者: ${dir.readersOfList(list.id).map((r) => esc(r.name)).join(', ')}${dir.attributeDefs(list.dataSourceId).length ? ` · 属性: ${dir.attributeDefs(list.dataSourceId).map((d) => esc(d.name)).join(', ')}` : ''}</p>
+<p class="muted">${esc(ds?.description ?? '')} 読者: ${dir.readersOfList(list.id).map((u) => esc(n.user(u))).join(', ')}${dir.attributeDefs(list.dataSourceId).length ? ` · 属性: ${dir.attributeDefs(list.dataSourceId).map((d) => esc(d.name)).join(', ')}` : ''}</p>
 <div class="scroll"><table><thead><tr><th>スレッド</th><th>誰の番</th><th>結び</th><th>属性</th><th>状態</th><th>更新</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="6">スレッドはまだない</td></tr>'}</tbody></table></div>`,
   );

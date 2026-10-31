@@ -274,7 +274,7 @@ function note(signalId: string) {
     signalId,
     dataSourceId: 'ds_notes_alice',
     channel: 'note',
-    from: { channel: 'note', value: 'p_alice' },
+    from: { channel: 'note', value: 'u_alice' },
     to: [],
     body: '電話で聞いた',
     sourceRef: `note:${signalId}`,

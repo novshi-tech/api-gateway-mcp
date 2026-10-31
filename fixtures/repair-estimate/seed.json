@@ -23,8 +23,8 @@
   "dataSources": [
     { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客からの問い合わせの窓口", "credentialRefId": "c_support", "selfAddresses": [{ "channel": "email", "value": "support@ubs.example" }] },
     { "kind": "service", "id": "ds_suzuki_mail", "channel": "email", "name": "鈴木のメールボックス", "description": "鈴木の個人のメールボックス", "credentialRefId": "c_suzuki", "selfAddresses": [] },
-    { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerContactId": "p_sato" },
-    { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerContactId": "p_suzuki" }
+    { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerUserId": "u_sato" },
+    { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerUserId": "u_suzuki" }
   ],
   "lists": [
     { "id": "l_support", "dataSourceId": "ds_support" },
@@ -33,11 +33,11 @@
     { "id": "l_notes_suzuki", "dataSourceId": "ds_notes_suzuki" }
   ],
   "listMembers": [
-    { "listId": "l_support", "contactId": "p_sato" },
-    { "listId": "l_support", "contactId": "p_suzuki" },
-    { "listId": "l_suzuki_mail", "contactId": "p_suzuki" },
-    { "listId": "l_notes_sato", "contactId": "p_sato" },
-    { "listId": "l_notes_suzuki", "contactId": "p_suzuki" }
+    { "listId": "l_support", "userId": "u_sato" },
+    { "listId": "l_support", "userId": "u_suzuki" },
+    { "listId": "l_suzuki_mail", "userId": "u_suzuki" },
+    { "listId": "l_notes_sato", "userId": "u_sato" },
+    { "listId": "l_notes_suzuki", "userId": "u_suzuki" }
   ],
   "attributeDefs": []
 }

@@ -39,7 +39,7 @@ const seed = Seed.parse({
     },
   ],
   lists: [...base.lists, { id: 'l_jira', dataSourceId: 'ds_jira' }],
-  listMembers: [...base.listMembers, { listId: 'l_jira', contactId: 'p_alice' }, { listId: 'l_jira', contactId: 'p_bob' }],
+  listMembers: [...base.listMembers, { listId: 'l_jira', userId: 'u_alice' }, { listId: 'l_jira', userId: 'u_bob' }],
   attributeDefs: [
     ...base.attributeDefs,
     { dataSourceId: 'ds_jira', name: 'status', type: 'string', description: '課題のステータス' },

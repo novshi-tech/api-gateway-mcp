@@ -27,13 +27,13 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   if (ball.kind === 'none') return { kind: 'none' };
 
   const list = dir.listOfDataSource(t.dataSourceId);
-  const readers = (list ? dir.readersOfList(list.id) : []).filter((r) => r.userId);
-  if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!.userId!], by: 'reader' };
+  const readers = list ? dir.readersOfList(list.id) : [];
+  if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!], by: 'reader' };
   // 宛先・CC・メンション: 相手が求めたシグナルの保持者に、読者の Contact のアドレスが入っている（0030）
   const addressed = new Set<string>();
   if (t.request && requestIsOurs(dir, p, t) === false) {
     const held = contactsOf(dir, t.request.holders, p.signals[t.request.signalId]?.at);
-    for (const r of readers) if (held.includes(r.id)) addressed.add(r.userId!);
+    for (const r of list ? dir.readerContactsOfList(list.id) : []) if (held.includes(r.id)) addressed.add(r.userId!);
   }
   if (addressed.size > 0) return { kind: 'user', userIds: [...addressed].sort(), by: 'addressed' };
   return { kind: 'triage' };
@@ -53,7 +53,7 @@ function assigneeTurn(dir: Directory, t: Thread): Turn | null {
   const contact = contactId ? dir.contact(contactId) : undefined;
   if (!contact) return null;
   const list = dir.listOfDataSource(t.dataSourceId);
-  const reader = contact.userId !== undefined && list !== undefined && dir.readersOfList(list.id).some((r) => r.id === contact.id);
+  const reader = contact.userId !== undefined && list !== undefined && dir.readersOfList(list.id).includes(contact.userId);
   return reader ? { kind: 'user', userIds: [contact.userId!], by: 'assignee' } : { kind: 'contact', contactIds: [contact.id] };
 }
 

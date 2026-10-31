@@ -442,7 +442,6 @@ function checkViews(dir: Directory, p: Projections, checks: readonly VisibilityC
       const contact = dir.contact(check.ghostContact);
       if (!contact) errors.push(`${where}: contact ${check.ghostContact} がない`);
       else if (contact.userId) errors.push(`${where}: ${check.ghostContact} はゴーストではない`);
-      else if (deriveViewer(dir, check.ghostContact).contactId !== null) errors.push(`${where}: ${check.ghostContact} が Viewer になれる`);
       continue;
     }
     const viewer = deriveViewer(dir, check.as);

@@ -80,7 +80,8 @@ export const DataSource = z.discriminatedUnion('kind', [
     id: z.string(),
     name: z.string(),
     description: z.string().default(''),
-    ownerContactId: z.string(),
+    /** 持ち主の User（0030。読者は本人だけ。Contact がなくても使える） */
+    ownerUserId: z.string(),
   }),
 ]);
 export type DataSource = z.infer<typeof DataSource>;
@@ -90,8 +91,8 @@ export type ServiceDataSource = Extract<DataSource, { kind: 'service' }>;
 export const List = z.object({ id: z.string(), dataSourceId: z.string() });
 export type List = z.infer<typeof List>;
 
-/** リストの読者 */
-export const ListMember = z.object({ listId: z.string(), contactId: z.string() });
+/** リストの読者。見えるかどうかは User で決める（0030。ゴーストが読者になることはない） */
+export const ListMember = z.object({ listId: z.string(), userId: z.string() });
 export type ListMember = z.infer<typeof ListMember>;
 
 export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'contact']);

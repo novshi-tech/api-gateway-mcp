@@ -43,8 +43,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 | ツール | メソッドとパス | 入力 | 返すもの |
 | --- | --- | --- | --- |
-| me | `GET /me` | | User と、このデプロイの Contact(`contact`。Contact がなければ `null`)・読者になっているリスト(データソース) |
-| list_lists | `GET /lists` | | 見えるリストの一覧(データソース・読者・属性定義) |
+| me | `GET /me` | | User(`user`)、自分の Contact(`contact`。まだなければ `null`)、読者になっているリスト(`lists`。データソース) |
+| list_lists | `GET /lists` | | 見えるリストの一覧(データソース・読者(`userId`・`name`・`contactId`)・属性定義) |
 | get_list | `GET /lists/{list_id}` | | データソース・読者・属性定義 |
 | list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(更新の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `assignee` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
 | get_thread | `GET /threads/{thread_id}` | `-q since=<ISO 8601>`(省略可。タイムラインをそれより後に絞る) | `thread`(一覧と同じ項目)、`dataSource`、`linked`(結んだ先。見えない先は id と経路だけ)、`timeline`(このスレッドのシグナル・メモ・操作と、結んだ先のシグナルを時刻順に) |
