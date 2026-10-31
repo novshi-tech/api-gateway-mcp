@@ -36,6 +36,10 @@ export const Contact = z.object({
 });
 export type Contact = z.infer<typeof Contact>;
 
+/** まとめて消えた Contact の ID と、まとめ先（0030 の 9）。イベントに残る古い ID をクエリ層が読み替える */
+export const ContactAlias = z.object({ id: z.string(), contactId: z.string() });
+export type ContactAlias = z.infer<typeof ContactAlias>;
+
 export const Address = z.object({
   id: z.string(),
   channel: Channel,
@@ -111,6 +115,7 @@ export type AttributeDef = z.infer<typeof AttributeDef>;
 export const Seed = z.object({
   users: z.array(User),
   contacts: z.array(Contact),
+  contactAliases: z.array(ContactAlias).default([]),
   addresses: z.array(Address),
   credentialRefs: z.array(CredentialRef).default([]),
   dataSources: z.array(DataSource).default([]),

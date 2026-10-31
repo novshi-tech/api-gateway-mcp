@@ -1,6 +1,6 @@
 # 申し送り
 
-最終更新: 2026-10-31（Party の作り方の案 0030。「いまの状態」の先頭）。**2026-10-28〜29 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（採用）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。次はゲートウェイの改修（api-gateway-mcp#15）から。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
+最終更新: 2026-10-31（0030 を実装した。「いまの状態」の先頭）。**2026-10-28〜29 に最初の実コネクタ（Outlook）の設計を議論し、`docs/adr/0024`（採用）と `docs/adr/0023`（構想: リポジトリをまとめる）を書いた。次はゲートウェイの改修（api-gateway-mcp#15）から。****計画 v2（ステップ 1〜8）は完了した**（振り返りは `docs/retrospective-v2.md`、直樹のレビュー済み）。**2026-10-23 に Murmur の立ち位置を明確にした（`docs/adr/0020`: チーム単位でセルフホストし、チームの境界を越えることを最初から想定する）。マルチテナントを外してストレージを Cloudflare の中に移す方向（`docs/adr/0021`）と、Murmur 間連携の構想（`docs/adr/0022`）も書いた。同じ日に 0021 の決定 1〜3 を実装した（マルチテナントを外す・投影を差分で書く・D1 に移す。ブランチ `claude/adoring-noether-yjejoy`、main には未反映）。次のステップは次の段階（`docs/adr/0016`、汎用の書き方に直した）。** 次のセッションは、まずこのファイルの「次のセッションでやること」と 0020・0021・0016、`docs/retrospective-v2.md` を読む。
 
 ## いまの状態
 
@@ -11,7 +11,13 @@
 - マスタはその場で書き換え、変更の記録を表 1 つに残す
 - サインインの直後は sub だけの名無し（User の行だけ）。自分の Contact は、リストに入るときに、そのリストでのアイデンティティ（アドレス）を選んで決める。そのアドレスのゴーストがあれば sub に結ぶ。個人のリストはスタンドが API で作り（ゲートウェイの接続を先に確かめる）、共有のリストと読者は当面は管理者だけが足す
 - 名寄せはスタンドがやる: `GET /addresses/unresolved` → `GET /contacts?q=` → 本人に確かめて `POST /contacts`・`POST /contacts/:id/addresses`。Murmur は自動では付けない。0016 の段取り 1 を含む。まとめる（別名を残す）・付け替える・結びを外す操作も持つ
-- 次: 実装。1（名前だけ。スキルの API の表も）→ 2（イベント型と fold。zod・fold のテスト・リプレイテスト・expected を同時に直す。H6 の記録は増えない見込み）→ 3・4（読者を User に）→ 5（マスタの書き換えと変更の記録）→ 6〜9（API）。CLAUDE.md の構成の説明（entities.ts の Party など）は実装に合わせて直す
+- **実装した（2026-10-31、ブランチ `claude/laughing-einstein-0sdrz4`、5 コミット）。** 4 シナリオは expected のまま一致（担当者の写しの値だけアカウントに直した）、AI の記録の再生と D1 も一致。実装で決めたことは 0030 の「実装の記録」
+- HTTP API が変わった: `/me` は `{ user, contact | null, lists }`、`list_lists` の読者は `{ userId, name, contactId }`、`record_sent` の `to_party_ids` → `to_contact_ids` と任意の `from`。足した: `PATCH /me`・`POST /data-sources`・`POST /lists/{id}/identity`・`/addresses/unresolved`・`/contacts`（作る・引く・名前・アドレスを付ける / 終わらせる・まとめる・結びを外す）
+- 残り:
+  - **スキル（novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`）を `docs/stand/skill-murmur.md` に合わせて直す**（API の表と「初めてつないだとき」「名寄せ」。このセッションの範囲外のリポジトリ）
+  - デプロイ済みの Murmur は `pnpm db:migrate <名前>` のあと seed を入れ直す（投影とマスタの形が変わった）。実データのデプロイは空で始め、データソースだけを入れる
+  - 共有のリストに読者を足す管理者の入口（スクリプト）。いまは `MurmurService.addListMember` だけ
+  - ゲートウェイの JWT に `name` を足すか（足しても Contact を作るときの名前の初期値だけ）
 
 **2026-10-30: 組織の使い分けを「切り替える」から「並べてつなぐ」に変えた（api-gateway-mcp の `docs/adr/0004`、採用。0018 に追記）。** 1 つのデプロイ = 1 つの組織のまま、組織ごとのゲートウェイを別々のコネクタとして Claude に並べる。実装（3 つのリポジトリのブランチ `claude/eager-ride-i7ul38`、main には未反映）:
 - ゲートウェイ: 設定 `ORGANIZATION_NAME`（空なら `PUBLIC_URL` のホスト名）を、MCP の title・instructions、ツールの説明、`list_credentials` / `issue_token` の `gateway`、Web 画面の見出しに出す。登録画面のラベル欄は「同じ組織の中の使い分け」の文言に

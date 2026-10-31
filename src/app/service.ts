@@ -1,5 +1,21 @@
 import {
+  addAddress,
+  addListMember,
   addNote,
+  bindIdentity,
+  contactView,
+  createContact,
+  createPersonalDataSource,
+  endAddress,
+  ensureNotes,
+  ensureUser,
+  mergeContacts,
+  renameContact,
+  renameUser,
+  requireMember,
+  searchContacts,
+  unbindContact,
+  unresolvedAddresses,
   claimThread,
   deriveViewer,
   planOverdue,
@@ -35,7 +51,9 @@ import {
   type InboundSignal,
   type IngestOutcome,
   type IngestPolicy,
+  type AddressRef,
   type MasterChange,
+  type PersonalDataSourceInput,
   type MoveTarget,
   type Projections,
   type Seed,
@@ -244,6 +262,104 @@ export class MurmurService {
     };
   }
 
+  /** サインインした sub の User がなければ作る（名前は空、Contact はなし。0030 の 6）。API の入口で毎回呼ぶ */
+  async ensureUser(userId: string): Promise<void> {
+    const seed = await this.deps.repo.master.loadSeed();
+    if (seed.users.some((u) => u.id === userId)) return;
+    await this.changeMaster(userId, 'サインイン', (d) => ensureUser(d, userId));
+  }
+
+  async renameMe(userId: string, name: string) {
+    await this.changeMaster(userId, '名前を付ける', (d) => renameUser(d, userId, name));
+    return this.me(userId);
+  }
+
+  /** 個人のリストを作る（スタンドがゲートウェイの接続を確かめてから呼ぶ。0030 の 7） */
+  async createDataSource(userId: string, input: PersonalDataSourceInput) {
+    const { result } = await this.changeMaster(userId, `個人のリスト ${input.name}`, (d, ctx) => createPersonalDataSource(d, userId, input, ctx));
+    return { ...(await this.getList(userId, result.listId)), identity: result.identity };
+  }
+
+  /** 読者になっているリストでの自分のアイデンティティを決める（0030 の 7） */
+  async setIdentity(userId: string, listId: string, identity: string) {
+    const { viewer, dir } = await this.viewer(userId);
+    const ds = dir.dataSource(dir.list(listId)?.dataSourceId ?? '');
+    if (!ds || !viewer.listIds.includes(listId)) throw new DomainError('not_found', `list ${listId} not found`);
+    if (ds.kind !== 'service') throw new DomainError('invalid', 'a notes list needs no identity');
+    const { result } = await this.changeMaster(userId, `リスト ${listId} でのアイデンティティ`, (d, ctx) =>
+      bindIdentity(d, userId, { channel: ds.channel, value: identity.trim() }, ctx),
+    );
+    return result;
+  }
+
+  /** 共有のリストに読者を足す（管理者だけ。スタンドの API にはしない。0030 の 7） */
+  async addListMember(input: { listId: string; userId: string; identity?: string; actor?: string }) {
+    const { result } = await this.changeMaster(input.actor ?? null, `リスト ${input.listId} の読者`, (d, ctx) =>
+      addListMember(d, input.listId, input.userId, input.identity, ctx),
+    );
+    return result;
+  }
+
+  // ---- 名寄せ（0030 の 8・9）。Contact はチームで共有する連絡先なので、チームのメンバーが読み書きする ----
+
+  private async member(userId: string): Promise<{ viewer: Viewer; dir: Directory }> {
+    const v = await this.viewer(userId);
+    requireMember(v.viewer);
+    return v;
+  }
+
+  async unresolvedAddresses(userId: string) {
+    const { viewer, dir } = await this.member(userId);
+    return unresolvedAddresses(dir, viewer, await this.state());
+  }
+
+  async searchContacts(userId: string, q?: string) {
+    const { dir } = await this.member(userId);
+    return searchContacts(dir, q);
+  }
+
+  async getContact(userId: string, contactId: string) {
+    const { dir } = await this.member(userId);
+    const c = dir.contact(contactId);
+    if (!c) throw new DomainError('not_found', `contact ${contactId} not found`);
+    return contactView(dir, c);
+  }
+
+  async createContact(userId: string, input: { name: string; address?: AddressRef }) {
+    await this.member(userId);
+    const { result } = await this.changeMaster(userId, `Contact ${input.name}`, (d, ctx) => createContact(d, input, ctx));
+    return this.getContact(userId, result);
+  }
+
+  async addContactAddress(userId: string, contactId: string, input: { address: AddressRef; validFrom?: string; reason?: string }) {
+    await this.member(userId);
+    await this.changeMaster(userId, input.reason, (d, ctx) => addAddress(d, contactId, input.address, ctx, input.validFrom));
+    return this.getContact(userId, contactId);
+  }
+
+  async endContactAddress(userId: string, contactId: string, addressId: string, input: { validTo?: string; reason?: string }) {
+    await this.member(userId);
+    await this.changeMaster(userId, input.reason, (d, ctx) => endAddress(d, contactId, addressId, ctx, input.validTo));
+    return this.getContact(userId, contactId);
+  }
+
+  async renameContact(userId: string, contactId: string, name: string) {
+    await this.member(userId);
+    await this.changeMaster(userId, '名前を直す', (d) => renameContact(d, contactId, name));
+    return this.getContact(userId, contactId);
+  }
+
+  async mergeContacts(userId: string, intoId: string, fromId: string, reason?: string) {
+    await this.member(userId);
+    await this.changeMaster(userId, reason ?? `${fromId} を ${intoId} にまとめる`, (d) => mergeContacts(d, intoId, fromId));
+    return this.getContact(userId, intoId);
+  }
+
+  async unbindContact(userId: string, contactId: string) {
+    await this.changeMaster(userId, 'User との結びを外す', (d) => unbindContact(d, contactId, userId));
+    return this.getContact(userId, contactId);
+  }
+
   async listThreads(userId: string, opts: { filter?: ThreadFilter; dataSourceId?: string; since?: string } = {}) {
     const { viewer, dir } = await this.viewer(userId);
     return listThreads(dir, viewer, await this.state(), opts);
@@ -258,6 +374,8 @@ export class MurmurService {
 
   /** 個人のメモ。thread_id がなければ新しいスレッド */
   async addNote(userId: string, input: { threadId?: string; title?: string; body: string }) {
+    // 個人のメモは最初に書くときに作る（Contact がなくても使える。0030 の 4）
+    await this.changeMaster(userId, '個人のメモを使い始める', (d, ctx) => ensureNotes(d, userId, ctx));
     const { viewer } = await this.viewer(userId);
     const threadId = await this.run((p, ctx) => {
       const { events, threadId } = addNote(p, viewer, ctx, input);

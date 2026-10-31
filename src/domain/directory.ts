@@ -8,8 +8,10 @@ import type { AddressRef } from './events';
 export class Directory {
   constructor(readonly seed: Seed) {}
 
+  /** Contact を引く。まとめて消えた ID なら、まとめ先（0030 の 9） */
   contact(contactId: string): Contact | undefined {
-    return this.seed.contacts.find((p) => p.id === contactId);
+    const id = this.seed.contactAliases.find((a) => a.id === contactId)?.contactId ?? contactId;
+    return this.seed.contacts.find((p) => p.id === id);
   }
 
   dataSource(dataSourceId: string): DataSource | undefined {
@@ -135,6 +137,10 @@ export function seedProblems(seed: Seed): string[] {
   }
   for (const l of seed.lists) {
     if (!dir.dataSource(l.dataSourceId)) problems.push(`list ${l.id}: data source ${l.dataSourceId} がない`);
+  }
+  for (const a of seed.contactAliases) {
+    if (!seed.contacts.some((c) => c.id === a.contactId)) problems.push(`contact alias ${a.id}: まとめ先 ${a.contactId} がない`);
+    if (seed.contacts.some((c) => c.id === a.id)) problems.push(`contact alias ${a.id}: まだ Contact として残っている`);
   }
   // 1 つのアドレスは、ある時点で 1 つの Contact にしか付かない（0030）
   const byValue = new Map<string, Address[]>();

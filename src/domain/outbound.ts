@@ -55,7 +55,8 @@ export function recordSent(
 
   const to: AddressRef[] = input.to.map((value) => ({ channel: ds.channel, value }));
   for (const contactId of input.toContactIds) {
-    const address = ctx.dir.contact(contactId) ? ctx.dir.addressesOfContact(contactId, ds.channel, ctx.now)[0] : undefined;
+    const contact = ctx.dir.contact(contactId);
+    const address = contact ? ctx.dir.addressesOfContact(contact.id, ds.channel, ctx.now)[0] : undefined;
     if (!address) throw new DomainError('invalid', `contact ${contactId} has no ${ds.channel} address`);
     if (!to.some((a) => a.value === address.value)) to.push({ channel: ds.channel, value: address.value });
   }

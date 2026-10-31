@@ -63,6 +63,39 @@ export const RecordSentBody = z
 
 export const SetAttributeBody = z.object({ name: z.string(), value: z.unknown() });
 
+// ---- User と Contact（0030 の 6〜9） ----
+
+export const RenameBody = z.object({ name: z.string().min(1) });
+
+/** 個人のリスト。スタンドはゲートウェイで目的のサービスがつながっているかを確かめてから作る */
+export const CreateDataSourceBody = z.object({
+  channel: Channel.exclude(['note']),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  /** そのリストでの自分のアイデンティティ（つないだアカウントのアドレス） */
+  identity: z.string().min(1),
+  /** ゲートウェイの自分の接続の識別子 */
+  gateway_credential_id: z.string().min(1),
+  group: z.boolean().optional(),
+});
+
+export const IdentityBody = z.object({ identity: z.string().min(1) });
+
+export const ContactsQuery = z.object({ q: z.string().optional() });
+
+export const CreateContactBody = z.object({ name: z.string().min(1), address: AddressRef.optional() });
+
+export const AddAddressBody = z.object({
+  channel: Channel,
+  value: z.string().min(1),
+  valid_from: Instant.optional(),
+  reason: z.string().optional(),
+});
+
+export const EndAddressBody = z.object({ valid_to: Instant.optional(), reason: z.string().optional() }).default({});
+
+export const MergeContactBody = z.object({ from: z.string().min(1), reason: z.string().optional() });
+
 export const DismissBody = z.object({ reason: z.string().min(1) });
 export const ReopenBody = z.object({ reason: z.string().optional() }).default({});
 

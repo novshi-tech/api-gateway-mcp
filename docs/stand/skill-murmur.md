@@ -27,6 +27,26 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 見えるもの・できることは、ユーザー本人と同じ。見えるのは、ユーザーが読者になっているデータソースのスレッドと、本人のメモだけ。
 
+### 初めてつないだとき
+
+初めてつないだユーザーは名無しで、Contact(連絡先の自分)もリストもない(`GET /me` が `contact: null`・`lists: []`)。次の順に案内する。
+
+1. 呼び方を聞いて `PATCH /me` で付ける
+2. 自分の箱(メール・Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
+   - `created`: 自分の Contact を新しく作った / `bound`: チームが先に作っていたゴーストが自分に結ばれた / `attached`・`already`: 自分の Contact に付いた
+   - `merge_candidate`: そのアドレスは別のゴースト(`ghostContactId`)に付いている。同じ人なら、ユーザーに確かめてから `POST /contacts/{自分の contactId}/merge` で `from` にゴーストを渡してまとめる
+3. 共有のリスト(共有メールボックス・LINE 公式アカウント・Jira のプロジェクト)の読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
+4. メモ(`add_note`)はリストがなくても使える(最初に書いたときに作られる)
+
+### 名寄せ(Contact)
+
+Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。人か会社の窓口かは区別しない。Murmur は自分では名寄せしない。
+
+- `GET /addresses/unresolved` で、見えるスレッドに出てきたのに Contact のないアドレスを探す
+- `GET /contacts?q=` で候補を出し、**同じ相手かをユーザーに確かめてから** `POST /contacts`(新しく作る)か `POST /contacts/{id}/addresses`(付ける)を呼ぶ。推測で付けない
+- 付け替えるときは、今の付け先を `POST /contacts/{id}/addresses/{address_id}/end` で終わらせてから付ける。過去のシグナルは元の付け先のまま
+- 名寄せを直すと、過去のスレッドの相手と「誰の番」も直る(イベントはそのまま)
+
 ## 守ること
 
 - **送ったら記録する。** スタンド経由で外へ送った・起票した・コメントしたら、その直後に `record_sent` を呼ぶ。送る前には呼ばない(送れなかったものを記録しない)。`sent_ref` は送信の API が返した ID(メールの Message-ID、Slack の ts、LINE の sentMessages[].id、Jira の課題キーやコメント ID)。同じ `sent_ref` で 2 回呼んでも 1 回分しか残らない
@@ -57,6 +77,20 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 | reopen_thread | `POST /threads/{thread_id}/reopen` | `{"reason"?}` | `get_thread` と同じ |
 | move_signal | `POST /signals/{signal_id}/move` | `{"thread_id"}` か `{"new_thread_title"}` のどちらか、`"needs_response"?`(受信だけ)、`"reason"`(必須) | 移した先のスレッド(`get_thread` と同じ) |
 | record_sent | `POST /sent` | 下の「送信の記録」 | 送ったシグナルの入ったスレッド(`get_thread` と同じ) |
+| rename_me | `PATCH /me` | `{"name"}` | `me` と同じ |
+| create_data_source | `POST /data-sources` | `{"channel", "name", "identity", "gateway_credential_id", "description"?, "group"?}`。個人のリスト(読者は自分だけ) | `get_list` と同じ + `identity`(上の「初めてつないだとき」) |
+| set_identity | `POST /lists/{list_id}/identity` | `{"identity"}`(そのリストでの自分のアカウント) | `identity` の結果(`kind`・`contactId`) |
+| list_unresolved | `GET /addresses/unresolved` | | `[{channel, value, count, lastSeenAt, threadIds}]`(最後に見た順) |
+| search_contacts | `GET /contacts` | `-q q=<名前かアドレスの一部>` | `[{id, name, userId, addresses: [{id, channel, value, validFrom, validTo}], externalRefs}]` |
+| get_contact | `GET /contacts/{contact_id}` | | Contact(まとめて消えた ID はまとめ先) |
+| create_contact | `POST /contacts` | `{"name", "address"?: {"channel", "value"}}` | Contact |
+| rename_contact | `PATCH /contacts/{contact_id}` | `{"name"}` | Contact |
+| add_address | `POST /contacts/{contact_id}/addresses` | `{"channel", "value", "valid_from"?, "reason"?}`。同じ時点で別の Contact に付いていれば `conflict` | Contact |
+| end_address | `POST /contacts/{contact_id}/addresses/{address_id}/end` | `{"valid_to"?, "reason"?}`(省略で今) | Contact |
+| merge_contacts | `POST /contacts/{contact_id}/merge` | `{"from", "reason"?}`(`from` をまとめる。両方に User があれば `conflict`) | まとめ先の Contact |
+| unbind_contact | `POST /contacts/{contact_id}/unbind` | | Contact(自分の Contact だけ。見えるものは変わらない) |
+
+Contact の API(`/contacts`・`/addresses/unresolved`)は、どれかのリストの読者(チームのメンバー)だけが使える(ほかは `forbidden`)。
 
 エラーは `{"error": "not_found" | "invalid" | "forbidden" | "conflict", "message": ...}`。見えないスレッドやデータソースは、存在していても `not_found` になる。
 

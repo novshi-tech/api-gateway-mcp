@@ -6,7 +6,7 @@ import { DomainError } from './errors';
 // マスタの書き換え（0030 の 5）。マスタはイベントにせず、その場で書き換える。
 // 何が変わったかは差分（MasterChange）にして、シェルが変更の記録に残す。
 
-export const SEED_KINDS = ['users', 'contacts', 'addresses', 'credentialRefs', 'dataSources', 'lists', 'listMembers', 'attributeDefs'] as const;
+export const SEED_KINDS = ['users', 'contacts', 'contactAliases', 'addresses', 'credentialRefs', 'dataSources', 'lists', 'listMembers', 'attributeDefs'] as const;
 export type SeedKind = (typeof SEED_KINDS)[number];
 
 /** マスタの行のキー（kind の中で一意） */
