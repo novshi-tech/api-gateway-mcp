@@ -74,8 +74,8 @@ describe.each(names)('シナリオ %s', (name) => {
     const events = await run.repo.events.read();
     for (const t of Object.values(p.threads)) {
       // スレッドのログだけからボールが同じに導出できる
-      const { ball, dismissed, lastInboundAt, lastOutboundAt } = deriveComm(t.log);
-      expect({ ball, dismissed, lastInboundAt, lastOutboundAt }).toEqual({ ball: t.ball, dismissed: t.dismissed, lastInboundAt: t.lastInboundAt, lastOutboundAt: t.lastOutboundAt });
+      const { ball, dismissed, request } = deriveComm(t.log);
+      expect({ ball, dismissed, request }).toEqual({ ball: t.ball, dismissed: t.dismissed, request: t.request });
       // 他のスレッドだけに関わるイベントを抜いて畳んでも、このスレッドの投影は変わらない
       // （seq は抜けがあってよい。単調であればよい）
       const mine = events.filter((e) => touches(e, t.id, events));

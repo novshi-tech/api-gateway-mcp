@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { CoreContext } from './context';
-import { sameValue } from './directory';
+import { sameValue, type Directory } from './directory';
 import type { Channel, ServiceDataSource } from './entities';
 import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type FileRef, type PayloadOf, type ThreadChoice, type ThreadedBy } from './events';
 import { indexKey, type Projections, type SignalRecord, type Thread } from './projections';
+import { commView, directionOf, isOurs, resolveBall } from './sides';
 
 // Ingest の判断部分（純関数）。AI の呼び出しそのものはシェル（src/ingest/）が行う。
 // 判断はスレッドの区切りと「返事や対応を求めているか」だけ（計画 v2 の Ingest）。業務の知識は使わない。
@@ -33,13 +34,14 @@ export type SignalPayload = PayloadOf<'SignalObserved'>;
 export type Prepared =
   | { kind: 'duplicate'; signalId: string }
   | { kind: 'merged'; signalId: string; threadId: string | null }
-  | { kind: 'signal'; payload: SignalPayload; dataSource: ServiceDataSource };
+  /** ours: 取り込む時点のマスタで、こちらからのシグナルか（判断にだけ使い、イベントには残さない。0030） */
+  | { kind: 'signal'; payload: SignalPayload; dataSource: ServiceDataSource; ours: boolean };
 
 /**
  * 重複排除と向きの判定。
  * - source_ref がそのデータソースで既出なら弾く
- * - from がデータソースの送信元（こちら）なら outbound（観測された送信）、そうでなければ inbound
- * - 観測された送信の messageId が、記録した送信の sent_ref と一致すれば統合する（記録が先に届いた順。H5）。
+ * - from がこちら（窓口のアドレスか読者の Contact のアドレス）なら観測された送信。判断にだけ使う
+ * - messageId が記録した送信の sent_ref と一致すれば統合する（記録が先に届いた順。H5）。
  *   シグナルは 1 本のままで、イベントは出さない
  */
 export function prepareInbound(p: Projections, ctx: CoreContext, inbound: InboundSignal): Prepared {
@@ -51,29 +53,24 @@ export function prepareInbound(p: Projections, ctx: CoreContext, inbound: Inboun
 
   const existing = p.index.sourceRefs[indexKey(ds.id, inbound.sourceRef)];
   if (existing) return { kind: 'duplicate', signalId: existing };
-  const outbound = ctx.dir.isSelfAddress(ds, inbound.from);
+  const ours = isOurs(ctx.dir, ds, inbound.from, ctx.now);
   const mid = inbound.anchors?.messageId;
-  const recorded = outbound && mid ? p.signals[p.index.messageIds[indexKey(ds.id, mid)] ?? ''] : undefined;
+  const recorded = mid ? p.signals[p.index.messageIds[indexKey(ds.id, mid)] ?? ''] : undefined;
   if (recorded?.recorded) return { kind: 'merged', signalId: recorded.signalId, threadId: recorded.threadId };
 
   const payload: SignalPayload = {
     signalId: ctx.newId('sig'),
     dataSourceId: ds.id,
-    direction: outbound ? 'outbound' : 'inbound',
     channel: inbound.channel,
     from: inbound.from,
     to: inbound.to,
-    fromContactId: ctx.dir.contactIdOfAddress(inbound.from, ctx.now),
-    toContactIds: inbound.to
-      .map((a) => ctx.dir.contactIdOfAddress(a, ctx.now))
-      .filter((x): x is string => x !== null),
     subject: inbound.subject,
     body: inbound.body,
     anchors: inbound.anchors ?? {},
     attachments: inbound.attachments ?? [],
     sourceRef: inbound.sourceRef,
   };
-  return { kind: 'signal', payload, dataSource: ds };
+  return { kind: 'signal', payload, dataSource: ds, ours };
 }
 
 export function signalEvent(payload: SignalPayload): DraftEvent {
@@ -147,35 +144,35 @@ export function resolveAnchors(p: Projections, sig: SignalPayload): Threading | 
 }
 
 /** スレッドのシグナルのうち、相手として sig と同じ人とやりとりしたものがあるか（グループのチャネルはチャネル全体） */
-function withSameCounterpart(p: Projections, ds: ServiceDataSource, t: Thread, sig: SignalPayload): boolean {
+function withSameCounterpart(dir: Directory, p: Projections, ds: ServiceDataSource, t: Thread, sig: SignalPayload, ours: boolean): boolean {
   if (ds.group) return true;
-  const theirs = sig.direction === 'inbound' ? [sig.from] : sig.to;
+  const theirs = ours ? sig.to : [sig.from];
   const has = (refs: AddressRef[], r: AddressRef) => refs.some((x) => x.channel === r.channel && sameValue(x.value, r.value));
   return t.signalIds.some((id) => {
     const s = p.signals[id]!;
-    return theirs.some((r) => (s.direction === 'inbound' ? has([s.from], r) : has(s.to, r)));
+    return theirs.some((r) => (directionOf(dir, s) === 'inbound' ? has([s.from], r) : has(s.to, r)));
   });
 }
 
 /** 2. 同じ相手で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド（受信だけ） */
-export function awaitingThread(p: Projections, ds: ServiceDataSource, sig: SignalPayload): Thread | null {
-  if (sig.direction !== 'inbound') return null;
+export function awaitingThread(dir: Directory, p: Projections, ds: ServiceDataSource, sig: SignalPayload, ours: boolean): Thread | null {
+  if (ours) return null;
   const waiting = threadsOf(p, ds.id).filter((t) => {
-    if (t.ball.kind !== 'contact') return false;
+    if (resolveBall(dir, p, t).kind !== 'contact') return false;
     if (ds.group) return true;
-    const lastOut = [...t.signalIds].reverse().map((id) => p.signals[id]!).find((s) => s.direction === 'outbound');
+    const lastOut = [...t.signalIds].reverse().map((id) => p.signals[id]!).find((s) => directionOf(dir, s) === 'outbound');
     return lastOut !== undefined && lastOut.to.some((r) => r.channel === sig.from.channel && sameValue(r.value, sig.from.value));
   });
   return waiting.length === 1 ? waiting[0]! : null;
 }
 
 /** 3. の候補: 相手（グループならチャネル）の直近のスレッド。片付けたものは入れない */
-export function recentThreads(p: Projections, ds: ServiceDataSource, sig: SignalPayload, limit: number): Thread[] {
+export function recentThreads(dir: Directory, p: Projections, ds: ServiceDataSource, sig: SignalPayload, ours: boolean, limit: number): Thread[] {
   return threadsOf(p, ds.id)
-    .filter((t) => withSameCounterpart(p, ds, t, sig))
+    .filter((t) => withSameCounterpart(dir, p, ds, t, sig, ours))
     .sort((a, b) => {
-      const x = lastActivity(a);
-      const y = lastActivity(b);
+      const x = lastActivity(dir, p, a);
+      const y = lastActivity(dir, p, b);
       return x < y ? 1 : x > y ? -1 : a.id < b.id ? -1 : 1;
     })
     .slice(0, limit);
@@ -185,22 +182,30 @@ function threadsOf(p: Projections, dataSourceId: string): Thread[] {
   return Object.values(p.threads).filter((t) => t.dataSourceId === dataSourceId && !t.dismissed && t.signalIds.length > 0);
 }
 
-function lastActivity(t: Thread): string {
-  const a = t.lastInboundAt ?? '';
-  const b = t.lastOutboundAt ?? '';
+function lastActivity(dir: Directory, p: Projections, t: Thread): string {
+  const v = commView(dir, p, t);
+  const a = v.lastInboundAt ?? '';
+  const b = v.lastOutboundAt ?? '';
   return a > b ? a : b;
 }
 
-export function planThreading(p: Projections, ds: ServiceDataSource, sig: SignalPayload, policy: IngestPolicy): Threading {
+export function planThreading(
+  dir: Directory,
+  p: Projections,
+  ds: ServiceDataSource,
+  sig: SignalPayload,
+  ours: boolean,
+  policy: IngestPolicy,
+): Threading {
   const anchored = resolveAnchors(p, sig);
   if (anchored) return anchored;
-  const waiting = awaitingThread(p, ds, sig);
+  const waiting = awaitingThread(dir, p, ds, sig, ours);
   if (waiting) {
     return { kind: 'existing', threadId: waiting.id, by: 'awaiting', reason: 'こちらが返事を待っているスレッドが 1 本だけ' };
   }
-  const recent = recentThreads(p, ds, sig, policy.recentThreadLimit);
+  const recent = recentThreads(dir, p, ds, sig, ours, policy.recentThreadLimit);
   if (recent.length === 0) return { kind: 'new', by: 'no_match', reason: 'アンカーも返事待ちも直近のスレッドもない' };
-  return { kind: 'choose', candidates: recent.map((t) => toCandidate(p, t)) };
+  return { kind: 'choose', candidates: recent.map((t) => toCandidate(dir, p, t)) };
 }
 
 // ---- AI 判断の入出力 ----
@@ -211,11 +216,11 @@ export interface Candidate {
   recent: { at: string; direction: 'inbound' | 'outbound'; from: string; excerpt: string }[];
 }
 
-function toCandidate(p: Projections, t: Thread): Candidate {
+function toCandidate(dir: Directory, p: Projections, t: Thread): Candidate {
   const recent = t.signalIds
     .slice(-3)
     .map((id) => p.signals[id]!)
-    .map((s) => ({ at: s.at, direction: s.direction, from: s.from.value, excerpt: s.body.slice(0, 160) }));
+    .map((s) => ({ at: s.at, direction: directionOf(dir, s), from: s.from.value, excerpt: s.body.slice(0, 160) }));
   return { threadId: t.id, title: t.title, recent };
 }
 
@@ -229,6 +234,8 @@ export type IngestMode = 'choose' | 'new' | 'fixed';
 export interface IngestRequest {
   mode: IngestMode;
   signal: SignalPayload;
+  /** 取り込む時点のマスタで、こちらからのシグナルか */
+  ours: boolean;
   dataSource: { id: string; name: string; description: string; channel: Channel; group: boolean };
   threading: Threading;
   /** fixed のときの決まったスレッド */
@@ -247,7 +254,10 @@ export interface IngestOutcome {
   needsResponse: boolean | null;
 }
 
-/** 区切りを決め、AI の判断が要らなければイベントまで作る。観測された送信には「求めているか」を判断しない */
+/**
+ * 区切りを決め、AI の判断が要らなければイベントまで作る。こちらからのシグナル（観測された送信）には「求めているか」を判断しない
+ * （null のまま。fold は「求めている」として畳むので、ボールは宛先へ移る。0030）
+ */
 export function planIngest(
   p: Projections,
   ctx: CoreContext,
@@ -255,8 +265,9 @@ export function planIngest(
   sig: SignalPayload,
   policy: IngestPolicy,
 ): IngestPlan {
-  const threading = planThreading(p, ds, sig, policy);
-  if (sig.direction === 'outbound' && threading.kind !== 'choose') {
+  const ours = isOurs(ctx.dir, ds, sig.from, ctx.now);
+  const threading = planThreading(ctx.dir, p, ds, sig, ours, policy);
+  if (ours && threading.kind !== 'choose') {
     const choice: ThreadChoice =
       threading.kind === 'existing'
         ? { kind: 'existing', threadId: threading.threadId }
@@ -282,9 +293,10 @@ export function planIngest(
     request: {
       mode,
       signal: sig,
+      ours,
       dataSource: { id: ds.id, name: ds.name, description: ds.description, channel: ds.channel, group: ds.group },
       threading,
-      thread: threading.kind === 'existing' ? toCandidate(p, p.threads[threading.threadId]!) : undefined,
+      thread: threading.kind === 'existing' ? toCandidate(ctx.dir, p, p.threads[threading.threadId]!) : undefined,
       candidates: threading.kind === 'choose' ? threading.candidates : [],
     },
   };
@@ -342,7 +354,7 @@ export function finalizeIngest(
   }
 
   let needsResponse: boolean | null = null;
-  if (sig.direction === 'inbound') {
+  if (!request.ours) {
     needsResponse = raw.needs_response !== false;
     if (raw.needs_response === null) notes.push('[「求めているか」の判断がないため「求めている」]');
   }
@@ -395,7 +407,7 @@ export function buildIngestPrompt(request: IngestRequest): string {
         group: request.dataSource.group,
       },
       signal: {
-        direction: s.direction === 'inbound' ? 'received' : 'sent_by_us',
+        direction: request.ours ? 'sent_by_us' : 'received',
         from: s.from.value,
         to: s.to.map((t) => t.value),
         subject: s.subject ?? null,

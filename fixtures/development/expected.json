@@ -35,14 +35,14 @@
     },
     {
       "after": "m01",
-      "threads": { "$issueThread": { "ball": { "kind": "none" }, "attributes": { "status": "未着手", "assignee": "p_kato", "priority": "高", "done": false }, "closedAtSource": false } },
+      "threads": { "$issueThread": { "ball": { "kind": "none" }, "attributes": { "status": "未着手", "assignee": "acct-kato", "priority": "高", "done": false }, "closedAtSource": false } },
       "views": [
         { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "assignee" } } },
         { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$issueThread"] },
         { "as": "u_nose", "threads": { "filter": "my_turn", "dataSource": "ds_jira" }, "expect": [] }
       ]
     },
-    { "after": "m02", "threads": { "$issueThread": { "attributes": { "status": "進行中", "assignee": "p_kato", "priority": "高", "done": false } } } },
+    { "after": "m02", "threads": { "$issueThread": { "attributes": { "status": "進行中", "assignee": "acct-kato", "priority": "高", "done": false } } } },
     { "after": "s05", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
     { "after": "s06", "threads": { "$issueThread": { "ball": { "kind": "none" }, "signalCount": 2 } } },
     {
@@ -55,7 +55,7 @@
     },
     {
       "after": "m04",
-      "threads": { "$docThread": { "attributes": { "status": "未着手", "assignee": "p_nose", "priority": "低", "done": false } } },
+      "threads": { "$docThread": { "attributes": { "status": "未着手", "assignee": "acct-nose", "priority": "低", "done": false } } },
       "views": [{ "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] }]
     },
     { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] } } } },
@@ -83,7 +83,7 @@
     { "after": "c01", "threads": { "$regThread": { "signalCount": 1 } } },
     {
       "after": "m05",
-      "threads": { "$regThread": { "attributes": { "status": "未着手", "assignee": "p_kato", "priority": "中", "done": false } } },
+      "threads": { "$regThread": { "attributes": { "status": "未着手", "assignee": "acct-kato", "priority": "中", "done": false } } },
       "views": [
         { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$regThread"] },
         { "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "assignee" } } },
@@ -118,7 +118,7 @@
         "counterpartContactIds": ["p_jira"],
         "signalCount": 2,
         "closedAtSource": true,
-        "attributes": { "status": "完了", "assignee": "p_kato", "priority": "高", "done": true },
+        "attributes": { "status": "完了", "assignee": "acct-kato", "priority": "高", "done": true },
         "links": { "$clientThread": "anchor", "$prThread": "anchor" }
       },
       "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2, "links": { "$issueThread": "anchor" } },
@@ -130,7 +130,7 @@
         "closedAtSource": true,
         "signalCount": 3,
         "counterpartContactIds": ["p_kato", "p_nose"],
-        "attributes": { "status": "完了", "assignee": "p_kato", "priority": "中", "done": true },
+        "attributes": { "status": "完了", "assignee": "acct-kato", "priority": "中", "done": true },
         "links": { "$clientThread": "sent" }
       }
     },

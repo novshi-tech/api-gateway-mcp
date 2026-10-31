@@ -42,12 +42,13 @@ src/
     entities.ts    マスタ（User / Contact / Address / CredentialRef / DataSource / List / ListMember / AttributeDef）
     events.ts      イベント型（zod）
     fold.ts        fold(events) → projections（1 段）
-    comm.ts        通信状態（ボール）の導出。シグナルの向き・「求めているか」・持ち主・片付けだけ
+    comm.ts        通信状態（ボール）の導出。アドレスだけで畳む（保持者・求めた人・「求めているか」・持ち主・片付け。0030）
     directory.ts   マスタの検索、seed の整合性（seedProblems）
     commands.ts    スタンドの操作の判断（片付け・開き直し・シグナルの移し替え・メモ・持ち主・リンク・属性）
-    ingest.ts      Ingest の判断（重複排除、向き、記録した送信との統合、区切り、AI 出力の検証）、プロンプト
+    ingest.ts      Ingest の判断（重複排除、取り込む時点の向き、記録した送信との統合、区切り、AI 出力の検証）、プロンプト
     outbound.ts    送信の記録の判断（置き先・観測との統合・経路 sent のリンク）と期限の見回り
     mirror.ts      状態の写しの判断（課題キーのスレッドに、変わった属性だけを写す）
+    sides.ts       クエリ層の「どちら側か」（窓口のアドレス + 読者の Contact のアドレスがこちら）、ボールの解決、相手・未応答（0030）
     turn.ts        クエリ層の「誰の番か」（持ち主・担当者の写し・読者が 1 人・宛先）、リンク先から導出したボール、結び候補
     visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）、一覧のフィルタ、スレッドの詳細とタイムライン
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存

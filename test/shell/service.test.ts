@@ -3,7 +3,7 @@ import { canonicalJson, draft } from '../../src/domain';
 import { memoryRepo } from '../../src/store/memory';
 import { ConcurrencyError, type Repo } from '../../src/store/types';
 import { makeService } from '../helpers/service';
-import { answer, email, line, seed } from '../helpers/world';
+import { answer, email, line, seed, view } from '../helpers/world';
 
 describe('MurmurService.ingest', () => {
   it('H6 受信 → 区切り → スレッド。同じ source_ref は duplicate。観測された送信は構造で決まれば AI を呼ばない', async () => {
@@ -16,7 +16,7 @@ describe('MurmurService.ingest', () => {
     const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect((await service.state()).threads.thr_2!.ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(view(await service.state(), 'thr_2').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {
@@ -109,7 +109,6 @@ describe('投影と並行性', () => {
                 draft('SignalObserved', {
                   signalId: 'sig_other',
                   dataSourceId: 'ds_support',
-                  direction: 'inbound',
                   channel: 'email',
                   from: { channel: 'email', value: 'x@y' },
                   to: [],

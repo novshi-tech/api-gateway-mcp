@@ -7,6 +7,10 @@ import { z } from 'zod';
 export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'note']);
 export type Channel = z.infer<typeof Channel>;
 
+/** チャネルと値だけのアドレス（Contact に属さない。イベント・データソースの窓口・資格情報が持つ） */
+export const AddressRef = z.object({ channel: Channel, value: z.string() });
+export type AddressRef = z.infer<typeof AddressRef>;
+
 /** 資格情報の主体 */
 export const Principal = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user'), userId: z.string() }),
@@ -45,7 +49,8 @@ export type Address = z.infer<typeof Address>;
 export const CredentialRef = z.object({
   id: z.string(),
   principal: Principal,
-  addressId: z.string(),
+  /** 資格情報のアカウントのアドレス */
+  address: AddressRef,
   /** ゲートウェイ側の資格情報の識別子（プロトでは未使用） */
   gatewayCredentialId: z.string().optional(),
 });
@@ -54,7 +59,7 @@ export type CredentialRef = z.infer<typeof CredentialRef>;
 /**
  * データソース（0014）。リスト 1 つに対応する。
  * - service: 外のサービス（メールボックス、Slack のチャネルや DM、LINE 公式アカウント、Jira のプロジェクト）。
- *   資格情報で取り込み、selfAddressIds（送信元のアドレス = こちら）で受信と観測された送信を分ける
+ *   資格情報で取り込み、selfAddresses（窓口のアドレス）と読者の Contact のアドレスが「こちら」（0030。クエリ層の sides.ts）
  * - notes: 個人のメモ。ユーザーごとに 1 つ、読者は本人だけ
  */
 export const DataSource = z.discriminatedUnion('kind', [
@@ -65,7 +70,8 @@ export const DataSource = z.discriminatedUnion('kind', [
     name: z.string(),
     description: z.string().default(''),
     credentialRefId: z.string(),
-    selfAddressIds: z.array(z.string()).min(1),
+    /** 窓口のアドレス（共有メールボックス・LINE 公式アカウント・Jira のサイトなど）。個人の箱では空でよい */
+    selfAddresses: z.array(AddressRef).default([]),
     /** グループのチャネル。区切りの「同じ相手」がチャネルになる */
     group: z.boolean().default(false),
   }),

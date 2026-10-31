@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, canReadDataSource, deriveViewer, Seed, seedProblems, type SeedInput } from '../../src/domain';
+import { canonicalJson, canReadDataSource, deriveViewer, isOurs, Seed, seedProblems, type SeedInput } from '../../src/domain';
 import { bearerToken, checkClaims, selectKey, splitCompactJws, base64UrlEncode, base64UrlDecode } from '../../src/auth/claims';
 import { dir, seed } from '../helpers/world';
 
@@ -10,13 +10,18 @@ describe('Directory', () => {
     expect(dir.contactIdOfAddress({ channel: 'line', value: 'info@dave.example' })).toBeNull();
   });
 
-  it('direction の判定: データソースの送信元（こちら）のアドレスか', () => {
+  it('H3 こちらの判定（0030）: 窓口のアドレスか、読者の Contact のアドレス', () => {
     const support = dir.dataSource('ds_support')!;
-    expect(dir.isSelfAddress(support, { channel: 'email', value: 'Support@ubs.example' })).toBe(true);
-    // 社員のアドレスでも、そのデータソースの送信元でなければ「こちら」ではない
-    expect(dir.isSelfAddress(support, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
-    expect(dir.isSelfAddress(dir.dataSource('ds_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(true);
-    expect(dir.isSelfAddress(dir.dataSource('ds_notes_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
+    expect(isOurs(dir, support, { channel: 'email', value: 'Support@ubs.example' })).toBe(true);
+    // 読者（Alice）の Contact のアドレスはこちら
+    expect(isOurs(dir, support, { channel: 'email', value: 'alice@ubs.example' })).toBe(true);
+    expect(isOurs(dir, support, { channel: 'email', value: 'carol@example.com' })).toBe(false);
+    // 個人の箱は窓口を持たず、読者（本人）のアドレスがこちら
+    expect(isOurs(dir, dir.dataSource('ds_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(true);
+    // 読者でない User の Contact（Eve は LINE の読者ではない）はこちらではない
+    expect(isOurs(dir, dir.dataSource('ds_line')!, { channel: 'line', value: 'U_carol' })).toBe(false);
+    expect(isOurs(dir, dir.dataSource('ds_notes_alice')!, { channel: 'email', value: 'alice@ubs.example' })).toBe(false);
+    expect(isOurs(dir, dir.dataSource('ds_notes_alice')!, { channel: 'note', value: 'p_alice' })).toBe(true);
   });
 
   it('H3 Viewer は User の Contact と、読者になっているリスト・データソースを束ねる', () => {
@@ -70,12 +75,12 @@ describe('H3 マスタの整合性（seedProblems）', () => {
     expect(broken((s) => s.contacts!.push({ id: 'p_alice2', name: 'Alice', userId: 'u_alice' })).join()).toMatch(/u_alice: Contact が 2 個/);
   });
 
-  it('送信元のアドレスはデータソースのチャネルのもの', () => {
+  it('窓口のアドレスはデータソースのチャネルのもの', () => {
     const problems = broken((s) => {
       const ds = s.dataSources!.find((d) => d.id === 'ds_support')!;
-      if (ds.kind === 'service') ds.selfAddressIds = ['a_oa'];
+      if (ds.kind === 'service') ds.selfAddresses = [{ channel: 'line', value: '@ubs' }];
     });
-    expect(problems.join()).toMatch(/送信元のアドレス a_oa が不正/);
+    expect(problems.join()).toMatch(/窓口のアドレス @ubs のチャネルが line/);
   });
 });
 

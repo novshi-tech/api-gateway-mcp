@@ -9,6 +9,7 @@ import {
   planIngest,
   prepareInbound,
   signalEvent,
+  summarizeThread,
   type AiIngestDecision,
   type CoreContext,
   type DomainEvent,
@@ -29,6 +30,11 @@ import {
  *   ds_slack     Slack の #general（グループ、組織の資格情報、読者は Eve だけ。Eve はメモを持たない）
  * u_mallory: ゲートウェイの User だが、このデプロイに Contact がない（チームの外）
  */
+/** 窓口のアドレス（Contact に属さない。0030） */
+const SUPPORT = { channel: 'email' as const, value: 'support@ubs.example' };
+const OA = { channel: 'line' as const, value: '@ubs' };
+const SLACK = { channel: 'slack' as const, value: 'T_UBS/C_GENERAL' };
+
 export const seed = Seed.parse({
   users: [
     { id: 'u_alice', name: 'Alice' },
@@ -37,7 +43,6 @@ export const seed = Seed.parse({
     { id: 'u_mallory', name: 'Mallory（チームの外）' },
   ],
   contacts: [
-    { id: 'p_ubs', name: 'UBS' },
     { id: 'p_alice', name: 'Alice', userId: 'u_alice' },
     { id: 'p_bob', name: 'Bob', userId: 'u_bob' },
     { id: 'p_carol', name: 'Carol（顧客）' },
@@ -45,7 +50,6 @@ export const seed = Seed.parse({
     { id: 'p_eve', name: 'Eve', userId: 'u_eve' },
   ],
   addresses: [
-    { id: 'a_support', channel: 'email', value: 'support@ubs.example', contactId: 'p_ubs' },
     { id: 'a_alice', channel: 'email', value: 'alice@ubs.example', contactId: 'p_alice' },
     { id: 'a_carol', channel: 'email', value: 'carol@example.com', contactId: 'p_carol' },
     { id: 'a_dave', channel: 'email', value: 'info@dave.example', contactId: 'p_dave' },
@@ -56,21 +60,19 @@ export const seed = Seed.parse({
       contactId: 'p_dave',
       validTo: '2026-01-01T00:00:00.000Z',
     },
-    { id: 'a_oa', channel: 'line', value: '@ubs', contactId: 'p_ubs' },
     { id: 'a_carol_line', channel: 'line', value: 'U_carol', contactId: 'p_carol' },
-    { id: 'a_slack', channel: 'slack', value: 'T_UBS/C_GENERAL', contactId: 'p_ubs' },
     { id: 'a_eve', channel: 'slack', value: 'T_UBS/U_EVE', contactId: 'p_eve' },
   ],
   credentialRefs: [
-    { id: 'c_support', principal: { kind: 'team' }, addressId: 'a_support' },
-    { id: 'c_alice', principal: { kind: 'user', userId: 'u_alice' }, addressId: 'a_alice' },
-    { id: 'c_oa', principal: { kind: 'team' }, addressId: 'a_oa' },
-    { id: 'c_slack', principal: { kind: 'team' }, addressId: 'a_slack' },
+    { id: 'c_support', principal: { kind: 'team' }, address: SUPPORT },
+    { id: 'c_alice', principal: { kind: 'user', userId: 'u_alice' }, address: { channel: 'email', value: 'alice@ubs.example' } },
+    { id: 'c_oa', principal: { kind: 'team' }, address: OA },
+    { id: 'c_slack', principal: { kind: 'team' }, address: SLACK },
   ],
   dataSources: [
-    { kind: 'service', id: 'ds_support', channel: 'email', name: 'support@', credentialRefId: 'c_support', selfAddressIds: ['a_support'] },
-    { kind: 'service', id: 'ds_alice', channel: 'email', name: 'Alice のメールボックス', credentialRefId: 'c_alice', selfAddressIds: ['a_alice'] },
-    { kind: 'service', id: 'ds_line', channel: 'line', name: 'LINE 公式アカウント', credentialRefId: 'c_oa', selfAddressIds: ['a_oa'] },
+    { kind: 'service', id: 'ds_support', channel: 'email', name: 'support@', credentialRefId: 'c_support', selfAddresses: [SUPPORT] },
+    { kind: 'service', id: 'ds_alice', channel: 'email', name: 'Alice のメールボックス', credentialRefId: 'c_alice' },
+    { kind: 'service', id: 'ds_line', channel: 'line', name: 'LINE 公式アカウント', credentialRefId: 'c_oa', selfAddresses: [OA] },
     { kind: 'notes', id: 'ds_notes_alice', name: 'Alice のメモ', ownerContactId: 'p_alice' },
     { kind: 'notes', id: 'ds_notes_bob', name: 'Bob のメモ', ownerContactId: 'p_bob' },
     {
@@ -79,7 +81,7 @@ export const seed = Seed.parse({
       channel: 'slack',
       name: '#general',
       credentialRefId: 'c_slack',
-      selfAddressIds: ['a_slack'],
+      selfAddresses: [SLACK],
       group: true,
     },
   ],
@@ -104,6 +106,9 @@ export const seed = Seed.parse({
 });
 
 export const dir = new Directory(seed);
+
+/** 投影のスレッドに、クエリ層で解決した通信状態（ボール・相手・未応答。0030）を重ねたもの */
+export const view = (p: Projections, id: string, d: Directory = dir) => ({ ...p.threads[id]!, ...summarizeThread(d, p, p.threads[id]!) });
 export const alice = deriveViewer(dir, 'u_alice');
 export const bob = deriveViewer(dir, 'u_bob');
 export const eve = deriveViewer(dir, 'u_eve');

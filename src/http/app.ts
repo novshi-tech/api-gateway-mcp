@@ -111,6 +111,7 @@ export function createApp(opts: HttpOptions) {
         dataSourceId: b.data_source,
         to: b.to,
         toContactIds: b.to_contact_ids,
+        from: b.from,
         subject: b.subject,
         body: b.body,
         sentRef: b.sent_ref,

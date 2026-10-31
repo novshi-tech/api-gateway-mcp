@@ -1,27 +1,27 @@
-import type { CommState, ThreadLogEntry } from './projections';
+import { sameValue } from './directory';
+import type { AddressRef } from './events';
+import type { CommState, FoldedBall, Request, ThreadLogEntry } from './projections';
 
 /**
- * 通信状態の導出。スレッドに綴じたもの（シグナルの向き・「返事や対応を求めているか」・持ち主・片付け）だけを
- * 時刻順に畳み込む。本文や属性・リンク・メモは読まない。
+ * 通信状態の導出（0030）。スレッドに綴じたもの（シグナルのアドレス・「返事や対応を求めているか」・持ち主・片付け）だけを
+ * 時刻順に畳み込む。マスタを読まないので、どちら側のボールかは決めない（クエリ層の sides.ts が決める）。本文や属性・リンク・メモは読まない。
  *
- * ボールの所在:
- * - 送った（観測された送信） → 宛先の Contact
- * - 返事や対応を求める受信 → こちら。持ち主がいればその人
- * - 求めていない受信（お礼・スタンプ・了解・通知） → 相手を待っていたなら「なし」、そうでなければ変わらない
- * - 持った・引き継いだ → その人。手放した → こちら（組織）
+ * ボールの移り方（アドレスが同じかどうかだけで決まる）:
+ * - 返事や対応を求めるシグナル（needsResponse が false でない。null は「求めている」） → 保持者はその宛先、求めた人は送り主。
+ *   宛先がなければ（グループのチャネル）「チャネルの中で送り主以外」
+ * - 求めないシグナル → 送り主が求めた人でなければ応えたとみなしてボールを空にする。求めた人（追伸・お礼）なら変えない
+ * - 持った・引き継いだ → その人。手放した → こちら
  * - 片付けた → 開き直すまで「なし」。その間もシグナルは綴じ、開き直したら綴じた分から決まる
  * - ソースの側で完了した（写しの done） → 片付けと同じく「なし」。完了が外れたら綴じた分から決まる
  *
- * 返事期待: 記録した送信の期限が最後の送信の返事期待になり、受信が来れば消える（遅れて返事が来れば期限超過も解消する）。
+ * 返事期待: 記録した送信の期限が返事期待になり、その送り主以外からシグナルが来れば消える（遅れて返事が来れば期限超過も解消する）。
  * 期限超過は ReplyOverdue がその送信を指しているときだけ
  */
 export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
-  let ball: CommState['ball'] = { kind: 'none' };
+  let ball: FoldedBall = { kind: 'none' };
   const state: CommState = {
     ball,
-    lastInboundAt: null,
-    lastOutboundAt: null,
-    unansweredSince: null,
+    request: null,
     dismissed: false,
     dismissedAt: null,
     dismissReason: null,
@@ -29,37 +29,45 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
     ownerUserId: null,
     replyExpectedBy: null,
     replyExpectedSignalId: null,
+    replyExpectedFrom: null,
     overdue: false,
     closedAtSource: false,
   };
-  const ours = (): CommState['ball'] => (state.ownerUserId ? { kind: 'user', userId: state.ownerUserId } : { kind: 'us' });
   for (const e of sortLog(entries)) {
     switch (e.kind) {
-      case 'signal':
-        if (e.direction === 'outbound') {
-          ball = { kind: 'contact', contactIds: e.toContactIds ?? [] };
-          state.lastOutboundAt = e.at;
-          state.unansweredSince = null;
-          state.replyExpectedBy = e.replyExpectedBy ?? null;
-          state.replyExpectedSignalId = state.replyExpectedBy ? (e.signalId ?? null) : null;
+      case 'signal': {
+        const from = e.from!;
+        const to = e.to ?? [];
+        if (state.replyExpectedFrom && !sameAddress(state.replyExpectedFrom, from)) clearReplyExpected(state);
+        if (e.replyExpectedBy) {
+          state.replyExpectedBy = e.replyExpectedBy;
+          state.replyExpectedSignalId = e.signalId ?? null;
+          state.replyExpectedFrom = from;
           state.overdue = false;
-        } else {
-          state.lastInboundAt = e.at;
-          state.replyExpectedBy = null;
-          state.replyExpectedSignalId = null;
-          state.overdue = false;
-          if (e.needsResponse === false) {
-            if (ball.kind === 'contact') ball = { kind: 'none' };
-          } else {
-            ball = ours();
-            state.unansweredSince ??= e.at;
+        }
+        if (e.needsResponse === false) {
+          if (state.request && !sameAddress(state.request.requestedBy, from)) {
+            state.request = null;
+            if (ball.kind === 'request') ball = { kind: 'none' };
           }
+        } else {
+          const prev = state.request;
+          const request: Request = {
+            holders: to,
+            except: to.length === 0 ? from : null,
+            requestedBy: from,
+            since: prev && sameAddress(prev.requestedBy, from) ? prev.since : e.at,
+            signalId: e.signalId!,
+          };
+          state.request = request;
+          ball = { kind: 'request', request };
         }
         if (state.dismissed) state.activeSinceDismissed = true;
         break;
+      }
       case 'claimed':
         state.ownerUserId = e.userId ?? null;
-        ball = ours();
+        ball = { kind: 'claimed', userId: state.ownerUserId };
         break;
       case 'dismissed':
         state.dismissed = true;
@@ -91,6 +99,17 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
   state.ball = closed ? { kind: 'none' } : ball;
   if (closed) state.overdue = false;
   return state;
+}
+
+function clearReplyExpected(state: CommState): void {
+  state.replyExpectedBy = null;
+  state.replyExpectedSignalId = null;
+  state.replyExpectedFrom = null;
+  state.overdue = false;
+}
+
+export function sameAddress(a: AddressRef, b: AddressRef): boolean {
+  return a.channel === b.channel && sameValue(a.value, b.value);
 }
 
 export function sortLog<T extends Pick<ThreadLogEntry, 'at' | 'seq'>>(entries: readonly T[]): T[] {

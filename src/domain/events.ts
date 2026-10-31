@@ -1,10 +1,9 @@
 import { z } from 'zod';
-import { Channel } from './entities';
+import { AddressRef, Channel } from './entities';
 
 // 正は append-only のイベント列。payload は zod で定義し、DB では JSONB に入る。
 
-export const AddressRef = z.object({ channel: Channel, value: z.string() });
-export type AddressRef = z.infer<typeof AddressRef>;
+export { AddressRef } from './entities';
 
 /** 構造アンカー。区切り（同じデータソースの中）と、結び候補に使う */
 export const Anchors = z.object({
@@ -36,19 +35,16 @@ export const Direction = z.enum(['inbound', 'outbound']);
 export type Direction = z.infer<typeof Direction>;
 
 /**
- * データソースで観測されたシグナル（0014 の 5）。受信も、ツール外で行われた送信も同じ種別で、
- * direction で区別する。direction は from がデータソースの送信元（こちら）かどうかで機械的に決まる。
+ * データソースで観測されたシグナル（0014 の 5）。受信も、ツール外で行われた送信も同じ種別。
+ * イベントはアドレスだけを持ち、向き（こちらからか）と Contact はクエリ層がそのときのマスタで決める（0030）。
+ * 古いイベントに残る direction・fromPartyId・toPartyIds は読まない
  */
 export const SignalObserved = z.object({
   signalId: z.string(),
   dataSourceId: z.string(),
-  direction: Direction,
   channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef),
-  /** Ingest 時に Directory で解決した Contact（未知のアドレスなら null / 空） */
-  fromContactId: z.string().nullable().default(null),
-  toContactIds: z.array(z.string()).default([]),
   subject: z.string().optional(),
   body: z.string(),
   anchors: Anchors.default({}),
@@ -82,7 +78,9 @@ export const SignalThreaded = z.object({
   by: ThreadedBy,
   confidence: z.number().min(0).max(1),
   reason: z.string().min(1),
-  /** 返事や対応を求めているか。観測された送信には判断しない（null） */
+  /**
+   * 返事や対応を求めているか。null は判断していない（こちらからのシグナル・AI の答えがない）で、fold は「求めている」として畳む（0030）
+   */
   needsResponse: z.boolean().nullable(),
   /** 人の訂正のとき、訂正した User */
   actorUserId: z.string().optional(),
@@ -154,7 +152,7 @@ export const ThreadMirrored = z.object({
 /**
  * 送信の記録（0012）。スタンドがゲートウェイ経由で送った直後に記録する。本体は外に何も書かない。
  * - merged: false なら送ったシグナルをここで作る（続く SignalThreaded で置き先が決まる）
- * - merged: true なら、同じ sent_ref の観測された送信（outbound の SignalObserved）が先に届いていて、そのシグナルに記録を重ねる（H5）
+ * - merged: true なら、同じ sent_ref の観測された送信（SignalObserved）が先に届いていて、そのシグナルに記録を重ねる（H5）
  * sent_ref はシグナルの messageId になり、スレッドのアンカーになる
  */
 export const OutboundRecorded = z.object({
@@ -164,8 +162,6 @@ export const OutboundRecorded = z.object({
   channel: Channel,
   from: AddressRef,
   to: z.array(AddressRef),
-  fromContactId: z.string().nullable().default(null),
-  toContactIds: z.array(z.string()).default([]),
   subject: z.string().optional(),
   body: z.string(),
   anchors: Anchors.default({}),

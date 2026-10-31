@@ -10,7 +10,7 @@ import {
   setAttribute,
   unlinkThreads,
 } from '../../src/domain';
-import { alice, answer, bob, dir, email, eve, EventLog, ingestPure, makeCtx } from '../helpers/world';
+import { alice, answer, bob, dir, email, eve, EventLog, ingestPure, makeCtx, view } from '../helpers/world';
 
 // スタンドの操作（片付け・開き直し・シグナルの移し替え・メモ・持ち主・リンク・属性）。操作できるのはスレッドが見えている人だけ
 
@@ -100,7 +100,7 @@ describe('個人のメモ（add_note）', () => {
     const first = addNote(log.state(), alice, ctx, { body: 'Carol さんの雨漏り\n電話で状況を聞いた' });
     log.push(first.events, '2026-10-16T10:00:00.000Z');
     expect(log.state().threads[first.threadId]).toMatchObject({ dataSourceId: 'ds_notes_alice', title: 'Carol さんの雨漏り', ball: { kind: 'none' } });
-    expect(log.state().signals[first.signalId]).toMatchObject({ channel: 'note', direction: 'outbound', threadedBy: 'self', fromContactId: 'p_alice' });
+    expect(log.state().signals[first.signalId]).toMatchObject({ channel: 'note', threadedBy: 'self', from: { channel: 'note', value: 'p_alice' } });
 
     const second = addNote(log.state(), alice, ctx, { threadId: first.threadId, body: '見積を頼む' });
     log.push(second.events, '2026-10-16T11:00:00.000Z');
@@ -134,7 +134,7 @@ describe('持ち主（claim_thread）', () => {
     const claim = claimThread(log.state(), alice, dir, { threadId, userId: 'u_alice', reason: '持つ' });
     expect(claim).toHaveLength(1);
     log.push(claim, '2026-10-16T10:00:00.000Z');
-    expect(log.state().threads[threadId]!.ball).toEqual({ kind: 'user', userId: 'u_alice' });
+    expect(view(log.state(), threadId).ball).toEqual({ kind: 'user', userId: 'u_alice' });
     expect(claimThread(log.state(), alice, dir, { threadId, userId: 'u_alice' })).toEqual([]);
     expect(claimThread(log.state(), alice, dir, { threadId, userId: 'u_bob' })).toHaveLength(1);
     expect(claimThread(log.state(), bob, dir, { threadId, userId: null })).toHaveLength(1);

@@ -2,7 +2,8 @@ import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
 import type { AttributeValue } from './events';
 import { sortLog } from './comm';
-import type { Projections, SignalRecord, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import type { Ball, Projections, SignalRecord, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import { commView, directionOf } from './sides';
 import { derivedBall, isMyTurn, linkCandidates, linkedActiveSinceDismissed, turnOf, type DerivedBall, type LinkCandidate, type Turn } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
@@ -27,7 +28,8 @@ export interface ThreadSummary {
   id: string;
   dataSourceId: string;
   title: string;
-  ball: Thread['ball'];
+  /** クエリ時のマスタで解決したボール（0030） */
+  ball: Ball;
   counterpartContactIds: string[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
@@ -54,16 +56,17 @@ export interface ThreadItem extends ThreadSummary {
   linkCandidates: LinkCandidate[];
 }
 
-export function summarizeThread(t: Thread): ThreadSummary {
+export function summarizeThread(dir: Directory, p: Projections, t: Thread): ThreadSummary {
+  const comm = commView(dir, p, t);
   return {
     id: t.id,
     dataSourceId: t.dataSourceId,
     title: t.title,
-    ball: t.ball,
-    counterpartContactIds: t.counterpartContactIds,
-    lastInboundAt: t.lastInboundAt,
-    lastOutboundAt: t.lastOutboundAt,
-    unansweredSince: t.unansweredSince,
+    ball: comm.ball,
+    counterpartContactIds: comm.counterpartContactIds,
+    lastInboundAt: comm.lastInboundAt,
+    lastOutboundAt: comm.lastOutboundAt,
+    unansweredSince: comm.unansweredSince,
     dismissed: t.dismissed,
     dismissReason: t.dismissReason,
     activeSinceDismissed: t.activeSinceDismissed,
@@ -80,7 +83,7 @@ export function summarizeThread(t: Thread): ThreadSummary {
 
 export function threadItem(dir: Directory, viewer: Viewer, p: Projections, t: Thread): ThreadItem {
   return {
-    ...summarizeThread(t),
+    ...summarizeThread(dir, p, t),
     turn: turnOf(dir, p, t),
     derivedBall: derivedBall(dir, viewer, p, t),
     linkedActiveSinceDismissed: linkedActiveSinceDismissed(viewer, p, t),
@@ -127,15 +130,15 @@ function movedSince(viewer: Viewer, p: Projections, t: Thread, since: string): b
   });
 }
 
-export type SignalView = Pick<
+export type SignalView = { direction: 'inbound' | 'outbound' } & Pick<
   SignalRecord,
-  'signalId' | 'direction' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
+  'signalId' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
 >;
 
-function signalView(s: SignalRecord): SignalView {
+function signalView(dir: Directory, s: SignalRecord): SignalView {
   return {
     signalId: s.signalId,
-    direction: s.direction,
+    direction: directionOf(dir, s),
     channel: s.channel,
     from: s.from,
     to: s.to,
@@ -211,7 +214,7 @@ export function getThreadView(
     .filter((e) => opts.since === undefined || e.at > opts.since)
     .map((e) => {
       const entry: TimelineEntry = { at: e.at, threadId: e.threadId, kind: e.kind };
-      if (e.signalId) entry.signal = signalView(p.signals[e.signalId]!);
+      if (e.signalId) entry.signal = signalView(dir, p.signals[e.signalId]!);
       if (e.reason !== undefined) entry.reason = e.reason;
       if (e.actorUserId !== undefined) entry.actorUserId = e.actorUserId;
       if (e.userId !== undefined) entry.userId = e.userId;

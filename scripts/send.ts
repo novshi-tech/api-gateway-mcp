@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { loadScenario, type Scenario, type Step } from './lib/scenario';
+import { echoFrom, loadScenario, type Scenario, type Step } from './lib/scenario';
 
 // WEBHOOK_SECRET=... pnpm send <scenario> <signal の id>... --url <本体の URL> [--sent-ref <ref>]（URL は MURMUR_URL でもよい）
 // fixtures/<scenario>/signals.jsonl の signal 行（と状態の写しの mirror 行）を、実環境の Webhook（POST /webhooks/dummy）に 1 件ずつ流す（H7）。
@@ -49,7 +49,7 @@ function echoOf(scenario: Scenario, step: Extract<Step, { action: unknown }>, se
   if (step.action.tool !== 'record_sent' || !step.echo) return undefined;
   const input = step.action.input as Record<string, unknown>;
   const ds = scenario.seed.dataSources.find((d) => d.id === input.data_source);
-  const self = ds?.kind === 'service' ? scenario.seed.addresses.find((a) => a.id === ds.selfAddressIds[0]) : undefined;
+  const self = ds?.kind === 'service' ? echoFrom(scenario, ds, step.action.as) : undefined;
   if (!ds || ds.kind !== 'service' || !self) throw new Error(`${step.id}: echo の data_source が不正`);
   const sentRef = sentRefOverride ?? String(input.sent_ref);
   const a = (input.anchors ?? {}) as Record<string, unknown>;

@@ -57,8 +57,8 @@ export function planMirror(p: Projections, ctx: CoreContext, m: InboundMirror): 
     if (raw === null) value = null;
     else if (def.type === 'contact') {
       if (typeof raw !== 'string') throw new DomainError('invalid', `attribute ${name} (contact): not an address`);
-      // 知らないアカウントは誰の番にもならないので空として写す
-      value = ctx.dir.contactIdOfAddress({ channel: ds.channel, value: raw }, ctx.now);
+      // アカウントのアドレスのまま写す。Contact への解決はクエリ層（0030）
+      value = raw;
     } else value = checkAttribute(ctx.dir, def, raw);
     if ((t.attributes[name] ?? null) !== value) changed[name] = value;
   }

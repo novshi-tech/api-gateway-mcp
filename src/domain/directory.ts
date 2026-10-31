@@ -60,15 +60,6 @@ export class Directory {
       (a) => a.contactId === contactId && (channel === undefined || a.channel === channel) && isValidAt(a, at),
     );
   }
-
-  /** データソースの送信元（こちら）のアドレスか。シグナルの direction を機械的に決める */
-  isSelfAddress(ds: DataSource, ref: AddressRef): boolean {
-    if (ds.kind !== 'service') return false;
-    return ds.selfAddressIds.some((id) => {
-      const a = this.address(id);
-      return a !== undefined && a.channel === ref.channel && sameValue(a.value, ref.value);
-    });
-  }
 }
 
 export function sameValue(a: string, b: string): boolean {
@@ -122,9 +113,8 @@ export function seedProblems(seed: Seed): string[] {
         problems.push(`data source ${ds.id}: 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない`);
       }
     }
-    for (const id of ds.selfAddressIds) {
-      const a = dir.address(id);
-      if (!a || a.channel !== ds.channel) problems.push(`data source ${ds.id}: 送信元のアドレス ${id} が不正`);
+    for (const a of ds.selfAddresses) {
+      if (a.channel !== ds.channel) problems.push(`data source ${ds.id}: 窓口のアドレス ${a.value} のチャネルが ${a.channel}`);
     }
   }
   for (const l of seed.lists) {

@@ -67,6 +67,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
   "data_source": "ds_support",
   "to": ["owner@tanaka-bldg.example"],
   "to_contact_ids": [],
+  "from": "acct-nose",
   "subject": "Re: エントランスの床について",
   "body": "送った本文",
   "sent_ref": "<20261016.0925@ubs.example>",
@@ -79,6 +80,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 - `data_source`: 送ったデータソース(送信元のメールボックス・LINE 公式アカウントなど)。`get_thread` の `dataSource.id`、または `list_lists`
 - `to` か `to_contact_ids` のどちらかは必須。`to` はそのチャネルのアドレス
+- `from`(任意): 実際に送ったアドレス。Jira のコメントや Slack の発言のように自分のアカウントで書いたときは、そのアカウントを入れる。省けばデータソースの窓口(共有メールボックス・LINE 公式アカウント)、窓口がなければ(個人の箱)自分のアドレス。そのデータソースでこちらのアドレスでなければ invalid
 - `reply_to_thread_id`: 返事をしているスレッド(同じデータソース)。送ったシグナルはそこに入る。省略すると、アンカーで決まらなければ新しいスレッドになる
 - `source_thread_id`: 送る元になったスレッド(どのデータソースでもよい。メモのスレッドや、LINE の欠勤のスレッドから打診を送るときなど)。送ったスレッドと経路 `sent` で結ばれる
 - `reply_expected_by`: 返事期待の期限(ISO 8601、オフセット付きでよい)。過ぎると `overdue` になり、返事が来れば消える

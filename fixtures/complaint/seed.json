@@ -5,20 +5,20 @@
     { "id": "u_nvt", "name": "チームの外の人（このデプロイに Contact がない）" }
   ],
   "contacts": [
-    { "id": "p_ubs", "name": "アーバンビルシステム" },
     { "id": "p_sato", "name": "佐藤", "userId": "u_sato" },
     { "id": "p_suzuki", "name": "鈴木", "userId": "u_suzuki" },
     { "id": "p_tanaka", "name": "田中ビル オーナー 田中様" },
     { "id": "p_cleanco", "name": "クリーンサービス東都" }
   ],
   "addresses": [
-    { "id": "a_support", "channel": "email", "value": "support@ubs.example", "contactId": "p_ubs" },
     { "id": "a_tanaka", "channel": "email", "value": "owner@tanaka-bldg.example", "contactId": "p_tanaka" },
     { "id": "a_cleanco", "channel": "email", "value": "ops@clean-toto.example", "contactId": "p_cleanco" }
   ],
-  "credentialRefs": [{ "id": "c_support", "principal": { "kind": "team" }, "addressId": "a_support" }],
+  "credentialRefs": [
+    { "id": "c_support", "principal": { "kind": "team" }, "address": { "channel": "email", "value": "support@ubs.example" } }
+  ],
   "dataSources": [
-    { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客と協力会社とのやりとりの窓口", "credentialRefId": "c_support", "selfAddressIds": ["a_support"] },
+    { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客と協力会社とのやりとりの窓口", "credentialRefId": "c_support", "selfAddresses": [{ "channel": "email", "value": "support@ubs.example" }] },
     { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerContactId": "p_sato" },
     { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerContactId": "p_suzuki" }
   ],

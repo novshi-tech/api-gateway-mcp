@@ -4,6 +4,7 @@ import type { AttributeDef, DataSource } from './entities';
 import { DomainError } from './errors';
 import { AttributeValue, draft, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
+import { directionOf } from './sides';
 import { linkCandidates } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
@@ -69,10 +70,11 @@ export function moveSignal(
     if (!input.to.title.trim()) throw new DomainError('invalid', 'title is required');
     choice = { kind: 'new', threadId: ctx.newId('thr'), title: input.to.title };
   }
-  if (sig.direction === 'outbound' && input.needsResponse !== undefined) {
+  const ours = directionOf(ctx.dir, sig) === 'outbound';
+  if (ours && input.needsResponse !== undefined) {
     throw new DomainError('invalid', 'needs_response is not judged for outbound signals');
   }
-  const needsResponse = sig.direction === 'outbound' ? null : (input.needsResponse ?? sig.needsResponse ?? true);
+  const needsResponse = ours ? null : (input.needsResponse ?? sig.needsResponse ?? true);
   if (choice.kind === 'existing' && choice.threadId === sig.threadId && needsResponse === sig.needsResponse) {
     return { events: [], threadId: choice.threadId };
   }
@@ -137,12 +139,9 @@ export function addNote(
       draft('SignalObserved', {
         signalId,
         dataSourceId: ds.id,
-        direction: 'outbound',
         channel: 'note',
         from: self,
         to: [],
-        fromContactId: ds.ownerContactId,
-        toContactIds: [],
         body: input.body,
         sourceRef: `note:${signalId}`,
       }),

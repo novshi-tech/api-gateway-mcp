@@ -130,7 +130,6 @@ function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecord
   if (!p.merged) {
     addSignal(s, e, {
       ...p,
-      direction: 'outbound',
       attachments: [],
       anchors: { ...p.anchors, messageId: p.sentRef },
       sourceRef: `sent:${p.sentRef}`,
@@ -139,7 +138,7 @@ function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecord
     return;
   }
   const sig = s.signals[p.signalId];
-  if (!sig || sig.direction !== 'outbound') throw new FoldError(`cannot merge record into signal ${p.signalId}`);
+  if (!sig || sig.recorded) throw new FoldError(`cannot merge record into signal ${p.signalId}`);
   sig.recorded = recorded;
   c.signals.add(sig.signalId);
   const t = sig.threadId ? s.threads[sig.threadId] : undefined;
@@ -156,12 +155,9 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): vo
   const record: SignalRecord = {
     signalId: p.signalId,
     dataSourceId: p.dataSourceId,
-    direction: p.direction,
     channel: p.channel,
     from: p.from,
     to: p.to,
-    fromContactId: p.fromContactId,
-    toContactIds: p.toContactIds,
     subject: p.subject,
     body: p.body,
     anchors: p.anchors,
@@ -204,16 +200,16 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
   }
   sig.threadId = t.id;
   sig.threadedBy = p.by;
-  sig.needsResponse = sig.direction === 'outbound' ? null : p.needsResponse;
+  sig.needsResponse = p.needsResponse;
   c.signals.add(sig.signalId);
   t.log.push({
     seq: sig.seq,
     at: sig.at,
     kind: sig.channel === 'note' ? 'note' : 'signal',
     signalId: sig.signalId,
-    direction: sig.direction,
+    from: sig.from,
+    to: sig.to,
     needsResponse: sig.needsResponse,
-    toContactIds: sig.direction === 'outbound' ? sig.toContactIds : undefined,
     replyExpectedBy: sig.recorded?.replyExpectedBy ?? undefined,
   });
   recompute(s, t, e.at, c);
@@ -224,13 +220,6 @@ function recompute(s: Projections, t: Thread, at: string, c: Changes): void {
   t.log = sortLog(t.log);
   t.signalIds = t.log.filter((l) => l.kind === 'signal' || l.kind === 'note').map((l) => l.signalId!);
   Object.assign(t, deriveComm(t.log));
-  const contacts = new Set<string>();
-  for (const id of t.signalIds) {
-    const sig = s.signals[id]!;
-    if (sig.direction === 'inbound' && sig.fromContactId) contacts.add(sig.fromContactId);
-    if (sig.direction === 'outbound') for (const p of sig.toContactIds) contacts.add(p);
-  }
-  t.counterpartContactIds = [...contacts].sort();
   if (at > t.updatedAt) t.updatedAt = at;
 }
 
@@ -239,7 +228,6 @@ function newThread(id: string, dataSourceId: string, title: string, at: string):
     id,
     dataSourceId,
     title,
-    counterpartContactIds: [],
     signalIds: [],
     log: [],
     links: [],

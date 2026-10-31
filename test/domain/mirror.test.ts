@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveViewer,
+  directionOf,
   Directory,
   draft,
   planMirror,
@@ -16,17 +17,16 @@ import { EventLog, ingestPure, seed as base } from '../helpers/world';
 
 // 状態の写しを持つデータソース（Jira。ステップ 7・H9）
 
-/** world に Jira のプロジェクト（読者は Alice と Bob、組織の資格情報）を足す。Alice と Bob の Jira アカウントは送信元（こちら） */
+/** world に Jira のプロジェクト（読者は Alice と Bob、チームの資格情報）を足す。Alice と Bob の Jira アカウントは読者の Contact のアドレスなのでこちら（0030） */
 const seed = Seed.parse({
   ...base,
   addresses: [
     ...base.addresses,
-    { id: 'a_jira_site', channel: 'jira', value: 'ubs.atlassian.net', contactId: 'p_ubs' },
     { id: 'a_alice_jira', channel: 'jira', value: 'jira:alice', contactId: 'p_alice' },
     { id: 'a_bob_jira', channel: 'jira', value: 'jira:bob', contactId: 'p_bob' },
     { id: 'a_carol_jira', channel: 'jira', value: 'jira:carol', contactId: 'p_carol' },
   ],
-  credentialRefs: [...base.credentialRefs, { id: 'c_jira', principal: { kind: 'team' }, addressId: 'a_jira_site' }],
+  credentialRefs: [...base.credentialRefs, { id: 'c_jira', principal: { kind: 'team' }, address: { channel: 'jira', value: 'ubs.atlassian.net' } }],
   dataSources: [
     ...base.dataSources,
     {
@@ -35,7 +35,7 @@ const seed = Seed.parse({
       channel: 'jira',
       name: 'Jira プロジェクト UBS',
       credentialRefId: 'c_jira',
-      selfAddressIds: ['a_jira_site', 'a_alice_jira', 'a_bob_jira'],
+      selfAddresses: [{ channel: 'jira', value: 'ubs.atlassian.net' }],
     },
   ],
   lists: [...base.lists, { id: 'l_jira', dataSourceId: 'ds_jira' }],
@@ -81,18 +81,18 @@ const mirror = (key: string, fields: InboundMirror['fields'], ref = 'u1'): Inbou
 const answer = (needs_response: boolean) => () => ({ thread: null, thread_id: null, title: null, needs_response, reason: 'r', confidence: 1 });
 
 describe('状態の写し（planMirror）', () => {
-  it('H9 課題キーのスレッドに、変わった属性だけを写す。担当者のアカウントは Contact に直す。同じ値なら何もしない', () => {
+  it('H9 課題キーのスレッドに、変わった属性だけを写す。担当者はアカウントのまま写す（Contact への解決はクエリ層、0030）。同じ値なら何もしない', () => {
     const log = new EventLog();
     const ctx = ctxAt();
     expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手' }))).toEqual({ kind: 'no_thread', threadKey: 'UBS-1' });
     const created = ingestPure(log, ctx, issueEvent('UBS-1'), answer(false));
     const plan = planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手', assignee: 'jira:alice', due: '2026-10-20', done: false }));
-    expect(plan).toMatchObject({ kind: 'mirrored', threadId: created.outcome!.threadId, fields: { status: '未着手', assignee: 'p_alice', due: '2026-10-20', done: false } });
+    expect(plan).toMatchObject({ kind: 'mirrored', threadId: created.outcome!.threadId, fields: { status: '未着手', assignee: 'jira:alice', due: '2026-10-20', done: false } });
     log.push(plan.kind === 'mirrored' ? plan.events : [], '2026-10-16T09:10:00.000Z');
     expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手', assignee: 'jira:alice' }, 'u2'))).toEqual({ kind: 'unchanged', threadId: created.outcome!.threadId });
     expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '進行中', assignee: 'jira:alice' }, 'u3'))).toMatchObject({ fields: { status: '進行中' } });
-    // 知らないアカウントは空として写す（誰の番にもならない）
-    expect(planMirror(log.state(), ctx, mirror('UBS-1', { assignee: 'jira:unknown' }, 'u4'))).toMatchObject({ fields: { assignee: null } });
+    // 知らないアカウントもそのまま写す（名寄せされるまで誰の番にもならない）
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { assignee: 'jira:unknown' }, 'u4'))).toMatchObject({ fields: { assignee: 'jira:unknown' } });
     expect(() => planMirror(log.state(), ctx, mirror('UBS-1', { priority: '高' }))).toThrow(/not defined/);
     expect(() => planMirror(log.state(), ctx, mirror('UBS-1', { due: 'あした' }))).toThrow(/not a date/);
     expect(() => planMirror(log.state(), ctx, { ...mirror('UBS-1', {}), dataSourceId: 'ds_support' })).toThrow(/is email, not jira/);
@@ -147,6 +147,7 @@ describe('起票とコメントの記録（Jira）', () => {
       dataSourceId: 'ds_jira',
       to: [],
       toContactIds: ['p_bob'],
+      from: 'jira:alice',
       subject: '雨漏りの修繕',
       body: 'Carol さんから雨漏りの連絡。Bob さん現地確認をお願いします',
       sentRef: 'UBS-9',
@@ -154,7 +155,8 @@ describe('起票とコメントの記録（Jira）', () => {
     });
     log.push(filed.events, ctx.now);
     let p = log.state();
-    expect(p.signals[filed.signalId]).toMatchObject({ direction: 'outbound', from: { value: 'jira:alice' }, toContactIds: ['p_bob'] });
+    expect(p.signals[filed.signalId]).toMatchObject({ from: { value: 'jira:alice' }, to: [{ value: 'jira:bob' }] });
+    expect(directionOf(dir, p.signals[filed.signalId]!)).toBe('outbound');
     expect(p.threads[filed.threadId]!.links).toMatchObject([{ threadId: support.outcome!.threadId, route: 'sent' }]);
 
     const plan = planMirror(p, ctx, mirror('UBS-9', { status: '未着手', assignee: 'jira:bob', done: false }));

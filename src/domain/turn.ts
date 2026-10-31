@@ -1,5 +1,6 @@
 import type { Directory } from './directory';
 import type { Projections, Thread } from './projections';
+import { contactsOf, requestIsOurs, resolveBall } from './sides';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // クエリ層の「誰の番か」と結び（0014 の 3）。投影のスナップショットとマスタから計算する純関数で、
@@ -18,7 +19,7 @@ export type Turn =
   | { kind: 'none' };
 
 export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
-  const ball = t.ball;
+  const ball = resolveBall(dir, p, t);
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
   const assignee = assigneeTurn(dir, t);
   if (assignee) return assignee;
@@ -28,12 +29,11 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   const list = dir.listOfDataSource(t.dataSourceId);
   const readers = (list ? dir.readersOfList(list.id) : []).filter((r) => r.userId);
   if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!.userId!], by: 'reader' };
-  // 宛先・CC・メンション: 受信の to に、読者の Contact が入っている
+  // 宛先・CC・メンション: 相手が求めたシグナルの保持者に、読者の Contact のアドレスが入っている（0030）
   const addressed = new Set<string>();
-  for (const id of t.signalIds) {
-    const s = p.signals[id]!;
-    if (s.direction !== 'inbound') continue;
-    for (const r of readers) if (s.toContactIds.includes(r.id)) addressed.add(r.userId!);
+  if (t.request && requestIsOurs(dir, p, t) === false) {
+    const held = contactsOf(dir, t.request.holders, p.signals[t.request.signalId]?.at);
+    for (const r of readers) if (held.includes(r.id)) addressed.add(r.userId!);
   }
   if (addressed.size > 0) return { kind: 'user', userIds: [...addressed].sort(), by: 'addressed' };
   return { kind: 'triage' };
@@ -47,7 +47,10 @@ function assigneeTurn(dir: Directory, t: Thread): Turn | null {
   if (t.dismissed || t.closedAtSource) return null;
   const v = t.attributes.assignee;
   if (typeof v !== 'string' || !dir.attributeDefs(t.dataSourceId).some((d) => d.name === 'assignee' && d.type === 'contact')) return null;
-  const contact = dir.contact(v);
+  // ソースの写しはアカウントのアドレス（0030）、本人が付けた値は Contact の id
+  const ds = dir.dataSource(t.dataSourceId);
+  const contactId = dir.contact(v) ? v : ds?.kind === 'service' ? dir.contactIdOfAddress({ channel: ds.channel, value: v }) : null;
+  const contact = contactId ? dir.contact(contactId) : undefined;
   if (!contact) return null;
   const list = dir.listOfDataSource(t.dataSourceId);
   const reader = contact.userId !== undefined && list !== undefined && dir.readersOfList(list.id).some((r) => r.id === contact.id);

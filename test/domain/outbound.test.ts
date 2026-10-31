@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addNote, getThreadView, listThreads, planOverdue, recordSent, type RecordSentInput } from '../../src/domain';
-import { alice, answer, bob, dir, email, eve, EventLog, ingestPure, line, makeCtx } from '../helpers/world';
+import { addNote, commView, directionOf, getThreadView, listThreads, planOverdue, recordSent, type RecordSentInput } from '../../src/domain';
+import { alice, answer, bob, dir, view, email, eve, EventLog, ingestPure, line, makeCtx } from '../helpers/world';
 
 // 送信の記録（record_sent）・期限の見回り・観測された送信の統合（H4・H5）
 
@@ -35,17 +35,17 @@ describe('record_sent', () => {
     expect(r.threadId).toBe(cust);
     expect(r.events.map((e) => e.type)).toEqual(['OutboundRecorded', 'SignalThreaded']);
     push(log, ctx, T(9, 10), r);
-    let t = log.state().threads[cust]!;
+    let t = view(log.state(), cust);
     expect(t).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, replyExpectedBy: T(12), replyExpectedSignalId: r.signalId, overdue: false });
+    expect(directionOf(dir, log.state().signals[r.signalId]!)).toBe('outbound');
     expect(log.state().signals[r.signalId]).toMatchObject({
-      direction: 'outbound',
       threadedBy: 'self',
       anchors: { messageId: '<u1@ubs.example>' },
       recorded: { actorUserId: 'u_alice', replyExpectedBy: T(12), sourceThreadId: null },
     });
     ctx.setNow(T(10));
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }), () => answer({ thread: null }));
-    t = log.state().threads[cust]!;
+    t = view(log.state(), cust);
     expect(t).toMatchObject({ ball: { kind: 'us' }, replyExpectedBy: null, overdue: false });
   });
 
@@ -58,7 +58,7 @@ describe('record_sent', () => {
     push(log, ctx, T(9, 10), r);
     const p = log.state();
     expect(r.threadId).not.toBe(cust);
-    expect(p.threads[r.threadId]).toMatchObject({ title: '見積依頼', ball: { kind: 'contact', contactIds: ['p_dave'] }, links: [{ threadId: note.threadId, route: 'sent' }] });
+    expect(view(p, r.threadId)).toMatchObject({ title: '見積依頼', ball: { kind: 'contact', contactIds: ['p_dave'] }, links: [{ threadId: note.threadId, route: 'sent' }] });
     expect(p.threads[note.threadId]!.links).toMatchObject([{ threadId: r.threadId, route: 'sent' }]);
     // 返事は送信元（support@）に戻り、送ったスレッドに入る
     ingestPure(log, ctx, email({ from: 'info@dave.example', sourceRef: 'r3', anchors: { inReplyTo: '<u2@ubs.example>' } }), () => answer({ thread: null }));
@@ -112,7 +112,8 @@ describe('観測された送信の統合（H5）', () => {
     push(log, ctx, T(9, 15), r);
     const t = log.state().threads[cust]!;
     expect(t.signalIds).toEqual(before.signalIds);
-    expect(t).toMatchObject({ ball: before.ball, lastOutboundAt: before.lastOutboundAt, replyExpectedBy: T(12) });
+    expect(t).toMatchObject({ ball: before.ball, replyExpectedBy: T(12) });
+    expect(commView(dir, log.state(), t).lastOutboundAt).toBe(commView(dir, log.state(), before).lastOutboundAt);
     expect(Object.keys(log.state().signals)).toHaveLength(2);
   });
 

@@ -40,6 +40,8 @@ export const RecordSentBody = z
     /** 宛先のアドレス（チャネルはデータソースのもの） */
     to: z.array(z.string()).default([]),
     to_contact_ids: z.array(z.string()).default([]),
+    /** 送ったアドレス（Jira・Slack の自分のアカウントなど）。省けばデータソースの窓口、窓口がなければ自分の Contact のアドレス */
+    from: z.string().optional(),
     subject: z.string().optional(),
     body: z.string().min(1),
     sent_ref: z.string().min(1),
