@@ -1,10 +1,11 @@
 import { env } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { catalog } from "../src/catalog";
 import { oauthClient, organizationName, parseServices } from "../src/config";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
 import { getServices } from "../src/services";
+import { refreshTokens, UpstreamOAuthError } from "../src/upstream-oauth";
 import { signToken, verifyToken } from "../src/tokens";
 import { html, Html } from "../src/web/html";
 import { isAdmin } from "../src/web/session";
@@ -154,6 +155,35 @@ describe("oauthClient", () => {
   it("uses the service name when no client is named", () => {
     expect(oauthClient(env, "my-api")).toEqual({ id: "mine", secret: "mine-secret" });
     expect(oauthClient(env, "freee", "freee")).toBeNull();
+  });
+});
+
+describe("token request errors", () => {
+  const auth = { type: "oauth2" as const, authorization_url: "https://up.example/authorize", token_url: "https://up.example/token" };
+  const client = { id: "id", secret: "secret" };
+
+  it("keeps the upstream's error_description, so causes that share a code can be told apart", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ error: "invalid_grant", error_description: "redirect_uri does not match" }, { status: 400 }),
+    );
+    try {
+      const error = await refreshTokens(auth, client, { access_token: "a", refresh_token: "r" }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(UpstreamOAuthError);
+      expect((error as UpstreamOAuthError).message).toBe("token request failed: invalid_grant (redirect_uri does not match)");
+      expect((error as UpstreamOAuthError).invalidGrant).toBe(true);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("names the status when the upstream gives no error", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 500 }));
+    try {
+      const error = await refreshTokens(auth, client, { access_token: "a", refresh_token: "r" }).catch((e: unknown) => e);
+      expect((error as UpstreamOAuthError).message).toBe("token request failed: status 500");
+    } finally {
+      fetch.mockRestore();
+    }
   });
 });
 
