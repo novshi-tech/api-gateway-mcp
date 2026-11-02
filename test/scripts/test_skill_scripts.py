@@ -32,6 +32,7 @@ DRIVE_ALL = os.path.join(SKILLS["google-drive"], "scripts", "drive_all.py")
 CALENDAR_ALL = os.path.join(SKILLS["google-calendar"], "scripts", "calendar_all.py")
 DOCS_TEXT = os.path.join(SKILLS["google-docs"], "scripts", "docs_text.py")
 BOARD_ALL = os.path.join(SKILLS["board"], "scripts", "board_all.py")
+GW_GIT = os.path.join(SKILLS["git"], "scripts", "gw_git.py")
 
 TOTAL_ITEMS = 250
 
@@ -320,6 +321,37 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertEqual([i["id"] for i in items], list(range(TOTAL_ITEMS)))
         self.assertEqual(len(FakeGateway.requests), 3)
         self.assertTrue(all("order_status_in%5B%5D=4" in r["path"] for r in FakeGateway.requests))
+
+    def test_gw_git_prints_the_repository_url_on_the_gateway(self):
+        base = self.env["GW_BASE_URL"].rstrip("/")
+        for repo in ("owner/repo", "/owner/repo.git"):
+            out = self.run_script(GW_GIT, "--url", "github-git", repo)
+            self.assertEqual(out.stdout.decode().strip(), f"{base}/github-git/owner/repo.git")
+
+    def test_gw_git_sends_the_token_only_to_the_gateway_without_helpers_or_prompts(self):
+        base = self.env["GW_BASE_URL"].rstrip("/")
+
+        def urlmatch(key, url):
+            return self.run_script(GW_GIT, "config", "--get-urlmatch", key, url, check=False).stdout.decode().strip()
+
+        self.assertEqual(urlmatch("http.extraHeader", f"{base}/github-git/owner/repo.git"), "Authorization: Bearer tok")
+        self.assertEqual(urlmatch("http.extraHeader", "https://github.com/owner/repo.git"), "")
+        self.assertEqual(urlmatch("credential.helper", f"{base}/github-git/owner/repo.git"), "")
+        sys.path.insert(0, os.path.dirname(GW_GIT))
+        try:
+            import gw_git
+        finally:
+            sys.path.pop(0)
+        git_env = gw_git.git_env(base, "tok", {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.editor", "GIT_CONFIG_VALUE_0": "vi"})
+        self.assertEqual(git_env["GIT_TERMINAL_PROMPT"], "0")
+        self.assertEqual(git_env["GIT_CONFIG_COUNT"], "3")
+        self.assertEqual(git_env["GIT_CONFIG_KEY_0"], "core.editor")
+
+    def test_gw_git_requires_token(self):
+        env = {k: v for k, v in self.env.items() if k != "GW_TOKEN"}
+        result = subprocess.run([sys.executable, GW_GIT, "ls-remote", "x"], env=env, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"GW_TOKEN", result.stderr)
 
     def test_board_all_csv(self):
         out = self.run_script(BOARD_ALL, "/v1/projects", "--csv", "id,name")

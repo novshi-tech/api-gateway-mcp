@@ -159,6 +159,8 @@ Basic 認証のサービス(`auth.type` が `basic`)は、ユーザーが Web �
 git -c http.extraHeader="Authorization: Bearer $GW_TOKEN" clone https://<ゲートウェイ>/api/github-git/<owner>/<repo>.git
 ```
 
+Claude からは、組み込みのプラグイン `api-gateway` の `git` スキルが、トークンを `.git/config` に残さずに git を呼びます。
+
 OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、クライアントの名前を大文字にした名前で登録します(ハイフンは `_` に)。組み込みのサービスのクライアントは `FREEE`・`GOOGLE`・`MICROSOFT` の 3 つで、Google の 6 つのサービスは 1 組を共有します。`SERVICES` に足したサービスは、`auth.client` に書いた名前か、なければサービス名がクライアントの名前です。
 
 ```sh
