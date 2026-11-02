@@ -1,6 +1,6 @@
 # 0002 git をゲートウェイで中継する。repo ごとの許可は持たない
 
-- 状態: 案(2026-10-29、直樹とのディスカッション)
+- 状態: 採用(2026-11-02。案は 2026-10-29、直樹とのディスカッション)
 - 関連: [0001](0001-absorb-boid-gateways.md)(boid の API ゲートウェイを引き取る)、[concept.md](../concept.md)(ゲートウェイがやらないこと)
 - 発端: novshi-tech/boid の `docs/plans/split-and-shrink.md` §2.3
 
@@ -61,9 +61,9 @@ concept.md の「メソッドやパスによる認可はしない。権限を絞
 
 ## 確かめること
 
-1. `info/refs`・`git-upload-pack`・`git-receive-pack` が今の `proxy.ts` のまま通るか(リクエストの `Content-Encoding: gzip`、プロトコル v2 の `Git-Protocol` ヘッダー、リダイレクト)
+1. ~~`info/refs`・`git-upload-pack`・`git-receive-pack` が今の `proxy.ts` のまま通るか(リクエストの `Content-Encoding: gzip`、プロトコル v2 の `Git-Protocol` ヘッダー、リダイレクト)~~ → 通った(下の「疎通の結果」)
 2. ~~ヘッダー型の認証方式で、上流用の `Authorization: Basic ...` を組み立てられるか~~ → 認証方式 `basic` を足した(下の「追記」)
-3. GitHub と Bitbucket が、ゲートウェイ(Cloudflare)からの git の通信を問題なく受け付けるか
+3. ~~GitHub と Bitbucket が、ゲートウェイ(Cloudflare)からの git の通信を問題なく受け付けるか~~ → GitHub は受け付けた。Bitbucket は未確認
 4. Cowork のサンドボックスに git が入っているか
 
 ## 追記(2026-11-02): 認証方式 `basic` を足す
@@ -78,3 +78,19 @@ concept.md の「メソッドやパスによる認可はしない。権限を絞
 "github-git": { "base_url": "https://github.com", "auth": { "type": "basic", "username": "x-access-token" } },
 "bitbucket-git": { "base_url": "https://bitbucket.org", "auth": { "type": "basic", "username": "x-token-auth" } }
 ```
+
+## 疎通の結果(2026-11-02)
+
+組織のデプロイに `github-git`(`basic`、ユーザー名 `x-access-token`、org のリポジトリに絞った fine-grained personal access token)を足し、Claude Code のクラウドセッションから git 2.43(プロトコル v2)で試した。`proxy.ts` は変えていない。
+
+| 操作 | 結果 |
+|---|---|
+| `git ls-remote` | 通った |
+| `git clone`(.git が 5MB ほど) | 通った(3 秒ほど) |
+| `git fetch` | 通った |
+| `git push`(コミットを載せた新しいブランチ) | 通った。上流に同じ SHA のブランチができた |
+| `git push --delete` | 通った |
+
+- 上流が断ったときの 401 には GitHub の本文(`Invalid username or token` など)が載ってくる。ゲートウェイが断ったとき(トークン切れ)は、ゲートウェイの JSON の 401。git にはどちらも「ユーザー名を読めない」としか出ないので、切り分けは同じパスの `info/refs` を REST で取って見る
+- 使い方はスキル `git`(`plugins/api-gateway/skills/git/`)にまとめた。トークンは `GIT_CONFIG_COUNT` の環境変数で、ゲートウェイの URL にだけ `http.<url>.extraHeader` として渡し、`.git/config` にも URL にも残さない
+- 残り: Bitbucket(顧客の環境なので、顧客のデプロイで確かめる)、Cowork のサンドボックスの git(確かめること 4)、15 分を超える作業でのトークンの取り直し(0001 の未決 1)

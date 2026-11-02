@@ -67,4 +67,5 @@ gw_request.py <METHOD> <service> <path> [-q key=value ...] [-H Name=value ...]
 - 更新・削除のリクエストは、実行前に内容をユーザーに確認する。
 - 上流の権限は、登録された API キーやトークン側で決まる。403 が返ったら、その認証情報に必要な権限があるかをユーザーに確認してもらう。
 - OAuth で接続するサービス(freee、Microsoft Graph、Gmail、Google Drive、Google Calendar、Google Docs、Google Analytics など)は、ゲートウェイが上流のトークンを注入し、更新もする。Claude が上流のトークンやクライアント ID を扱うことはない。ゲートウェイが `credential must be reconnected by the user at ...` の 403 を返したら、その URL でユーザーに接続し直してもらう。
+- git の接続先(`github-git` など)は REST ではなく git で使う。`git` スキルに従う。
 - 接続先のネットワークが制限されている環境(Team / Enterprise のコード実行設定)では、ゲートウェイのドメインを管理者に許可してもらう必要がある。つないだゲートウェイごとに要る。
