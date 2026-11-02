@@ -35,11 +35,14 @@ export function upstreamAuthorizationUrl(
   url.searchParams.set("state", params.state);
   url.searchParams.set("code_challenge", params.codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
-  if (auth.scope) url.searchParams.set("scope", auth.scope);
+  if (auth.scope) url.searchParams.set(auth.scope_param ?? "scope", auth.scope);
   return url.href;
 }
 
-async function tokenRequest(auth: { token_url: string }, client: OAuthClient, grant: Record<string, string>): Promise<TokenSet> {
+// Codes meaning the refresh token is gone for good; Slack has its own.
+const INVALID_GRANT = new Set(["invalid_grant", "invalid_refresh_token"]);
+
+async function tokenRequest(auth: { token_url: string; token_key?: string }, client: OAuthClient, grant: Record<string, string>): Promise<TokenSet> {
   const res = await fetch(auth.token_url, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
@@ -47,14 +50,20 @@ async function tokenRequest(auth: { token_url: string }, client: OAuthClient, gr
   }).catch((error: unknown) => {
     throw new UpstreamOAuthError(`token request failed: ${error}`);
   });
-  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const response = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const nested = auth.token_key ? response[auth.token_key] : undefined;
+  // Slack answers errors with 200 and `ok: false`; then only `error` is at the top level.
+  const body =
+    nested && typeof nested === "object" && typeof (nested as Record<string, unknown>).access_token === "string"
+      ? (nested as Record<string, unknown>)
+      : response;
   if (!res.ok || typeof body.access_token !== "string") {
     const code = typeof body.error === "string" ? body.error : `status ${res.status}`;
     // The status and the upstream's explanation tell apart causes that share a code: freee, for
     // one, answers a wrong client secret with invalid_grant too, but with 401 rather than 400.
     const detail = typeof body.error === "string" ? `, status ${res.status}` : "";
     const description = typeof body.error_description === "string" ? ` (${body.error_description.slice(0, 300)})` : "";
-    throw new UpstreamOAuthError(`token request failed: ${code}${detail}${description}`, body.error === "invalid_grant");
+    throw new UpstreamOAuthError(`token request failed: ${code}${detail}${description}`, INVALID_GRANT.has(String(body.error)));
   }
   const expiresIn = Number(body.expires_in);
   return {
@@ -82,7 +91,7 @@ export async function refreshTokens(auth: OAuth2Auth, client: OAuthClient, curre
   if (!current.refresh_token) throw new UpstreamOAuthError("no refresh token", true);
   const grant: Record<string, string> = { grant_type: "refresh_token", refresh_token: current.refresh_token };
   // Entra expects the scopes again on refresh.
-  if (auth.scope) grant.scope = auth.scope;
+  if (auth.scope && auth.refresh_scope !== false) grant.scope = auth.scope;
   const next = await tokenRequest(auth, client, grant);
   return { ...next, refresh_token: next.refresh_token ?? current.refresh_token };
 }

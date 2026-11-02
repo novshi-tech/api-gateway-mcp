@@ -27,7 +27,7 @@
 
 | 出どころ | 中身 | 変え方 |
 | --- | --- | --- |
-| カタログ(`src/catalog.ts`) | 汎用の接続先: freee、Microsoft Graph、Google 系、gBizINFO、Serper、board | ソースを変えて PR を出す |
+| カタログ(`src/catalog.ts`) | 汎用の接続先: freee、Microsoft Graph、Google 系、Slack、Jira、gBizINFO、Serper、board | ソースを変えて PR を出す |
 | 設定(`SERVICES`) | Service Binding や identity を使う接続先(murmur)と、移行中の互換 | デプロイの設定を変えて出し直す |
 | 管理画面 | 自社専用の接続先(ubs-apps、bm-next など) | 管理者が画面で登録する |
 

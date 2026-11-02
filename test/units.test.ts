@@ -1,12 +1,12 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import { catalog } from "../src/catalog";
-import { oauthClient, organizationName, parseServices } from "../src/config";
+import { oauthClient, organizationName, parseServices, type OAuth2Auth } from "../src/config";
 import { basicAuthorization } from "../src/vault";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
 import { getServices } from "../src/services";
-import { refreshTokens, UpstreamOAuthError } from "../src/upstream-oauth";
+import { exchangeCode, refreshTokens, upstreamAuthorizationUrl, UpstreamOAuthError } from "../src/upstream-oauth";
 import { signToken, verifyToken } from "../src/tokens";
 import { html, Html } from "../src/web/html";
 import { isAdmin } from "../src/web/session";
@@ -204,6 +204,61 @@ describe("token request errors", () => {
   });
 });
 
+describe("Slack and Atlassian token conventions", () => {
+  const client = { id: "id", secret: "secret" };
+  const services = catalog({} as Env);
+  const slack = services.slack.auth as OAuth2Auth;
+  const jira = services.jira.auth as OAuth2Auth;
+  const params = { redirectUri: "https://gw.example.com/connect/callback", state: "s", codeChallenge: "c" };
+
+  it("asks Slack for a user token through user_scope, and Atlassian for its API audience", () => {
+    const slackUrl = new URL(upstreamAuthorizationUrl(slack, client, params));
+    expect(slackUrl.searchParams.get("user_scope")).toContain("channels:history");
+    expect(slackUrl.searchParams.has("scope")).toBe(false);
+    const jiraUrl = new URL(upstreamAuthorizationUrl(jira, client, params));
+    expect(jiraUrl.searchParams.get("scope")?.split(" ")).toContain("offline_access");
+    expect(jiraUrl.searchParams.get("audience")).toBe("api.atlassian.com");
+    expect(jiraUrl.searchParams.get("prompt")).toBe("consent");
+  });
+
+  it("reads Slack's user token from authed_user, not the bot token at the top level", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ ok: true, access_token: "xoxb-bot", authed_user: { id: "U1", access_token: "xoxp-user", token_type: "user" } }),
+    );
+    try {
+      const tokens = await exchangeCode(slack, client, { code: "c", verifier: "v", redirectUri: params.redirectUri });
+      expect(tokens).toEqual({ access_token: "xoxp-user", refresh_token: undefined, expires_at: undefined });
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("reads a rotated Slack token from the top level, without sending the scopes again", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ ok: true, access_token: "xoxe.xoxp-next", refresh_token: "xoxe-1-next", expires_in: 43200, token_type: "user" }),
+    );
+    try {
+      const tokens = await refreshTokens(slack, client, { access_token: "a", refresh_token: "xoxe-1-old" });
+      expect(tokens).toMatchObject({ access_token: "xoxe.xoxp-next", refresh_token: "xoxe-1-next" });
+      const body = new URLSearchParams(fetch.mock.calls[0][1]!.body as URLSearchParams);
+      expect(body.has("scope")).toBe(false);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("asks to reconnect when Slack refuses the refresh token, though it answers 200", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: false, error: "invalid_refresh_token" }));
+    try {
+      const error = await refreshTokens(slack, client, { access_token: "a", refresh_token: "r" }).catch((e: unknown) => e);
+      expect((error as UpstreamOAuthError).message).toBe("token request failed: invalid_refresh_token, status 200");
+      expect((error as UpstreamOAuthError).invalidGrant).toBe(true);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+});
+
 describe("organizationName", () => {
   it("uses the configured name, or the public host when none is set", () => {
     expect(organizationName({ ORGANIZATION_NAME: " Acme ", PUBLIC_URL: "https://gw.example.com/" } as unknown as Env)).toBe("Acme");
@@ -235,6 +290,11 @@ describe("catalog", () => {
     expect(services.board.base_url).toBe("https://board.example");
     expect(services.mine.display_name).toBe("mine");
     expect(services.gmail.provider).toBe("Google");
+  });
+
+  it("rejects a scope parameter or token key that is not a plain name", () => {
+    const auth = { type: "oauth2", authorization_url: "https://a.example", token_url: "https://a.example", scope_param: "a&b" };
+    expect(() => parseServices({ x: { base_url: "https://a.example", auth } })).toThrow("invalid scope_param");
   });
 
   it("rejects an OAuth client name that cannot be a secret name", () => {

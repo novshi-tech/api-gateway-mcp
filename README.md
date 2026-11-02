@@ -14,7 +14,7 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
 ```
 
 - **Claude は認証情報を見ません。** API キーや OAuth のトークンは、ユーザーがゲートウェイの Web 画面で登録し、暗号化して保存されます。Claude が受け取るのは、寿命 15 分のゲートウェイのトークンだけです。
-- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
+- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、Slack、Jira、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
 - **使い方はスキルで配ります。** API の呼び方は、Claude のスキル(プラグイン)にまとめて配布します。コネクタの URL を含めていないので、どのデプロイでも同じプラグインを使えます。
 
 Claude の Cowork で動作を確認しています。MCP の OAuth に従っているので、ほかの Claude のクライアントや ChatGPT のコネクタにも対応する設計ですが、まだ確認していません。設計の詳細は [docs/concept.md](docs/concept.md) と [docs/auth-design.md](docs/auth-design.md) にあります。
@@ -76,6 +76,8 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | | `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
 | | `google-analytics` | `analytics`・`analytics-admin` | GA4 のレポート取得、アカウントとプロパティの参照(読み取り専用) |
 | `api-gateway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
+| `api-gateway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
+| `api-gateway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
 
 インストールの方法:
 
@@ -266,6 +268,30 @@ npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_SECRET
 - スコープ: Gmail の `gmail.modify` はメールの読み書きと送信、Drive の `drive` は既存のファイルを含む全ファイルの閲覧と管理、Calendar の 3 つは予定の読み書き、カレンダー一覧の参照、空き時間の参照、Docs の `documents` はドキュメントの本文の読み書き、Analytics の `analytics.readonly` は GA4 のレポートとプロパティの読み取りに使います(Data API と Admin API はホストが別なので、サービスも 2 つに分けています)。読み取り専用にするなら、`SERVICES` に同じ名前でサービスを書いて、スコープを `gmail.readonly` / `drive.readonly` / `documents.readonly` などに変えます。詳細は [Gmail](https://developers.google.com/workspace/gmail/api/auth/scopes)、[Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)、[Calendar](https://developers.google.com/workspace/calendar/api/auth)、[Docs](https://developers.google.com/workspace/docs/api/auth) の公式ドキュメントにあります。
 - `authorize_params` の `access_type: offline` と `prompt: consent` は、リフレッシュトークンを受け取るための設定です。
 - REST の呼び出し先の例: `/api/gmail/gmail/v1/users/me/messages`、`/api/drive/drive/v3/files`(アップロードは `/api/drive/upload/drive/v3/files`)、`/api/calendar/calendar/v3/calendars/primary/events`、`/api/docs/v1/documents/{id}`、`/api/analytics/v1beta/properties/{id}:runReport`、`/api/analytics-admin/v1beta/accountSummaries`
+
+#### Slack(`slack`)
+
+[api.slack.com/apps](https://api.slack.com/apps) でアプリを作成し(配布しないなら、使うワークスペースにだけ)、OAuth & Permissions で次を設定します。
+
+- Redirect URLs に `https://<ゲートウェイ>/connect/callback` を追加します。
+- **User Token Scopes** に、`src/catalog.ts` の `SLACK_USER_SCOPE` を追加します(Bot Token Scopes は要りません)。ゲートウェイはユーザートークン(`xoxp-`)を受け取り、API はつないだ本人として動きます。
+
+シークレットは `OAUTH_SLACK_CLIENT_ID` / `OAUTH_SLACK_CLIENT_SECRET`(Basic Information の Client ID と Client Secret)です。ワークスペースの設定でアプリの承認が要る場合は、管理者に承認してもらいます。Token Rotation は有効にしてもしなくても動きます(有効にすると、12 時間で切れるトークンをゲートウェイが更新します)。
+
+- REST の呼び出し先の例: `/api/slack/conversations.history?channel=C0123`、`/api/slack/chat.postMessage`
+
+#### Jira(`jira`)
+
+[developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) で OAuth 2.0 integration のアプリを作成し、次を設定します。
+
+- Permissions で Jira API を追加し、`src/catalog.ts` の `JIRA_SCOPE` にあるスコープ(`read:jira-work`・`write:jira-work`・`read:jira-user`・`manage:jira-webhook`)を付けます。User identity API も追加して `read:me` を付けます。
+- Authorization の Callback URL に `https://<ゲートウェイ>/connect/callback` を設定します。
+- 社外に配布しないなら、Distribution は「Not sharing」のままで構いません(アプリの所有者のサイトにつなげます)。
+
+シークレットは `OAUTH_ATLASSIAN_CLIENT_ID` / `OAUTH_ATLASSIAN_CLIENT_SECRET`(Settings の Client ID と Secret)です。リフレッシュトークンは使うたびに替わり、90 日使わないと切れます(切れたら Web 画面でつなぎ直します)。
+
+- 上流は `https://api.atlassian.com` です。Jira の API はサイトごとに `/ex/jira/<cloudid>/rest/api/3/...` の下にあり、クラウド ID は `/oauth/token/accessible-resources` で調べます。
+- REST の呼び出し先の例: `/api/jira/oauth/token/accessible-resources`、`/api/jira/ex/jira/<cloudid>/rest/api/3/search/jql`
 
 #### board(`board`)
 
