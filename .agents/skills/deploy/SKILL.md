@@ -58,7 +58,8 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
 
 設定は合成せず、各デプロイのファイルに全部書いてある。ひな形 `wrangler.example.jsonc` の共通部分が変わったら、`deployments/` の全ファイルに同じ変更を入れる。
 
-- 照らし合わせるもの: `compatibility_date`、`compatibility_flags`、`observability`、`triggers`、`assets`(`directory` は `../dist/assets`)、`durable_objects`、`migrations`、`vars` のキー(値はデプロイごとに違うので、増えたキーだけ足す。既定値はひな形のもの)。
+- 照らし合わせるもの: `compatibility_date`、`compatibility_flags`、`observability`、`triggers`、`durable_objects`、`migrations`、`vars` のキー(値はデプロイごとに違うので、増えたキーだけ足す。既定値はひな形のもの)。
+- ひな形にないキーが残っていたら消す(例: 以前の版の `assets`。プラグインの zip は Worker 本体に同梱するようになった)。
 - `migrations` は、ひな形にある tag をすべて、同じ順で持っていること。足りない tag を末尾に足す。既にある tag を書き換えたり消したりしない(Durable Object のデータを失う)。
 - 直したら、デプロイごとに `--dry-run` を通し、ユーザーにデプロイしてもらう。
 - 設定のリポジトリにコミットしてプッシュする(下の「設定の変更を残す」)。

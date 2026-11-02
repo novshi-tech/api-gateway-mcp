@@ -1,8 +1,12 @@
+import bundled from "../dist/plugins.js";
 import { registryFor, type PluginMeta } from "./registry";
 
 // Claude plugins (skill bundles) the web UI hands out as zips: the built-in ones under
-// plugins/, zipped into the Worker's static assets at deploy (tools/build-plugin-zip.py
-// --assets), and the ones admins upload, kept in Registry. A built-in name wins.
+// plugins/, zipped into the Worker itself at build time (tools/build-plugin-zip.py
+// --bundle writes dist/plugins.js), and the ones admins upload, kept in Registry. A
+// built-in name wins. The built-ins are not static assets: uploading assets needs a
+// per-upload token in the Authorization header, which a proxy that injects the
+// Cloudflare API token (as in cloud sessions) overwrites, so the deploy would fail there.
 
 export interface Plugin {
   name: string;
@@ -15,42 +19,21 @@ export interface Plugin {
   uploaded?: { at: number; by: string; size: number };
 }
 
-interface AssetIndex {
-  marketplace: string;
-  plugins: { name: string; version: string; description: string; dependencies: string[]; file: string; marketplace: string | null }[];
-}
-
 export const PLUGIN_NAME = /^[a-z0-9][a-z0-9-]*$/;
 // Durable Object storage takes values up to 2 MiB.
 export const MAX_PLUGIN_BYTES = 2_000_000;
 
-const ASSET_ORIGIN = "https://assets.invalid";
-
-// A deployment whose config predates "assets" has no binding; it just offers no built-ins.
-function assets(env: Env): Fetcher | undefined {
-  return (env as { ASSETS?: Fetcher }).ASSETS;
-}
-
-async function assetIndex(env: Env): Promise<AssetIndex | null> {
-  const binding = assets(env);
-  if (!binding) return null;
-  const res = await binding.fetch(`${ASSET_ORIGIN}/plugins/index.json`);
-  if (!res.ok) return null;
-  return res.json<AssetIndex>();
-}
-
 export async function listPlugins(env: Env): Promise<Plugin[]> {
-  const [index, uploaded] = await Promise.all([assetIndex(env), registryFor(env).listPlugins()]);
-  const builtin: Plugin[] = (index?.plugins ?? []).map((p) => ({
+  const builtin: Plugin[] = bundled.plugins.map((p) => ({
     name: p.name,
     version: p.version,
     description: p.description,
     dependencies: p.dependencies,
     source: "builtin",
-    ...(p.marketplace ? { marketplace: { repo: p.marketplace, name: index!.marketplace } } : {}),
+    ...(p.marketplace ? { marketplace: { repo: p.marketplace, name: bundled.marketplace } } : {}),
   }));
-  const names = new Set(builtin.map((p) => p.name));
-  const others: Plugin[] = uploaded
+  const names = builtinNames();
+  const others: Plugin[] = (await registryFor(env).listPlugins())
     .filter((m) => !names.has(m.name))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((m) => ({
@@ -64,17 +47,13 @@ export async function listPlugins(env: Env): Promise<Plugin[]> {
   return [...builtin, ...others];
 }
 
-export async function builtinNames(env: Env): Promise<Set<string>> {
-  return new Set((await assetIndex(env))?.plugins.map((p) => p.name) ?? []);
+export function builtinNames(): Set<string> {
+  return new Set(bundled.plugins.map((p) => p.name));
 }
 
-export async function pluginZip(env: Env, name: string): Promise<{ version: string; body: ReadableStream | ArrayBuffer } | null> {
-  const index = await assetIndex(env);
-  const builtin = index?.plugins.find((p) => p.name === name);
-  if (builtin) {
-    const res = await assets(env)!.fetch(`${ASSET_ORIGIN}/plugins/${builtin.file}`);
-    return res.ok && res.body ? { version: builtin.version, body: res.body } : null;
-  }
+export async function pluginZip(env: Env, name: string): Promise<{ version: string; body: ArrayBuffer | Uint8Array } | null> {
+  const builtin = bundled.plugins.find((p) => p.name === name);
+  if (builtin) return { version: builtin.version, body: Uint8Array.from(atob(builtin.zip), (c) => c.charCodeAt(0)) };
   const stored = await registryFor(env).getPlugin(name);
   return stored ? { version: stored.meta.version, body: stored.zip } : null;
 }

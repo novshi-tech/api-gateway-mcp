@@ -61,7 +61,7 @@ export async function uploadPlugin(request: Request, env: Env): Promise<Response
   const zip = await file.arrayBuffer();
   const manifest = await readManifest(new Uint8Array(zip));
   if (typeof manifest === "string") return listing(env, user, false, manifest, 400);
-  if ((await builtinNames(env)).has(manifest.name)) {
+  if (builtinNames().has(manifest.name)) {
     return listing(env, user, false, `「${manifest.name}」は組み込みのプラグインと同じ名前です。`, 400);
   }
   await registryFor(env).putPlugin({ ...manifest, size: zip.byteLength, updatedBy: user.sub }, zip);

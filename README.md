@@ -84,7 +84,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
 - zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` と `.claude-plugin/marketplace.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
 
-- ゲートウェイの Web 画面: 「Claude につなぐ」(`/setup`)に、このリポジトリのプラグインの zip が並び、サインインした人がダウンロードできます。`npm run deploy` が `tools/build-plugin-zip.py --assets` で `dist/assets/plugins/` に zip を作り、Worker の静的アセット(デプロイの設定の `assets`。`run_worker_first` なので公開はされません)として一緒にデプロイするので、いつもそのゲートウェイの版のものです。ほかのプラグイン(自社のサービスのスキルなど)は、管理者が「プラグインの配布」(`/admin/plugins`)で zip を追加すると、同じ画面に並びます(下の「管理画面から接続先を足す」)。
+- ゲートウェイの Web 画面: 「Claude につなぐ」(`/setup`)に、このリポジトリのプラグインの zip が並び、サインインした人がダウンロードできます。`npm run deploy` が `tools/build-plugin-zip.py --bundle` で zip を `dist/plugins.js` に書き出し、Worker 本体に同梱してデプロイするので、いつもそのゲートウェイの版のものです。静的アセットにしないのは、アセットのアップロードがアップロードごとのトークンを `Authorization` で送るためで、Cloudflare の API トークンを差し込むプロキシ(Claude Code のクラウドのセッションなど)の下ではデプロイが失敗するからです。ほかのプラグイン(自社のサービスのスキルなど)は、管理者が「プラグインの配布」(`/admin/plugins`)で zip を追加すると、同じ画面に並びます(下の「管理画面から接続先を足す」)。
 
 以前の版の `api-gateway`(0.11 まで)は、全部のスキルが 1 つに入っていました。0.12 に上げたら、使う提供元のプラグインを足してください。
 
@@ -124,7 +124,7 @@ npm run deploy -- acme
 - `ENCRYPTION_KEY` を変えると、登録済みの認証情報は復号できなくなります。
 - `SIGNING_KEY` を変えると、発行済みのトークンと MCP の接続が無効になり、ユーザーは接続し直しになります。
 - `IDENTITY_SIGNING_KEY` を変えると、`identity` の上流が古い公開鍵をキャッシュしている間は検証に失敗します。上流が JWKS を取り直すまで待つか、上流の公開鍵を差し替えます。
-- 設定には `assets`(`"directory": "../dist/assets"`)を入れます。プラグインの zip を Web 画面で配るためのもので、ないと「Claude につなぐ」に組み込みのプラグインが出ません(`npm run deploy` が警告します)。
+- 以前の版で設定に足した `assets`(`"directory": "../dist/assets"`)は、もう使いません。消してください。
 - 設定を変えたら、`npm run deploy -- <名前>` で出し直します。設定をリポジトリで管理しているなら、コミットしてプッシュもします。
 - 新しい版で Durable Object やその migration が増えたときは(`wrangler.example.jsonc` の `durable_objects` と `migrations`)、各デプロイの設定にも同じものを足してから出し直します。deploy スキルが照らし合わせて直します。
 

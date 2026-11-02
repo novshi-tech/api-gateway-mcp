@@ -11,10 +11,10 @@
 // There is no wrangler.jsonc at the root, so a bare `wrangler deploy` fails
 // instead of picking a deployment by accident.
 //
-// Before a deploy, the plugins under plugins/ are zipped into dist/assets/plugins/ (the
-// Worker's static assets), so that the web UI offers the skills of the version it runs.
+// Before a deploy, the plugins under plugins/ are zipped into dist/plugins.js, which the
+// Worker bundles, so that the web UI offers the skills of the version it runs.
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,11 +40,8 @@ if (!existsSync(config)) {
 }
 
 if (command === "deploy" || command === "versions") {
-  const built = spawnSync("python3", ["tools/build-plugin-zip.py", "--assets"], { cwd: root, stdio: ["ignore", "ignore", "inherit"] });
+  const built = spawnSync("python3", ["tools/build-plugin-zip.py", "--bundle"], { cwd: root, stdio: ["ignore", "ignore", "inherit"] });
   if (built.status !== 0) process.exit(built.status ?? 1);
-  if (!/"assets"\s*:/.test(readFileSync(config, "utf8"))) {
-    console.error(`warning: ${relative(root, config)} has no "assets", so the web UI cannot offer the built-in plugins. Copy "assets" from wrangler.example.jsonc with "directory": "../dist/assets".`);
-  }
 }
 
 const result = spawnSync("npx", ["wrangler", command, ...rest, "--config", relative(root, config)], { cwd: root, stdio: "inherit" });
