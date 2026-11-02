@@ -14,9 +14,6 @@
       { "name": "REGISTRY", "class_name": "Registry" }
     ]
   },
-  // The plugins under plugins/, zipped by `npm run deploy` (tools/build-plugin-zip.py --assets),
-  // for the web UI to hand out to signed-in users. The Worker runs first, so nothing is public.
-  "assets": { "directory": "dist/assets", "binding": "ASSETS", "run_worker_first": true },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["UserVault"] },
     { "tag": "v2", "new_sqlite_classes": ["Registry"] }
