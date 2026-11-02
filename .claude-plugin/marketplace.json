@@ -55,6 +55,32 @@
       "dependencies": [
         "api-gateway"
       ]
+    },
+    {
+      "name": "api-gateway-slack",
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway-slack"
+      },
+      "version": "0.1.0",
+      "description": "API ゲートウェイ経由で Slack(チャンネル・DM のメッセージ、検索、投稿、リアクション)を操作するスキル。api-gateway プラグインと一緒に使う。",
+      "dependencies": [
+        "api-gateway"
+      ]
+    },
+    {
+      "name": "api-gateway-atlassian",
+      "source": {
+        "source": "git-subdir",
+        "url": "novshi-tech/api-gateway-mcp",
+        "path": "plugins/api-gateway-atlassian"
+      },
+      "version": "0.1.0",
+      "description": "API ゲートウェイ経由で Jira(課題の検索・作成・更新・コメント・遷移)を操作するスキル。api-gateway プラグインと一緒に使う。",
+      "dependencies": [
+        "api-gateway"
+      ]
     }
   ]
 }

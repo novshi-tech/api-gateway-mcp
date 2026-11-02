@@ -30,7 +30,13 @@ export interface OAuth2Auth {
   authorization_url: string;
   token_url: string;
   scope?: string;
+  // The authorization URL's parameter for `scope`; Slack takes a user token's scopes as `user_scope`.
+  scope_param?: string;
   authorize_params?: Record<string, string>;
+  // Whether a refresh sends `scope` again (Entra expects it). Off for upstreams that do not document it.
+  refresh_scope?: boolean;
+  // A property of the token response that holds the user's tokens when present, e.g. Slack's `authed_user`.
+  token_key?: string;
 }
 
 // OAuth2 client credentials: the deployment, not a user, owns the access. The client
@@ -66,6 +72,7 @@ export interface ServiceConfig {
 export type Services = Record<string, ServiceConfig>;
 
 const SERVICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
+const PARAM_NAME = /^[a-z][a-z0-9_]*$/;
 const BINDING_NAME = /^[A-Z][A-Z0-9_]*$/;
 // RFC 7617: the user name cannot contain a colon; no control characters either.
 const BASIC_USERNAME = /^[^:\x00-\x1f\x7f]+$/;
@@ -82,6 +89,9 @@ export function parseServices(raw: unknown): Services {
       requireHttps(name, "authorization_url", auth.authorization_url);
       requireHttps(name, "token_url", auth.token_url);
       if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);
+      for (const field of ["scope_param", "token_key"] as const) {
+        if (auth[field] !== undefined && !PARAM_NAME.test(auth[field])) throw new Error(`service ${name}: invalid ${field}`);
+      }
     } else if (auth?.type === "client_credentials") {
       requireHttps(name, "token_url", auth.token_url);
       if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);

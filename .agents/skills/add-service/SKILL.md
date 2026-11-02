@@ -5,7 +5,7 @@ description: API ゲートウェイに、新しい連携先サービス(外部�
 
 # サービスを足す
 
-freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、board、gBizINFO、Serper は組み込み(`src/catalog.ts`)なので、足す必要はない。OAuth のものはクライアントのシークレットを登録すれば使える(README の「連携先を設定する」)。
+freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、Slack、Jira、board、gBizINFO、Serper は組み込み(`src/catalog.ts`)なので、足す必要はない。OAuth のものはクライアントのシークレットを登録すれば使える(README の「連携先を設定する」)。
 
 それ以外のサービスを 1 つ足すには、次の 3 つをそろえる。
 

@@ -32,6 +32,35 @@ const GRAPH_SCOPE = [
   "Channel.ReadBasic.All",
 ].join(" ");
 
+// User token scopes: reading conversations and people, searching, and writing as the user.
+const SLACK_USER_SCOPE = [
+  "channels:history",
+  "channels:read",
+  "groups:history",
+  "groups:read",
+  "im:history",
+  "im:read",
+  "mpim:history",
+  "mpim:read",
+  "users:read",
+  "users:read.email",
+  "team:read",
+  "search:read",
+  "files:read",
+  "reactions:read",
+  "reactions:write",
+  "chat:write",
+].join(",");
+
+const JIRA_SCOPE = [
+  "read:jira-work",
+  "write:jira-work",
+  "read:jira-user",
+  "manage:jira-webhook",
+  "read:me",
+  "offline_access",
+].join(" ");
+
 export function catalog(env: Env): Services {
   const services: Services = {
     freee: {
@@ -58,6 +87,39 @@ export function catalog(env: Env): Services {
       "https://analyticsadmin.googleapis.com",
       "https://www.googleapis.com/auth/analytics.readonly",
     ),
+    // A user token: Slack puts it under `authed_user` and takes its scopes as `user_scope`.
+    // It does not expire unless the app turns on token rotation.
+    slack: {
+      display_name: "Slack",
+      provider: "Slack",
+      base_url: "https://slack.com/api",
+      auth: {
+        type: "oauth2",
+        client: "slack",
+        authorization_url: "https://slack.com/oauth/v2/authorize",
+        token_url: "https://slack.com/api/oauth.v2.access",
+        scope: SLACK_USER_SCOPE,
+        scope_param: "user_scope",
+        token_key: "authed_user",
+        refresh_scope: false,
+      },
+    },
+    // Atlassian Cloud OAuth 2.0 (3LO). Calls go to /ex/jira/<cloudid>/...; the cloud ID comes
+    // from /oauth/token/accessible-resources. Refresh tokens rotate.
+    jira: {
+      display_name: "Jira",
+      provider: "Atlassian",
+      base_url: "https://api.atlassian.com",
+      auth: {
+        type: "oauth2",
+        client: "atlassian",
+        authorization_url: "https://auth.atlassian.com/authorize",
+        token_url: "https://auth.atlassian.com/oauth/token",
+        scope: JIRA_SCOPE,
+        authorize_params: { audience: "api.atlassian.com", prompt: "consent" },
+        refresh_scope: false,
+      },
+    },
     board: {
       display_name: "board",
       base_url: "https://api.the-board.jp",
