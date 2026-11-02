@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { BasicAuth, HeadersAuth } from "./config";
 import { decryptJson, encryptJson, importAesKey } from "./crypto";
 import { upstreamTarget, type Upstream } from "./services";
 import { refreshTokens, UpstreamOAuthError, type TokenSet } from "./upstream-oauth";
@@ -20,14 +21,28 @@ interface StoredCredential extends CredentialInfo {
   target?: string;
 }
 
-// Header values keyed by lower-case header name, as entered by the user.
+// Values entered by the user: header values keyed by lower-case header name, or
+// `username` and `password` for basic (no `username` when the definition fixes it).
 export type HeaderSecrets = Record<string, string>;
+
+// The names of the values a user enters for a service.
+export function secretNames(auth: HeadersAuth | BasicAuth): string[] {
+  if (auth.type === "basic") return auth.username === undefined ? ["username", "password"] : ["password"];
+  return auth.headers.map((field) => field.name.toLowerCase());
+}
+
+// RFC 7617 with UTF-8.
+export function basicAuthorization(username: string, password: string): string {
+  const bytes = new TextEncoder().encode(`${username}:${password}`);
+  return `Basic ${btoa(String.fromCharCode(...bytes))}`;
+}
 
 export type HeadersResult =
   | { headers: Record<string, string> }
   | { error: "missing" | "reconnect" | "unavailable" }
-  // The definition asks for a header this credential has no value for: it was renamed or added.
-  | { error: "no_value"; header: string };
+  // The definition asks for a value this credential lacks: a header was renamed or added,
+  // or a fixed basic user name was removed.
+  | { error: "no_value"; field: string };
 
 export const ALREADY_CONNECTED = "already connected";
 
@@ -77,12 +92,12 @@ export class UserVault extends DurableObject<Env> {
     const { service, config } = upstream;
     if (config.auth.type === "identity") return { error: `${service} needs no credential` };
     if (config.auth.type === "client_credentials") return { error: `${service} is not connected by users` };
-    if (config.auth.type !== "headers") return { error: `${service} is connected with OAuth` };
+    if (config.auth.type !== "headers" && config.auth.type !== "basic") return { error: `${service} is connected with OAuth` };
     const values: HeaderSecrets = {};
-    for (const field of config.auth.headers) {
-      const value = secrets[field.name.toLowerCase()]?.trim();
-      if (!value) return { error: `missing value for ${field.name}` };
-      values[field.name.toLowerCase()] = value;
+    for (const name of secretNames(config.auth)) {
+      const value = secrets[name]?.trim();
+      if (!value) return { error: `missing value for ${name}` };
+      values[name] = value;
     }
     const id = crypto.randomUUID();
     const info: CredentialInfo = { id, service, label: config.display_name ?? service, createdAt: Date.now() };
@@ -133,12 +148,18 @@ export class UserVault extends DurableObject<Env> {
     }
     const config = upstream.config;
     if (config.auth.type === "oauth2") return this.oauthHeaders(id, stored, upstream);
-    if (config.auth.type !== "headers") return { error: "missing" };
+    if (config.auth.type !== "headers" && config.auth.type !== "basic") return { error: "missing" };
     const values = await decryptJson<HeaderSecrets>(await this.key(), stored.sealed, this.aad(id));
+    if (config.auth.type === "basic") {
+      const username = config.auth.username ?? values.username;
+      if (username === undefined) return { error: "no_value", field: "username" };
+      if (values.password === undefined) return { error: "no_value", field: "password" };
+      return { headers: { authorization: basicAuthorization(username, values.password) } };
+    }
     const headers: Record<string, string> = {};
     for (const field of config.auth.headers) {
       const name = field.name.toLowerCase();
-      if (values[name] === undefined) return { error: "no_value", header: field.name };
+      if (values[name] === undefined) return { error: "no_value", field: `header ${field.name}` };
       headers[name] = `${field.prefix ?? ""}${values[name]}`;
     }
     return { headers };

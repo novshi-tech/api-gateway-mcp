@@ -70,8 +70,8 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
     if (result.error === "no_value") {
       return denied(
         502,
-        `credential has no value for header ${result.header}: the service's headers changed. ` +
-          `An admin can restore the header name, or the user can delete the credential and add it again at ${publicUrl(env)}/`,
+        `credential has no value for ${result.field}: the service's definition changed. ` +
+          `An admin can restore the definition, or the user can delete the credential and add it again at ${publicUrl(env)}/`,
       );
     }
     if (result.error === "reconnect") {

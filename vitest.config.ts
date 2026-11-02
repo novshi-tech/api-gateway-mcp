@@ -27,6 +27,16 @@ const SERVICES = {
     base_url: "https://api.app-unclient.example",
     auth: { type: "client_credentials", token_url: "https://login.app.example/token" },
   },
+  // Basic authentication: one with a fixed user name, as for a git host's token, and one where the user enters it.
+  "git-host": {
+    display_name: "Git host",
+    base_url: "https://git.example",
+    auth: { type: "basic", username: "x-access-token", password_label: "Git host のトークン" },
+  },
+  "basic-free": {
+    base_url: "https://basic.example",
+    auth: { type: "basic", username_label: "メールアドレス" },
+  },
   murmur: {
     display_name: "Murmur",
     base_url: "https://murmur.example/api",

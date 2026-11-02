@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import { catalog } from "../src/catalog";
 import { oauthClient, organizationName, parseServices } from "../src/config";
+import { basicAuthorization } from "../src/vault";
 import { decryptJson, encryptJson, importAesKey } from "../src/crypto";
 import { admit, SignInError } from "../src/idp";
 import { getServices } from "../src/services";
@@ -88,6 +89,17 @@ describe("parseServices", () => {
       auth: { type: "identity", audience: "murmur" },
     });
     expect(parseServices({ board: { base_url: "https://a.example", auth } }).board).not.toHaveProperty("binding");
+  });
+
+  it("accepts basic auth with or without a fixed user name, but not one with a colon", () => {
+    const parsed = parseServices({
+      git: { base_url: "https://git.example", auth: { type: "basic", username: "x-access-token" } },
+      jira: { base_url: "https://jira.example", auth: { type: "basic" } },
+    });
+    expect(parsed.git.auth).toEqual({ type: "basic", username: "x-access-token" });
+    expect(parsed.jira.auth).toEqual({ type: "basic" });
+    expect(() => parseServices({ git: { base_url: "https://git.example", auth: { type: "basic", username: "a:b" } } })).toThrow(/basic username/);
+    expect(() => parseServices({ git: { base_url: "https://git.example", auth: { type: "basic", username: "" } } })).toThrow(/basic username/);
   });
 
   it("rejects identity upstreams without an audience and invalid binding names", () => {
@@ -237,5 +249,12 @@ describe("isAdmin", () => {
     expect(isAdmin(env, { sub: "google_b", name: "B" })).toBe(true);
     expect(isAdmin(env, { sub: "entra_t_c", name: "C" })).toBe(false);
     expect(isAdmin({ ADMINS: "" } as unknown as Env, { sub: "", name: "" })).toBe(false);
+  });
+});
+
+describe("basicAuthorization", () => {
+  it("encodes the user name and password as RFC 7617 with UTF-8", () => {
+    expect(basicAuthorization("x-access-token", "ghp_abc123")).toBe(`Basic ${btoa("x-access-token:ghp_abc123")}`);
+    expect(basicAuthorization("é", "p")).toBe("Basic w6k6cA==");
   });
 });

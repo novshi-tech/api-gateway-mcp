@@ -101,6 +101,24 @@ describe("vault", () => {
     expect(target).toBe("https://api.the-board.jp");
   });
 
+  it("builds Basic authorization from a fixed user name and the entered password", async () => {
+    const cred = await vaultFor(env, alice).add(await upstream("git-host"), { password: " ghp_abc123 ", username: "ignored" });
+    if ("error" in cred) throw new Error(cred.error);
+    expect(await vaultFor(env, alice).headers(cred.id, await upstream("git-host"))).toEqual({
+      headers: { authorization: `Basic ${btoa("x-access-token:ghp_abc123")}` },
+    });
+    expect(await vaultFor(env, bob).add(await upstream("git-host"), {})).toEqual({ error: "missing value for password" });
+  });
+
+  it("builds Basic authorization from an entered user name and password", async () => {
+    expect(await vaultFor(env, alice).add(await upstream("basic-free"), { password: "p" })).toEqual({ error: "missing value for username" });
+    const cred = await vaultFor(env, alice).add(await upstream("basic-free"), { username: "me@example.com", password: "p" });
+    if ("error" in cred) throw new Error(cred.error);
+    expect(await vaultFor(env, alice).headers(cred.id, await upstream("basic-free"))).toEqual({
+      headers: { authorization: `Basic ${btoa("me@example.com:p")}` },
+    });
+  });
+
   it("removes credentials", async () => {
     const cred = await addBoard(alice);
     expect(await vaultFor(env, alice).remove(cred.id)).toBe(true);
@@ -121,6 +139,19 @@ describe("proxy", () => {
     expect(echoed.url).toBe("https://api.info.gbiz.go.jp/hojin/v2/hojin?name=%E3%83%86%E3%82%B9%E3%83%88");
     expect(echoed.headers["x-hojininfo-api-token"]).toBe("gbiz-token");
     expect(echoed.headers.authorization).toBeUndefined();
+  });
+
+  it("replaces the caller's gateway token with Basic authorization for git's smart HTTP", async () => {
+    const cred = await vaultFor(env, alice).add(await upstream("git-host"), { password: "ghp_abc123" });
+    if ("error" in cred) throw new Error(cred.error);
+    const res = await SELF.fetch(`${BASE}/api/git-host/owner/repo.git/info/refs?service=git-upload-pack`, {
+      headers: { authorization: `Bearer ${await apiToken(alice, { "git-host": cred.id })}`, "git-protocol": "version=2" },
+    });
+    expect(res.status).toBe(200);
+    const echoed = (await res.json()) as { url: string; headers: Record<string, string> };
+    expect(echoed.url).toBe("https://git.example/owner/repo.git/info/refs?service=git-upload-pack");
+    expect(echoed.headers.authorization).toBe(`Basic ${btoa("x-access-token:ghp_abc123")}`);
+    expect(echoed.headers["git-protocol"]).toBe("version=2");
   });
 
   it("sends the Serper API key in its own header", async () => {
@@ -300,7 +331,7 @@ describe("mcp tools", () => {
     const client = await connect(alice);
     const listed = JSON.parse(text(await client.callTool({ name: "list_credentials", arguments: {} })));
     // "unclient" has no OAuth client in the tests, so it is not offered.
-    expect(listed.services).toEqual(["freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "board", "gbizinfo", "serper", "graph", "murmur"]);
+    expect(listed.services).toEqual(["freee", "gmail", "drive", "calendar", "docs", "analytics", "analytics-admin", "board", "gbizinfo", "serper", "graph", "git-host", "basic-free", "murmur"]);
     expect(listed.credentials).toEqual([
       expect.objectContaining({ id: cred.id, service: "board" }),
       { id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" },
@@ -458,6 +489,30 @@ describe("web ui", () => {
     expect((await SELF.fetch(`${BASE}/connections/new/murmur`, { headers: { cookie } })).status).toBe(404);
     expect((await SELF.fetch(`${BASE}/connections/new/unclient`, { headers: { cookie } })).status).toBe(404);
     expect((await SELF.fetch(`${BASE}/connections/new/constructor`, { headers: { cookie } })).status).toBe(404);
+  });
+
+  it("asks only for the password when the definition fixes the Basic user name", async () => {
+    const cookie = await sessionCookie(carol);
+    const fixed = await (await SELF.fetch(`${BASE}/connections/new/git-host`, { headers: { cookie } })).text();
+    expect(fixed).toContain("Git host のトークン");
+    expect(fixed).toContain(`name="h:password"`);
+    expect(fixed).not.toContain(`name="h:username"`);
+    const free = await (await SELF.fetch(`${BASE}/connections/new/basic-free`, { headers: { cookie } })).text();
+    expect(free).toContain("メールアドレス");
+    expect(free).toContain(`name="h:username"`);
+    expect(free).toContain(`name="h:password"`);
+
+    const res = await SELF.fetch(`${BASE}/credentials`, {
+      method: "POST",
+      headers: { cookie, origin: new URL(BASE).origin },
+      body: new URLSearchParams({ service: "basic-free", "h:username": "me@example.com", "h:password": "p" }),
+      redirect: "manual",
+    });
+    expect(res.status).toBe(303);
+    const [cred] = await vaultFor(env, carol).list();
+    expect(await vaultFor(env, carol).headers(cred.id, await upstream("basic-free"))).toEqual({
+      headers: { authorization: `Basic ${btoa("me@example.com:p")}` },
+    });
   });
 
   it("confirms before deleting a connection", async () => {

@@ -62,6 +62,19 @@ concept.md の「メソッドやパスによる認可はしない。権限を絞
 ## 確かめること
 
 1. `info/refs`・`git-upload-pack`・`git-receive-pack` が今の `proxy.ts` のまま通るか(リクエストの `Content-Encoding: gzip`、プロトコル v2 の `Git-Protocol` ヘッダー、リダイレクト)
-2. ヘッダー型の認証方式で、上流用の `Authorization: Basic ...` を組み立てられるか。足りなければ、ユーザー名と token から Basic を作る書き方を足す
+2. ~~ヘッダー型の認証方式で、上流用の `Authorization: Basic ...` を組み立てられるか~~ → 認証方式 `basic` を足した(下の「追記」)
 3. GitHub と Bitbucket が、ゲートウェイ(Cloudflare)からの git の通信を問題なく受け付けるか
 4. Cowork のサンドボックスに git が入っているか
+
+## 追記(2026-11-02): 認証方式 `basic` を足す
+
+ヘッダー型(`prefix` + 値)では、ユーザーが `ユーザー名:トークン` の Base64 を自分で作って登録するしかなかった。Basic は HTTP の仕様(RFC 7617)で決まった方式なので、ヘッダー型のオプションではなく、`headers`・`oauth2`・`identity` と並ぶ認証方式 `basic` として足した。
+
+- ユーザーはユーザー名とパスワードを入れ、ゲートウェイが `Authorization: Basic base64(ユーザー名:パスワード)` を組み立てる(UTF-8)
+- 定義に `username` を書くと、ユーザー名はそれに固定し、ユーザーはパスワードだけを入れる。GitHub のトークンは `x-access-token`(PAT ならユーザー名は何でも通り、GitHub App のトークンはこれに決まっている)、Bitbucket のアクセストークンは `x-token-auth`
+- ユーザーごとにユーザー名が違う上流(メールアドレスとトークンなど)は、`username` を書かずにユーザーに入れてもらう
+
+```jsonc
+"github-git": { "base_url": "https://github.com", "auth": { "type": "basic", "username": "x-access-token" } },
+"bitbucket-git": { "base_url": "https://bitbucket.org", "auth": { "type": "basic", "username": "x-token-auth" } }
+```
