@@ -167,7 +167,15 @@ ${label}
 ${auth.headers.map((h) => html`<label>${h.label}<input type="password" name="h:${h.name.toLowerCase()}" required autocomplete="off"></label>`)}
 <button>保存してつなぐ</button>
 </form>`
-        : false;
+        : auth.type === "basic"
+          ? html`<form method="post" action="/credentials" class="card">
+<p class="hint">${name} の管理画面で発行した値を入力します。</p>
+${label}
+${auth.username === undefined && html`<label>${auth.username_label ?? "ユーザー名"}<input type="text" name="h:username" required autocomplete="off"></label>`}
+<label>${auth.password_label ?? "パスワード"}<input type="password" name="h:password" required autocomplete="off"></label>
+<button>保存してつなぐ</button>
+</form>`
+          : false;
   return page(
     `${name} をつなぐ`,
     html`${masthead(env, user)}

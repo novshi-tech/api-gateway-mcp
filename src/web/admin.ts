@@ -24,6 +24,7 @@ export function audit(user: Session, action: string, service: string, fields: st
 
 const AUTH_LABELS: Record<ServiceConfig["auth"]["type"], string> = {
   headers: "API キー",
+  basic: "Basic 認証",
   oauth2: "OAuth 2.0",
   client_credentials: "OAuth 2.0(client credentials)",
   identity: "サインインを信頼",
@@ -72,6 +73,9 @@ interface ServiceForm {
   base_url: string;
   auth_type: string;
   headers: HeaderField[];
+  basic_username: string;
+  basic_username_label: string;
+  basic_password_label: string;
   authorization_url: string;
   token_url: string;
   scope: string;
@@ -90,6 +94,9 @@ function emptyForm(): ServiceForm {
     base_url: "",
     auth_type: "headers",
     headers: [],
+    basic_username: "",
+    basic_username_label: "",
+    basic_password_label: "",
     authorization_url: "",
     token_url: "",
     scope: "",
@@ -105,6 +112,15 @@ function formOf(name: string, config: ServiceConfig, client: OAuthClient | undef
   const form = { ...emptyForm(), name, display_name: config.display_name ?? "", provider: config.provider ?? "", base_url: config.base_url };
   const auth = config.auth;
   if (auth.type === "headers") return { ...form, auth_type: "headers", headers: auth.headers };
+  if (auth.type === "basic") {
+    return {
+      ...form,
+      auth_type: "basic",
+      basic_username: auth.username ?? "",
+      basic_username_label: auth.username_label ?? "",
+      basic_password_label: auth.password_label ?? "",
+    };
+  }
   if (auth.type === "oauth2") {
     return {
       ...form,
@@ -140,6 +156,9 @@ function readForm(data: FormData): ServiceForm {
     base_url: field("base_url"),
     auth_type: field("auth_type"),
     headers,
+    basic_username: field("basic_username"),
+    basic_username_label: field("basic_username_label"),
+    basic_password_label: field("basic_password_label"),
     authorization_url: field("authorization_url"),
     token_url: field("token_url"),
     scope: field("scope"),
@@ -168,6 +187,17 @@ function configOf(form: ServiceForm): ServiceConfig | string {
   if (form.auth_type === "headers") {
     if (form.headers.length === 0) return "送るヘッダーを 1 つ以上入れてください。";
     return { ...base, auth: { type: "headers", headers: form.headers } };
+  }
+  if (form.auth_type === "basic") {
+    return {
+      ...base,
+      auth: {
+        type: "basic",
+        ...(form.basic_username ? { username: form.basic_username } : {}),
+        ...(form.basic_username_label && !form.basic_username ? { username_label: form.basic_username_label } : {}),
+        ...(form.basic_password_label ? { password_label: form.basic_password_label } : {}),
+      },
+    };
   }
   if (form.auth_type === "oauth2") {
     const params: Record<string, string> = {};
@@ -235,12 +265,19 @@ ${creating
 ${!creating && html`<p class="hint">ベース URL のホスト、トークンの URL、クライアント ID を変えると、この接続先の既存の接続はすべて使えなくなり、利用者はつなぎ直すことになります。</p>`}
 <fieldset><legend>認証方式</legend>
 <label class="choice"><input type="radio" name="auth_type" value="headers"${form.auth_type === "headers" ? " checked" : ""}> API キーやトークンをヘッダーで送る</label>
+<label class="choice"><input type="radio" name="auth_type" value="basic"${form.auth_type === "basic" ? " checked" : ""}> Basic 認証(ユーザー名とパスワード)</label>
 <label class="choice"><input type="radio" name="auth_type" value="oauth2"${form.auth_type === "oauth2" ? " checked" : ""}> OAuth 2.0(認可コード + PKCE)</label>
 <label class="choice"><input type="radio" name="auth_type" value="client_credentials"${form.auth_type === "client_credentials" ? " checked" : ""}> OAuth 2.0(client credentials。人がいないときに Murmur などの Worker が使う)</label>
 </fieldset>
 <fieldset data-auth="headers"><legend>API キーの場合: 送るヘッダー</legend>
 <p class="hint">利用者が「画面での名前」の欄に値を入れ、ゲートウェイがこのヘッダーで送ります。使わない行は空のままにします。${!creating && "ヘッダー名を変えたり足したりすると、今ある接続には値がないので使えなくなります(元の名前に戻せば使えます)。"}</p>
 ${headerRows}
+</fieldset>
+<fieldset data-auth="basic"><legend>Basic 認証の場合</legend>
+<p class="hint">利用者がユーザー名とパスワードを入れ、ゲートウェイが <code>Authorization: Basic …</code> で送ります。ユーザー名が決まっている上流(GitHub のトークンなら <code>x-access-token</code>、Bitbucket のアクセストークンなら <code>x-token-auth</code>)は、ユーザー名をここに書くと、利用者はパスワードだけを入れます。${!creating && "ユーザー名を空に戻すと、ユーザー名を持たない今ある接続は使えなくなります。"}</p>
+<label>ユーザー名(決まっているときだけ)<input type="text" name="basic_username" value="${form.basic_username}" autocomplete="off" placeholder="例: x-access-token"></label>
+<label>画面での名前: ユーザー名(空なら「ユーザー名」)<input type="text" name="basic_username_label" value="${form.basic_username_label}" placeholder="例: メールアドレス"></label>
+<label>画面での名前: パスワード(空なら「パスワード」)<input type="text" name="basic_password_label" value="${form.basic_password_label}" placeholder="例: GitHub の personal access token"></label>
 </fieldset>
 <fieldset data-auth="oauth2"><legend>OAuth 2.0 の場合</legend>
 <p class="hint">連携先にアプリを登録し、リダイレクト URI に <code>${publicUrl(env)}${CONNECT_CALLBACK_PATH}</code> を指定してください。</p>

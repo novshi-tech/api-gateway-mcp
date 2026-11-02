@@ -145,6 +145,20 @@ git clone git@github.com:<組織>/api-gateway-deployments.git deployments
 
 ヘッダーで認証するサービス(組み込みの `board`・`gbizinfo`・`serper` など)は、設定は要りません。ユーザーが Web 画面で API キーやトークンを登録します。
 
+Basic 認証のサービス(`auth.type` が `basic`)は、ユーザーが Web 画面でユーザー名とパスワードを登録し、ゲートウェイが `Authorization: Basic …` を組み立てて送ります。ユーザー名が決まっている上流は `username` に書くと、ユーザーはパスワードだけを入れます。git の smart HTTP もこれで中継できます(`docs/adr/0002`)。
+
+```jsonc
+"github-git": {
+  "display_name": "GitHub(git)",
+  "base_url": "https://github.com",
+  "auth": { "type": "basic", "username": "x-access-token", "password_label": "GitHub の personal access token" }
+}
+```
+
+```sh
+git -c http.extraHeader="Authorization: Bearer $GW_TOKEN" clone https://<ゲートウェイ>/api/github-git/<owner>/<repo>.git
+```
+
 OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、クライアントの名前を大文字にした名前で登録します(ハイフンは `_` に)。組み込みのサービスのクライアントは `FREEE`・`GOOGLE`・`MICROSOFT` の 3 つで、Google の 6 つのサービスは 1 組を共有します。`SERVICES` に足したサービスは、`auth.client` に書いた名前か、なければサービス名がクライアントの名前です。
 
 ```sh
@@ -162,7 +176,7 @@ npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_SECRET
 
 同じ人の画面には「プラグインの配布」も出ます。プラグインの zip(`.claude-plugin/plugin.json` を含むもの、2 MB まで)を追加すると、全員の「Claude につなぐ」からダウンロードできるようになります。名前と版は zip の中の `plugin.json` から読み、同じ名前で追加し直すと置き換わります。組み込みのプラグインと同じ名前は使えません。zip は Durable Object(`Registry`)に保管します。
 
-管理画面で足した接続先(ヘッダーか OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
+管理画面で足した接続先(ヘッダー、Basic 認証、OAuth 2.0)は、デプロイし直さなくても、全員の「接続を追加」に出ます(反映まで最大 30 秒)。定義は Durable Object(`Registry`)に、OAuth のクライアントシークレットは暗号化して保管します。組み込みと同じ名前は使えず、`SERVICES` に同じ名前があれば `SERVICES` が勝ちます。ベース URL のホストやトークンの URL、クライアント ID を変えると、その接続先の既存の接続は使えなくなり、利用者はつなぎ直すことになります(鍵が新しい向き先に送られないようにするため)。
 
 ゲートウェイのサインインを信頼する自社の API(`auth.type` が `identity`)は、ユーザーが何も登録しません。ゲートウェイがサインイン中のユーザーの ID(`sub`)を Ed25519 で署名し、`Authorization: Bearer <JWT>` として送ります。JWT は `iss` がゲートウェイの URL、`aud` が設定の `audience`、寿命は 5 分です。上流は `https://<ゲートウェイ>/.well-known/jwks.json` の公開鍵で検証します。Claude からは、`list_credentials` に `identity:<サービス名>` という認証情報として見えます。
 

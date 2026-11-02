@@ -71,6 +71,28 @@ describe("admin screens", () => {
     expect(echoed.headers["x-api-key"]).toBe("k");
   });
 
+  it("adds a Basic authentication service, and stops connections without a user name when the fixed one is removed", async () => {
+    const name = unique("git");
+    const fields = { name, display_name: "Git", provider: "", base_url: "https://git.acme.example", auth_type: "basic", basic_username: "x-token-auth", basic_username_label: "", basic_password_label: "アクセストークン" };
+    expect((await post("/admin/services", fields)).status).toBe(303);
+    forgetRegistry();
+    expect((await upstream(name)).config.auth).toEqual({ type: "basic", username: "x-token-auth", password_label: "アクセストークン" });
+    const edit = await (await get(`/admin/services/${name}`)).text();
+    expect(edit).toContain(`value="x-token-auth"`);
+
+    const cred = await vaultFor(env, "user-6").add(await upstream(name), { password: "t" });
+    if ("error" in cred) throw new Error(cred.error);
+    const { token } = await signToken(env.SIGNING_KEY, BASE, "api", "user-6", { creds: { [name]: cred.id } }, 60);
+    const call = () => SELF.fetch(`${BASE}/api/${name}/owner/repo.git/info/refs`, { headers: { authorization: `Bearer ${token}` } });
+    expect(((await (await call()).json()) as { headers: Record<string, string> }).headers.authorization).toBe(`Basic ${btoa("x-token-auth:t")}`);
+
+    await post(`/admin/services/${name}`, { ...fields, basic_username: "" });
+    forgetRegistry();
+    const refused = await call();
+    expect(refused.status).toBe(502);
+    expect(((await refused.json()) as { error: string }).error).toContain("no value for username");
+  });
+
   it("refuses built-in names, bad definitions, duplicates and cross-site posts", async () => {
     expect(await (await post("/admin/services", headerService("gmail"))).text()).toContain("組み込みの接続先と同じ名前");
     expect(await (await post("/admin/services", headerService(unique("plain"), "http://api.example"))).text()).toContain("must be https");

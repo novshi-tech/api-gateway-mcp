@@ -27,6 +27,7 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 | API の認証 | `auth` |
 | --- | --- |
 | 固定の API キーやトークンをヘッダーで送る | `headers`。ヘッダーごとに `name` と、Web 画面に出す `label`。`Authorization: Bearer <トークン>` なら `"prefix": "Bearer "` |
+| Basic 認証(ユーザー名とパスワード、ユーザー名とトークン) | `basic`。ユーザーが入れたユーザー名とパスワードから、ゲートウェイが `Authorization: Basic` を組み立てる。ユーザー名が決まっている上流(GitHub のトークンは `x-access-token`、Bitbucket のアクセストークンは `x-token-auth`)は `username` に書くと、ユーザーはパスワードだけを入れる。入力欄の名前は `username_label`・`password_label` |
 | OAuth 2.0 の認可コード | `oauth2`。`authorization_url`、`token_url`、必要なら `scope` と `authorize_params`。同じ OAuth アプリを複数のサービスで使うなら `client` に共通の名前 |
 | 自社の API で、ゲートウェイのサインインを信頼する(ユーザーごとの認証情報がない) | `identity`。`audience` を書く。ゲートウェイがユーザー ID を Ed25519 で署名して `Authorization: Bearer` で送り、上流は `/.well-known/jwks.json` で検証する。署名鍵 `IDENTITY_SIGNING_KEY` が要る(README の「連携先を設定する」) |
 
@@ -37,7 +38,6 @@ API の公式ドキュメントを読んで、次を確かめる。推測で書�
 - API キーをクエリパラメータで送る API(ヘッダーでも受け付けないかを先に調べる)
 - 署名が要る API(AWS Signature など)、mTLS
 - OAuth のクライアントクレデンシャルや、クライアント認証が `client_secret_post` 以外のもの(ゲートウェイはトークンエンドポイントにクライアント ID とシークレットをフォームで送り、PKCE も付ける)
-- Basic 認証は `headers` に `"prefix": "Basic "` で書けるが、ユーザーが `ユーザー名:パスワード` の Base64 を自分で作って登録することになる。
 
 ## 2. SERVICES に書く
 

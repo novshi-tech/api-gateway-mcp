@@ -9,6 +9,18 @@ export interface HeadersAuth {
   headers: HeaderField[];
 }
 
+// HTTP Basic authentication (RFC 7617): the user enters a user name and a password, and
+// the gateway sends `Authorization: Basic base64(user:password)`. With `username`, the
+// user name is fixed by the definition and the user enters only the password, e.g.
+// `x-access-token` for a GitHub token, `x-token-auth` for a Bitbucket access token.
+export interface BasicAuth {
+  type: "basic";
+  username?: string;
+  // Labels of the input fields in the web UI.
+  username_label?: string;
+  password_label?: string;
+}
+
 // The client ID and secret come from OAUTH_<CLIENT>_CLIENT_ID / _CLIENT_SECRET, where
 // <CLIENT> is `client` (one client can serve many services, e.g. "google"), or the
 // service name when `client` is not set.
@@ -48,13 +60,15 @@ export interface ServiceConfig {
   base_url: string;
   // Name of a Service Binding to reach the upstream through instead of the public internet.
   binding?: string;
-  auth: HeadersAuth | OAuth2Auth | ClientCredentialsAuth | IdentityAuth;
+  auth: HeadersAuth | BasicAuth | OAuth2Auth | ClientCredentialsAuth | IdentityAuth;
 }
 
 export type Services = Record<string, ServiceConfig>;
 
 const SERVICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
 const BINDING_NAME = /^[A-Z][A-Z0-9_]*$/;
+// RFC 7617: the user name cannot contain a colon; no control characters either.
+const BASIC_USERNAME = /^[^:\x00-\x1f\x7f]+$/;
 
 export function parseServices(raw: unknown): Services {
   const value = typeof raw === "string" ? JSON.parse(raw) : raw;
@@ -71,6 +85,8 @@ export function parseServices(raw: unknown): Services {
     } else if (auth?.type === "client_credentials") {
       requireHttps(name, "token_url", auth.token_url);
       if (auth.client !== undefined && !SERVICE_NAME.test(auth.client)) throw new Error(`service ${name}: invalid client name`);
+    } else if (auth?.type === "basic") {
+      if (auth.username !== undefined && !BASIC_USERNAME.test(auth.username)) throw new Error(`service ${name}: invalid basic username`);
     } else if (auth?.type === "identity") {
       if (typeof auth.audience !== "string" || !auth.audience) throw new Error(`service ${name}: identity needs an audience`);
     } else if (auth?.type !== "headers" || !Array.isArray(auth.headers) || auth.headers.length === 0) {
