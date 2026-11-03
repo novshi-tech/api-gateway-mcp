@@ -4,6 +4,7 @@ import {
   claimThread,
   dismissThread,
   DomainError,
+  getThreadView,
   linkThreads,
   moveSignal,
   reopenThread,
@@ -113,6 +114,21 @@ describe('個人のメモ（add_note）', () => {
     expect(() => addNote(log.state(), alice, ctx, { threadId: first.threadId, title: 't', body: 'x' })).toThrow(/title/);
     // メモのデータソースがなければ not_found
     expect(() => addNote(log.state(), eve, ctx, { body: 'x' })).toThrow(/notes/);
+  });
+
+  it('H3 メモに書き手の印を付けられる。省略は本人。タイムラインに出るが、誰の番やボールは変えない（0031 の 3・0032）', () => {
+    const { log, ctx } = world();
+    const a = addNote(log.state(), alice, ctx, { title: 'PR のレビュー対応', body: '着手する' });
+    log.push(a.events, '2026-10-16T10:00:00.000Z');
+    const before = log.state().threads[a.threadId]!;
+    const b = addNote(log.state(), alice, ctx, { threadId: a.threadId, body: '指摘 3 件を直した。次はテスト', author: { kind: 'agent', name: 'orchestrator' } });
+    log.push(b.events, '2026-10-16T10:30:00.000Z');
+    const p = log.state();
+    expect(p.signals[a.signalId]!.author).toEqual({ kind: 'user' });
+    expect(p.signals[b.signalId]!.author).toEqual({ kind: 'agent', name: 'orchestrator' });
+    expect(p.threads[a.threadId]).toMatchObject({ ball: before.ball, ownerUserId: before.ownerUserId });
+    const timeline = getThreadView(dir, alice, p, a.threadId)!.timeline;
+    expect(timeline.map((e) => e.signal?.author)).toEqual([{ kind: 'user' }, { kind: 'agent', name: 'orchestrator' }]);
   });
 
   it('H1 メモのシグナルも移し替えられる（同じ件のメモのスレッドを 1 つにまとめる）', () => {

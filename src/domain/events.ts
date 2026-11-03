@@ -39,6 +39,16 @@ export type Direction = z.infer<typeof Direction>;
  * イベントはアドレスだけを持ち、向き（こちらからか）と Contact はクエリ層がそのときのマスタで決める（0030）。
  * 古いイベントに残る direction・fromPartyId・toPartyIds は読まない
  */
+/**
+ * 個人のメモの書き手（0031 の 3・0032）。user は人の言葉（スタンドが中継したものを含む）、agent はエージェント自身が書いたもの。
+ * スタンドの自己申告で、誰の番・ボール・可視性には使わない
+ */
+export const Author = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('user') }),
+  z.object({ kind: z.literal('agent'), name: z.string().trim().min(1).max(64) }),
+]);
+export type Author = z.infer<typeof Author>;
+
 export const SignalObserved = z.object({
   signalId: z.string(),
   dataSourceId: z.string(),
@@ -51,6 +61,8 @@ export const SignalObserved = z.object({
   attachments: z.array(FileRef).default([]),
   /** データソースごとの重複排除キー */
   sourceRef: z.string(),
+  /** 書き手（個人のメモだけ） */
+  author: Author.optional(),
 });
 
 export const ThreadChoice = z.discriminatedUnion('kind', [

@@ -253,6 +253,11 @@ describe('fold', () => {
     );
   });
 
+  it('H1 書き手の印は個人のメモのシグナルだけ（0031 の 3）', () => {
+    const bad = { ...observed('s1'), payload: { ...observed('s1').payload, author: { kind: 'agent', name: 'codex' } } };
+    expect(() => fold([{ ...bad, seq: 1, at: T0 } as DomainEvent])).toThrow(/author is only for notes/);
+  });
+
   it('H9 ThreadMirrored（created）: 写しでスレッドを作る。件名が要り、既にあるスレッドは作れない（0031 の 8）', () => {
     const create = (threadId: string, fields: MirrorFields) =>
       ({ ...draft('ThreadMirrored', { threadId, created: true, dataSourceId: 'ds_support', threadKey: 'UBS-7', fields, sourceRef: 'jira:UBS-7:c' }), seq: 1, at: T0 }) as DomainEvent;

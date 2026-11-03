@@ -126,6 +126,7 @@ function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>, 
 }
 
 function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserved' }>, c: Changes): void {
+  if (e.payload.author && e.payload.channel !== 'note') throw new FoldError(`signal ${e.payload.signalId}: author is only for notes`);
   addSignal(s, e, { ...e.payload, recorded: null }, c);
 }
 
@@ -172,6 +173,7 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): vo
     attachments: p.attachments,
     sourceRef: p.sourceRef,
     recorded: p.recorded,
+    ...(p.author ? { author: p.author } : {}),
     at: e.at,
     seq: e.seq,
     threadId: null,

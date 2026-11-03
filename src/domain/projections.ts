@@ -1,4 +1,4 @@
-import type { AddressRef, Anchors, AttributeValue, FileRef, LinkRoute, MirrorFields, ThreadedBy } from './events';
+import type { AddressRef, Anchors, AttributeValue, Author, FileRef, LinkRoute, MirrorFields, ThreadedBy } from './events';
 import type { Channel } from './entities';
 
 /**
@@ -132,6 +132,8 @@ export interface SignalRecord {
   anchors: Anchors;
   attachments: FileRef[];
   sourceRef: string;
+  /** 書き手（個人のメモだけ。0031 の 3） */
+  author?: Author;
   at: string;
   seq: number;
   /** 送信の記録（OutboundRecorded）。観測だけのシグナルは null */

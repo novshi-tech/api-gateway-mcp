@@ -382,7 +382,7 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
       { thread_id: input.thread_id, new_thread_title: input.new_thread_title, needs_response: input.needs_response, reason: input.reason },
     ],
     get_list: () => ['GET', `/api/lists/${enc(String(input.list_id))}`],
-    add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body }],
+    add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body, author: input.author }],
     claim_thread: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/claim`, { user_id: input.user_id, reason: input.reason }],
     link_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/links`, { thread_id: input.other_thread_id, reason: input.reason }],
     unlink_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/unlink`, { thread_id: input.other_thread_id, reason: input.reason }],

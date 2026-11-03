@@ -45,6 +45,7 @@ import {
   unlinkThreads,
   type CoreContext,
   type DraftEvent,
+  type Author,
   type MirrorFields,
   type InboundItem,
   type InboundMirror,
@@ -373,7 +374,7 @@ export class MurmurService {
   }
 
   /** 個人のメモ。thread_id がなければ新しいスレッド */
-  async addNote(userId: string, input: { threadId?: string; title?: string; body: string }) {
+  async addNote(userId: string, input: { threadId?: string; title?: string; body: string; author?: Author }) {
     // 個人のメモは最初に書くときに作る（Contact がなくても使える。0030 の 4）
     await this.changeMaster(userId, '個人のメモを使い始める', (d, ctx) => ensureNotes(d, userId, ctx));
     const { viewer } = await this.viewer(userId);

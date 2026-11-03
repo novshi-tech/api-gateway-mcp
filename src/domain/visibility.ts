@@ -1,6 +1,6 @@
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
-import type { AttributeValue, MirrorFields } from './events';
+import type { AttributeValue, Author, MirrorFields } from './events';
 import { sortLog } from './comm';
 import type { Ball, Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
 import { commView, directionOf } from './sides';
@@ -132,7 +132,7 @@ function movedSince(viewer: Viewer, p: Projections, t: Thread, since: string): b
   });
 }
 
-export type SignalView = { direction: 'inbound' | 'outbound' } & Pick<
+export type SignalView = { direction: 'inbound' | 'outbound'; author?: Author } & Pick<
   SignalRecord,
   'signalId' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
 >;
@@ -152,6 +152,8 @@ function signalView(dir: Directory, s: SignalRecord): SignalView {
     threadedBy: s.threadedBy,
     needsResponse: s.needsResponse,
     recorded: s.recorded,
+    // 書き手の印より前のメモは本人が書いたもの
+    ...(s.channel === 'note' ? { author: s.author ?? { kind: 'user' as const } } : {}),
   };
 }
 

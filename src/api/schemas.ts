@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AddressRef, Anchors, Channel, FileRef, MirrorFields } from '../domain';
+import { AddressRef, Anchors, Author, Channel, FileRef, MirrorFields } from '../domain';
 
 // HTTP API の入力スキーマ。キーはツール定義に合わせて snake_case。
 // ツールの一覧は計画 v2 の「スタンド接続」の表（ステップ 5）。スキルの API の表と合わせる
@@ -22,6 +22,8 @@ export const AddNoteBody = z.object({
   /** 新しいスレッドの件名。省略すれば本文の最初の行 */
   title: z.string().min(1).optional(),
   body: z.string().min(1),
+  /** 書き手。省略すれば本人（user）。エージェント自身が書いたものは {kind:'agent', name}（0031 の 3） */
+  author: Author.optional(),
 });
 
 export const ClaimBody = z
