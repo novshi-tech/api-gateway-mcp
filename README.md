@@ -78,6 +78,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | `api-gateway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
 | `api-gateway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
 | `api-gateway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
+| `api-gateway-murmur` | `murmur` | `murmur` | [Murmur](https://github.com/novshi-tech/murmur)(連絡の索引)のスレッド・誰の番・個人のメモでのタスクの追跡・送信の記録。上流の設定は下の「3. 連携先を設定する」(`identity` と Service Binding) |
 
 インストールの方法:
 
