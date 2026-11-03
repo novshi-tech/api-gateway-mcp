@@ -55,7 +55,7 @@ describe('可視性', () => {
     expect(getListView(dir, alice, 'l_notes_alice')).toMatchObject({
       dataSource: { id: 'ds_notes_alice', kind: 'notes', channel: 'note' },
       readers: [{ contactId: 'p_alice', name: 'Alice' }],
-      attributeDefs: [{ name: 'status' }],
+      attributeDefs: [{ name: 'due', type: 'date' }, { name: 'status' }],
     });
     expect(getListView(dir, bob, 'l_notes_alice')).toBeNull();
     expect(getListView(dir, bob, 'l_line')?.dataSource.channel).toBe('line');

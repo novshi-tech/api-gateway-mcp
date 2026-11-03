@@ -211,4 +211,14 @@ describe('属性（set_attribute）', () => {
     expect(() => setAttribute(log.state(), alice, dir, { threadId, name: 'status', value: 'todo' })).toThrow(/mirrored/);
     expect(setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'status', value: null })).toHaveLength(1);
   });
+
+  it('H2 個人のメモには標準の due（日付）を付けられる。定義をマスタに置かなくてよい（0031 の 4）', () => {
+    const { log, ctx } = world();
+    const n = addNote(log.state(), bob, ctx, { body: 'レビュー対応' });
+    log.push(n.events, '2026-10-16T10:00:00.000Z');
+    const set = setAttribute(log.state(), bob, dir, { threadId: n.threadId, name: 'due', value: '2026-10-20' });
+    log.push(set, '2026-10-16T10:01:00.000Z');
+    expect(log.state().threads[n.threadId]!.attributes).toEqual({ due: '2026-10-20' });
+    expect(() => setAttribute(log.state(), bob, dir, { threadId: n.threadId, name: 'due', value: 'あした' })).toThrow(/not a date/);
+  });
 });

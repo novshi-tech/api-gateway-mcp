@@ -58,6 +58,13 @@ describe('H3 マスタの整合性（seedProblems）', () => {
     expect(broken((s) => s.attributeDefs!.push(def('ds_none'))).join()).toMatch(/ds_none\|x: data source がない/);
     expect(broken((s) => s.attributeDefs!.push(def('ds_notes_alice', { type: 'enum' }))).join()).toMatch(/enum の選択肢がない/);
     expect(broken((s) => s.attributeDefs!.push(def('ds_notes_alice', { type: 'enum', options: ['a'] })))).toEqual([]);
+    expect(broken((s) => s.attributeDefs!.push(def('ds_notes_alice', { name: 'due' }))).join()).toMatch(/標準の属性と重なる/);
+  });
+
+  it('H2 個人のメモには標準の属性 due が付く。外のサービスのデータソースには付かない（0031 の 4）', () => {
+    expect(dir.attributeDefs('ds_notes_alice').map((d) => d.name)).toEqual(['due', 'status']);
+    expect(dir.attributeDefs('ds_notes_bob')).toEqual([expect.objectContaining({ name: 'due', type: 'date' })]);
+    expect(dir.attributeDefs('ds_support')).toEqual([]);
   });
 
   it('データソース 1 つにリスト 1 つ', () => {

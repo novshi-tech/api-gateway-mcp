@@ -55,7 +55,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 - **リンクは候補を見て、ユーザーと決めてから張る。** `get_thread` の `linkCandidates` はアンカー(課題キー・PR・メッセージ ID)が一致したものにすぎない。同じ件でなければ結ばない
 - メモ・属性・片付け・開き直しは本人の側の状態。結んだ先が動いても(`linkedActiveSinceDismissed`)、閉じたメモを勝手に開き直さない。ユーザーに知らせて決めてもらう
 - 属性は、リストの属性定義(`get_list` の `attributeDefs`)にあるものだけを使う。`description` を読んで意味を合わせる
-- **Jira など状態を持つデータソースのスレッドの状態はソースの写し(`source`: `holders` = ソースでボールを持つアカウント、`statusLabel`、`due`。完了は `closedAtSource`、件名は `title`)。** Murmur では書けない。変えるときは Jira の側で(jira スキルなど)変えれば、写しとして戻ってくる。属性(`set_attribute`)は個人のメモのスレッドだけのもの
+- **Jira など状態を持つデータソースのスレッドの状態はソースの写し(`source`: `holders` = ソースでボールを持つアカウント、`statusLabel`、`due`。完了は `closedAtSource`、件名は `title`)。** Murmur では書けない。変えるときは Jira の側で(jira スキルなど)変えれば、写しとして戻ってくる。属性(`set_attribute`)は個人のメモのスレッドだけのもの。どのメモにも標準で `due`(タスクの期日、`YYYY-MM-DD`)が付く
 - 状態を持つデータソースのスレッドは、ソースでボールを持つ人(`source.holders`。Jira は担当者、PR はレビュー待ちならレビュアー・変更を求められたら作者)に読者のユーザーがいればその人の番(`turn.by` が `holder`)。完了(`closedAtSource`)ならボールは「なし」で、`filter=open` にも出ない
 - ボール(`ball`)・誰の番(`turn`)・返事期待(`replyExpectedBy`)・期限超過(`overdue`)はイベントから自動で決まる。属性で書き換えない。ボールを人に寄せたいときは `claim` で持つ
 
