@@ -4,13 +4,19 @@
 
 ## いまの状態
 
+**2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
+- api-gateway-mcp: `plugins/api-gateway-murmur`（0.1.0）を足した。中身は 0030・0031・0032 に合わせた版（タスクを 1 つのメモのスレッドで追う手順、エージェントとして参加するときの約束を足した）。マーケットプレイスと README の表にも足した
+- nvt-api-gateway-skills: `murmur` を外して `nvt-api-gateway` を 0.8.0 に（bm-next だけが残る）。README に移った先を書いた
+- murmur: 下書き `docs/stand/skill-murmur.md` を消した。CLAUDE.md・connect.md・skill.md・PLAN の参照を直した。HTTP API を変えたら、ゲートウェイのスキルも直す
+- 残り: 3 つのブランチを main に入れる（ゲートウェイを先に）。入れたら、使っている人に `nvt-api-gateway` を 0.8.0 に上げて `api-gateway-murmur` を入れてもらう（Cowork のプラグインの入れ直し）。ゲートウェイの各デプロイを出し直すと `/setup` に並ぶ
+
 **2026-11-03: スレッドの属性の扱いを議論し、`docs/adr/0031`（案）と `docs/adr/0032`（案、0027 を改める）を書いた。コードは変えていない。** きっかけ: `AttributeDef` が写しと本人の属性の 2 役を兼ね、定義は seed でしか作れず、実データでは属性を書くことも写すこともできない。要点:
 - 0031: 1 タスク = 1 メモスレッド（着手を決めたらスタンドが作り、共有スレッドと結ぶ。`record_sent` の `source_thread_id` で実装・レビュー・修正のループが 1 本に綴じる）。共有スレッドには事実と構造の操作だけ。メモのシグナルに書き手の印（`author: user | agent(名前)`、自己申告、番には使わない）。属性はメモだけのもので標準は `due` だけ、完了は片付け。一覧は結んだ先も含めた最終更新の降順。写しは決まった形（`closed / holders / title / statusLabel / due`）でコネクタは標準の意味で写す（Jira はステータスカテゴリと担当者、PR はレビュー待ちならレビュアー・変更を求められたら作者）。写しにスレッドを作らせ、件名は写しの `title`（0016 の段取り 2・4 を置き換える）
 - 0032: 次の一手を決める者が書く。オーケストレータの下のエージェント（boid の job・サブエージェント）は書かず、直接の参加者（オーケストレータ、PR を見張る Codex）は書き手の印を付けて書く（コレオグラフィ）。boid を使わないときはサブエージェントが基本。メモを共有できるのは本人のエージェントまで
 - **同じ日に採用し、実装した**（ブランチ `ccr-59689cfd-kswup8`、PR #15。5 コミット）。4 シナリオは expected と一致（development の写しの行・expected・seed の属性定義だけ書き直した）、AI の記録の再生と D1 も一致。実装で決めたことは 0031 の「実装の記録」（`due` はマスタに書かず標準の定義として足す、など）
-- HTTP API が変わった: スレッドに `source`（写し）・`lastActivityAt`、`turn.by` の `assignee` → `holder`、`POST /notes` の `author`。`docs/stand/skill-murmur.md` は直した
+- HTTP API が変わった: スレッドに `source`（写し）・`lastActivityAt`、`turn.by` の `assignee` → `holder`、`POST /notes` の `author`
 - 残り:
-  - **スキル（novshi-tech/nvt-api-gateway-skills の `plugins/nvt-api-gateway/skills/murmur/`）を `docs/stand/skill-murmur.md` に合わせて直す**（0030 の分と一緒に）。0031 の 1・2（着手でメモのスレッドを作って結ぶ、共有スレッドには事実と構造だけ）と 0032 の参加の約束も、スキルの手順に書く
+  - ~~スキルを直す~~ → 下の「スキルをゲートウェイに同梱した」で済んだ
   - 0031 の未決 1〜4、0032 の未決 1〜3
 
 **2026-11-02: UBS の Murmur に 0030 の実装をデプロイした（main の 2b764d3、Worker のバージョン `a9189f7b-e5b2-4a4c-bab4-14b0c0108207`）。** 10-31 は D1 に `0001_master_keys` を当てたが、Worker は 0030 より前のコード（10-31 16:22 JST のデプロイ）のままだった。クラウドセッションから `murmur-deployments` を clone して `pnpm run deploy ubs` で出し直した（マイグレーションは当て済みなので migrate は不要）。

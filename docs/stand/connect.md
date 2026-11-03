@@ -30,8 +30,8 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
    ```
 
 3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
-4. スタンド用スキルは nvt-api-gateway-skills のプラグイン `nvt-api-gateway` に入っている。api-gateway プラグインと一緒にインストールする。
-   v2（スレッドとリンク）の版はプラグイン 0.3.0（スキルのリポの c3e4c41）。下書きの `docs/stand/skill-murmur.md` と同じ内容
+4. スタンド用スキルは、ゲートウェイに同梱のプラグイン `api-gateway-murmur` に入っている（`docs/stand/skill.md`）。api-gateway プラグインと一緒にインストールする。
+   以前の nvt-api-gateway-skills のプラグイン `nvt-api-gateway`（0.7.0 まで）に入っていた `murmur` は使わない（0.8.0 で外した）
 
 ## 本体の準備
 
@@ -63,13 +63,13 @@ WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 ## Cowork
 
 1. Cowork の設定で API ゲートウェイの MCP コネクタを有効にする（既存のもの。追加の MCP は不要）
-2. プラグイン `api-gateway` と `nvt-api-gateway` をインストールし、スキル `murmur` を有効にする
+2. プラグイン `api-gateway` と `api-gateway-murmur` をインストールし（ゲートウェイの「Claude につなぐ」からダウンロードできる）、スキル `murmur` を有効にする
 3. 「自分の番のものを見せて」で `GET /threads?filter=my_turn`（list_threads）が呼ばれることを確認する
 
 ## Claude Code
 
 1. `claude mcp add` でゲートウェイの MCP を追加する（既に使っていればそのまま）
-2. マーケットプレイス `novshi-tech/api-gateway-mcp` と `novshi-tech/nvt-api-gateway-skills` を追加し、`api-gateway` と `nvt-api-gateway` のプラグインをインストールする
+2. マーケットプレイス `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` と `api-gateway-murmur` のプラグインをインストールする
 3. 同じく list_threads で確認する
 
 ## 複数の組織を使い分けるとき（`docs/adr/0018`、api-gateway-mcp の `docs/adr/0004`）

@@ -184,7 +184,7 @@ Murmur が決めるのは「誰の番か」（ボール）まで。スレッド�
 
 ## スタンド接続（本体の API）
 
-スタンドはゲートウェイの MCP から呼ぶ。使い方はゲートウェイのスキル（nvt-api-gateway-skills の `murmur`）で渡す。HTTP API を変えたらスキルの表も直す。
+スタンドはゲートウェイの MCP から呼ぶ。使い方はゲートウェイのスキル（api-gateway-mcp のプラグイン `api-gateway-murmur` の `murmur`）で渡す。HTTP API を変えたらスキルの表も直す。
 
 | ツール | 返すもの・起こすこと |
 | --- | --- |
