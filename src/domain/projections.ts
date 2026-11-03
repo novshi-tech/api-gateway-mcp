@@ -1,4 +1,4 @@
-import type { AddressRef, Anchors, AttributeValue, FileRef, LinkRoute, ThreadedBy } from './events';
+import type { AddressRef, Anchors, AttributeValue, Author, FileRef, LinkRoute, MirrorFields, ThreadedBy } from './events';
 import type { Channel } from './entities';
 
 /**
@@ -51,7 +51,7 @@ export interface CommState {
   replyExpectedFrom: AddressRef | null;
   /** 返事期待の期限を過ぎた（ReplyOverdue）。返事期待が消えれば解消する */
   overdue: boolean;
-  /** ソースの側で完了している（写しの done）。片付けと同じくボールは「なし」 */
+  /** ソースの側で完了している（写しの closed）。片付けと同じくボールは「なし」 */
   closedAtSource: boolean;
 }
 
@@ -81,8 +81,16 @@ export interface ThreadLogEntry {
   /** attribute: 名前と値（null は外した） */
   name?: string;
   value?: AttributeValue | null;
-  /** mirrored: 変わった写しの属性 */
-  fields?: Record<string, AttributeValue | null>;
+  /** mirrored: 変わった写しの項目 */
+  fields?: MirrorFields;
+}
+
+/** 写しのうち、スレッドの他の項目に入らないもの（0031 の 6） */
+export interface SourceState {
+  /** ソースの上でボールを持っているアカウント（アドレスの値） */
+  holders: string[];
+  statusLabel: string | null;
+  due: string | null;
 }
 
 /** 他のスレッドへの辺（無向）。両端のスレッドに同じものが載る */
@@ -103,8 +111,12 @@ export interface Thread extends CommState {
   log: ThreadLogEntry[];
   /** 結んだスレッド（threadId 順） */
   links: ThreadLink[];
-  /** 属性。外のサービスのスレッドはソースの写し（ThreadMirrored）、個人のメモのスレッドは本人が付ける（ThreadAttributeSet） */
+  /** 本人が付ける属性（ThreadAttributeSet）。個人のメモのスレッドだけ（0031） */
   attributes: Record<string, AttributeValue>;
+  /** ソースの状態の写し（ThreadMirrored）。写しを受けたことがなければ null。完了は closedAtSource、件名は title に入る */
+  source: SourceState | null;
+  /** 写しのソースの区切り（課題キー）。写しでできたスレッドを課題キーで引くため */
+  sourceKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -120,6 +132,8 @@ export interface SignalRecord {
   anchors: Anchors;
   attachments: FileRef[];
   sourceRef: string;
+  /** 書き手（個人のメモだけ。0031 の 3） */
+  author?: Author;
   at: string;
   seq: number;
   /** 送信の記録（OutboundRecorded）。観測だけのシグナルは null */

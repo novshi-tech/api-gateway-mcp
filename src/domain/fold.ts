@@ -69,12 +69,20 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
     }
     case 'ThreadMirrored': {
       const p = e.payload;
+      if (p.created) {
+        if (s.threads[p.threadId]) throw new FoldError(`thread ${p.threadId} already exists`);
+        if (p.fields.title === undefined) throw new FoldError(`mirror creating thread ${p.threadId} has no title`);
+        s.threads[p.threadId] = newThread(p.threadId, p.dataSourceId, p.fields.title, e.at);
+      }
       const t = mustThread(s, p.threadId);
       if (t.dataSourceId !== p.dataSourceId) throw new FoldError(`mirror of ${p.dataSourceId} cannot go into thread ${t.id} (${t.dataSourceId})`);
-      for (const [name, value] of Object.entries(p.fields)) {
-        if (value === null) delete t.attributes[name];
-        else t.attributes[name] = value;
-      }
+      const f = p.fields;
+      const src = (t.source ??= { holders: [], statusLabel: null, due: null });
+      if (f.holders !== undefined) src.holders = [...f.holders];
+      if (f.statusLabel !== undefined) src.statusLabel = f.statusLabel;
+      if (f.due !== undefined) src.due = f.due;
+      if (f.title !== undefined) t.title = f.title;
+      t.sourceKey = p.threadKey;
       t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
       recompute(s, t, e.at, c);
       return;
@@ -118,6 +126,7 @@ function onLinked(s: Projections, e: DomainEvent, p: PayloadOf<'ThreadLinked'>, 
 }
 
 function onSignal(s: Projections, e: Extract<DomainEvent, { type: 'SignalObserved' }>, c: Changes): void {
+  if (e.payload.author && e.payload.channel !== 'note') throw new FoldError(`signal ${e.payload.signalId}: author is only for notes`);
   addSignal(s, e, { ...e.payload, recorded: null }, c);
 }
 
@@ -164,6 +173,7 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): vo
     attachments: p.attachments,
     sourceRef: p.sourceRef,
     recorded: p.recorded,
+    ...(p.author ? { author: p.author } : {}),
     at: e.at,
     seq: e.seq,
     threadId: null,
@@ -232,6 +242,8 @@ function newThread(id: string, dataSourceId: string, title: string, at: string):
     log: [],
     links: [],
     attributes: {},
+    source: null,
+    sourceKey: null,
     createdAt: at,
     updatedAt: at,
     ...deriveComm([]),

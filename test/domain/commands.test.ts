@@ -4,6 +4,7 @@ import {
   claimThread,
   dismissThread,
   DomainError,
+  getThreadView,
   linkThreads,
   moveSignal,
   reopenThread,
@@ -115,6 +116,21 @@ describe('個人のメモ（add_note）', () => {
     expect(() => addNote(log.state(), eve, ctx, { body: 'x' })).toThrow(/notes/);
   });
 
+  it('H3 メモに書き手の印を付けられる。省略は本人。タイムラインに出るが、誰の番やボールは変えない（0031 の 3・0032）', () => {
+    const { log, ctx } = world();
+    const a = addNote(log.state(), alice, ctx, { title: 'PR のレビュー対応', body: '着手する' });
+    log.push(a.events, '2026-10-16T10:00:00.000Z');
+    const before = log.state().threads[a.threadId]!;
+    const b = addNote(log.state(), alice, ctx, { threadId: a.threadId, body: '指摘 3 件を直した。次はテスト', author: { kind: 'agent', name: 'orchestrator' } });
+    log.push(b.events, '2026-10-16T10:30:00.000Z');
+    const p = log.state();
+    expect(p.signals[a.signalId]!.author).toEqual({ kind: 'user' });
+    expect(p.signals[b.signalId]!.author).toEqual({ kind: 'agent', name: 'orchestrator' });
+    expect(p.threads[a.threadId]).toMatchObject({ ball: before.ball, ownerUserId: before.ownerUserId });
+    const timeline = getThreadView(dir, alice, p, a.threadId)!.timeline;
+    expect(timeline.map((e) => e.signal?.author)).toEqual([{ kind: 'user' }, { kind: 'agent', name: 'orchestrator' }]);
+  });
+
   it('H1 メモのシグナルも移し替えられる（同じ件のメモのスレッドを 1 つにまとめる）', () => {
     const { log, ctx } = world();
     const a = addNote(log.state(), alice, ctx, { title: 'A', body: '1' });
@@ -194,5 +210,15 @@ describe('属性（set_attribute）', () => {
     // 外のサービスのスレッドの属性はソースの写し（H9）。Murmur の側では書けない
     expect(() => setAttribute(log.state(), alice, dir, { threadId, name: 'status', value: 'todo' })).toThrow(/mirrored/);
     expect(setAttribute(log.state(), alice, dir, { threadId: n.threadId, name: 'status', value: null })).toHaveLength(1);
+  });
+
+  it('H2 個人のメモには標準の due（日付）を付けられる。定義をマスタに置かなくてよい（0031 の 4）', () => {
+    const { log, ctx } = world();
+    const n = addNote(log.state(), bob, ctx, { body: 'レビュー対応' });
+    log.push(n.events, '2026-10-16T10:00:00.000Z');
+    const set = setAttribute(log.state(), bob, dir, { threadId: n.threadId, name: 'due', value: '2026-10-20' });
+    log.push(set, '2026-10-16T10:01:00.000Z');
+    expect(log.state().threads[n.threadId]!.attributes).toEqual({ due: '2026-10-20' });
+    expect(() => setAttribute(log.state(), bob, dir, { threadId: n.threadId, name: 'due', value: 'あした' })).toThrow(/not a date/);
   });
 });

@@ -191,8 +191,10 @@ describe('HTTP API', () => {
     expect(note.body.thread).toMatchObject({ title: 'Carol さんの雨漏りの件', dataSourceId: 'ds_notes_alice', signalCount: 1 });
     const noteId = note.body.thread.id as string;
     expect((await call('POST', '/api/notes', 'u_bob', { thread_id: noteId, body: 'x' })).status).toBe(404);
-    const more = await call('POST', '/api/notes', 'u_alice', { thread_id: noteId, body: '見積を依頼する' });
+    const more = await call('POST', '/api/notes', 'u_alice', { thread_id: noteId, body: '見積を依頼する', author: { kind: 'agent', name: 'orchestrator' } });
     expect(more.body.thread.signalCount).toBe(2);
+    expect(more.body.timeline.map((e: { signal?: { author?: unknown } }) => e.signal?.author)).toEqual([{ kind: 'user' }, { kind: 'agent', name: 'orchestrator' }]);
+    expect((await call('POST', '/api/notes', 'u_alice', { thread_id: noteId, body: 'x', author: { kind: 'agent', name: '' } })).status).toBe(400);
     expect((await call('GET', '/api/threads?filter=mine', 'u_alice')).body.map((t: { id: string }) => t.id)).toEqual([noteId]);
 
     const linked = await call('POST', `/api/threads/${noteId}/links`, 'u_alice', { thread_id: threadId, reason: 'この件の問い合わせ' });

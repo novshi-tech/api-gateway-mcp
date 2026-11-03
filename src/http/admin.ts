@@ -1,4 +1,4 @@
-import { commView, directionOf, getThreadView, resolveBall, sortLog, turnOf, type AttributeValue, type Directory, type Projections, type Thread, type Turn, type Viewer } from '../domain';
+import { commView, directionOf, getThreadView, lastActivityAt, resolveBall, sortLog, turnOf, type AttributeValue, type Directory, type MirrorFields, type Projections, type Thread, type Turn, type Viewer } from '../domain';
 
 // 参照専用の管理画面（ステップ 5）とタイムライン。どれも純関数（マスタ・投影 → HTML 文字列）。
 // 運用者向けで、TIMELINE_TOKEN を知っている人には全データソースが見える。スタンドの可視性（H3）とは別の入口
@@ -32,6 +32,31 @@ function attrValue(dir: Directory, dataSourceId: string, name: string, v: Attrib
   return (id ? dir.contact(id)?.name : undefined) ?? v;
 }
 
+/** ソースのアカウントを Contact の名前で出す（解決できなければそのまま） */
+function holderName(dir: Directory, dataSourceId: string, value: string): string {
+  const ds = dir.dataSource(dataSourceId);
+  const id = ds?.kind === 'service' ? dir.contactIdOfAddress({ channel: ds.channel, value }) : null;
+  return (id ? dir.contact(id)?.name : undefined) ?? value;
+}
+
+/** 写しの項目を「名前 = 値」で並べる（0031 の 6） */
+function mirrorPairs(dir: Directory, dataSourceId: string, f: MirrorFields): [string, string][] {
+  const out: [string, string][] = [];
+  if (f.closed !== undefined) out.push(['完了', f.closed ? 'はい' : 'いいえ']);
+  if (f.holders !== undefined) out.push(['ボールを持つ人', f.holders.length ? f.holders.map((h) => holderName(dir, dataSourceId, h)).join(', ') : '(なし)']);
+  if (f.title !== undefined) out.push(['件名', f.title]);
+  if (f.statusLabel !== undefined) out.push(['ステータス', f.statusLabel ?? '(空)']);
+  if (f.due !== undefined) out.push(['期日', f.due ?? '(空)']);
+  return out;
+}
+
+/** スレッドの属性と写し（一覧・詳細に出す） */
+function attrPairs(dir: Directory, t: Thread): [string, string][] {
+  const out: [string, string][] = Object.entries(t.attributes).map(([k, v]) => [k, attrValue(dir, t.dataSourceId, k, v)]);
+  if (t.source) out.push(...mirrorPairs(dir, t.dataSourceId, { holders: t.source.holders, statusLabel: t.source.statusLabel, due: t.source.due }));
+  return out;
+}
+
 function ballLabel(dir: Directory, p: Projections, t: Thread): string {
   const n = names(dir, p);
   const b = resolveBall(dir, p, t);
@@ -46,7 +71,7 @@ function ballLabel(dir: Directory, p: Projections, t: Thread): string {
 
 function turnLabel(dir: Directory, p: Projections, t: Turn): string {
   const n = names(dir, p);
-  const by = { owner: '持ち主', assignee: '担当者', reader: '読者が 1 人', addressed: '宛先' } as const;
+  const by = { owner: '持ち主', holder: 'ソースでボールを持つ', reader: '読者が 1 人', addressed: '宛先' } as const;
   switch (t.kind) {
     case 'user':
       return `${t.userIds.map((id) => esc(n.user(id))).join(', ')}（${by[t.by]}）`;
@@ -86,8 +111,8 @@ function logEntry(dir: Directory, p: Projections, t: Thread, l: Thread['log'][nu
     case 'attribute':
       return `${head('属性', l.kind)}${esc(l.name)} = ${esc(l.value === null ? '(外した)' : l.value)}</li>`;
     case 'mirrored':
-      return `${head('写し', l.kind)}${Object.entries(l.fields ?? {})
-        .map(([k, v]) => `${esc(k)} = ${esc(attrValue(dir, t.dataSourceId, k, v))}`)
+      return `${head('写し', l.kind)}${mirrorPairs(dir, t.dataSourceId, l.fields ?? {})
+        .map(([k, v]) => `${esc(k)} = ${esc(v)}`)
         .join(' · ')}</li>`;
     case 'overdue':
       return `${head('期限超過', l.kind)}${esc(l.replyExpectedBy)}</li>`;
@@ -164,13 +189,15 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
   const n = names(dir, p);
   const rows = Object.values(p.threads)
     .filter((t) => t.dataSourceId === list.dataSourceId)
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1))
+    .map((t) => ({ t, at: lastActivityAt(operator(dir), p, t) }))
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.t.id < b.t.id ? -1 : 1))
+    .map(({ t }) => t)
     .map(
       (t) => `<tr class="${t.dismissed ? 'dismissed' : ''}"><td><a href="${esc(href(`/admin/threads/${t.id}`))}">${esc(t.title)}</a><br><small>${esc(t.id)} · ${t.signalIds.length} 件</small></td>
 <td>${turnLabel(dir, p, turnOf(dir, p, t))}<br><small>ボール: ${ballLabel(dir, p, t)}</small></td>
 <td>${t.links.map((l) => `<a href="${esc(href(`/admin/threads/${l.threadId}`))}">${esc(n.thread(l.threadId))}</a> <small>[${esc(l.route)}] ${esc(n.ds(p.threads[l.threadId]?.dataSourceId ?? ''))}</small>`).join('<br>')}</td>
-<td>${Object.entries(t.attributes).map(([k, v]) => `${esc(k)}=${esc(attrValue(dir, t.dataSourceId, k, v))}`).join('<br>')}</td>
-<td>${flags(t)}</td><td><time>${esc(t.updatedAt)}</time></td></tr>`,
+<td>${attrPairs(dir, t).map(([k, v]) => `${esc(k)}=${esc(v)}`).join('<br>')}</td>
+<td>${flags(t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
     )
     .join('\n');
   return page(
@@ -198,8 +225,8 @@ export function renderAdminThread(dir: Directory, p: Projections, threadId: stri
   const candidates = view.thread.linkCandidates
     .map((c) => `<li>${threadLink(c.threadId)} <small>${esc(n.ds(c.dataSourceId))} · 一致: ${c.keys.map(esc).join(', ')}</small></li>`)
     .join('');
-  const attrs = Object.entries(t.attributes)
-    .map(([k, v]) => `<li>${esc(k)} = ${esc(attrValue(dir, t.dataSourceId, k, v))}</li>`)
+  const attrs = attrPairs(dir, t)
+    .map(([k, v]) => `<li>${esc(k)} = ${esc(v)}</li>`)
     .join('');
   // getThreadView の timeline と同じ並び（このスレッドのログ + 結んだ先のシグナルとメモ）を、ログのまま描く
   const entries = [...t.log.map((l) => ({ ...l, threadId: t.id }))];

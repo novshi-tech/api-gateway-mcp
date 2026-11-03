@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, directionOf, draft, fold, FoldError, summarizeThread, type DomainEvent, type Projections } from '../../src/domain';
+import { canonicalJson, directionOf, draft, fold, FoldError, summarizeThread, type DomainEvent, type MirrorFields, type Projections } from '../../src/domain';
 import { dir, EventLog } from '../helpers/world';
 
 /** 投影のスレッドに、クエリ層で解決した通信状態（ボール・相手・未応答。0030）を重ねたもの */
@@ -230,26 +230,43 @@ describe('fold', () => {
     expect(() => fold([...log.events, { ...recorded('o1', true, T2), seq: 99, at: T2 } as DomainEvent])).toThrow(/cannot merge/);
   });
 
-  it('H9 ThreadMirrored: 変わった属性を写し（null は空）、done でボールは「なし」・返事期待の超過も消える。done が外れたら綴じた分から戻る', () => {
+  it('H9 ThreadMirrored: 決まった形の写しを source と件名に入れ（null は空）、closed でボールは「なし」・返事期待の超過も消える。closed が外れたら綴じた分から戻る。属性には入れない（0031）', () => {
     const log = new EventLog();
     log.push([observed('s1'), intoNew('s1', 't1')], T0);
-    const mirrored = (fields: Record<string, string | boolean | null>) =>
+    const mirrored = (fields: MirrorFields) =>
       draft('ThreadMirrored', { threadId: 't1', dataSourceId: 'ds_support', threadKey: 'UBS-1', fields, sourceRef: 'jira:UBS-1:x' });
-    log.push([mirrored({ status: '進行中', assignee: 'p_alice', done: false })], T1);
+    expect(view(log.state(), 't1').source).toBeNull();
+    log.push([mirrored({ statusLabel: '進行中', holders: ['jira:alice'], closed: false, title: '雨漏りの修繕' })], T1);
     let t = view(log.state(), 't1');
-    expect(t).toMatchObject({ attributes: { status: '進行中', assignee: 'p_alice', done: false }, ball: { kind: 'us' }, closedAtSource: false });
-    expect(t.log.at(-1)).toMatchObject({ kind: 'mirrored', fields: { status: '進行中', assignee: 'p_alice', done: false } });
+    expect(t).toMatchObject({ title: '雨漏りの修繕', source: { holders: ['jira:alice'], statusLabel: '進行中', due: null }, attributes: {}, ball: { kind: 'us' }, closedAtSource: false });
+    expect(t.log.at(-1)).toMatchObject({ kind: 'mirrored', fields: { statusLabel: '進行中', holders: ['jira:alice'], closed: false } });
     log.push([recorded('o1', false, T2), into('o1', 't1', null, 'human')], T1);
     log.push([draft('ReplyOverdue', { threadId: 't1', signalId: 'o1', replyExpectedBy: T2 })], '2026-10-16T12:00:00.000Z');
     expect(view(log.state(), 't1').overdue).toBe(true);
-    log.push([mirrored({ status: '完了', assignee: null, done: true })], '2026-10-16T13:00:00.000Z');
+    log.push([mirrored({ statusLabel: '完了', holders: [], due: '2026-10-20', closed: true })], '2026-10-16T13:00:00.000Z');
     t = view(log.state(), 't1');
-    expect(t).toMatchObject({ attributes: { status: '完了', done: true }, ball: { kind: 'none' }, closedAtSource: true, overdue: false, dismissed: false });
-    log.push([mirrored({ done: false })], '2026-10-16T14:00:00.000Z');
-    expect(view(log.state(), 't1')).toMatchObject({ closedAtSource: false, ball: { kind: 'contact', contactIds: ['p_carol'] }, overdue: true });
-    expect(() => fold([...log.events, { ...mirrored({ done: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, seq: 99, at: T2 } as DomainEvent])).toThrow(
+    expect(t).toMatchObject({ source: { holders: [], statusLabel: '完了', due: '2026-10-20' }, ball: { kind: 'none' }, closedAtSource: true, overdue: false, dismissed: false });
+    log.push([mirrored({ closed: false, statusLabel: null, due: null })], '2026-10-16T14:00:00.000Z');
+    expect(view(log.state(), 't1')).toMatchObject({ source: { statusLabel: null, due: null }, closedAtSource: false, ball: { kind: 'contact', contactIds: ['p_carol'] }, overdue: true });
+    expect(() => fold([...log.events, { ...mirrored({ closed: true }), payload: { ...mirrored({}).payload, dataSourceId: 'ds_line' }, seq: 99, at: T2 } as DomainEvent])).toThrow(
       /mirror of ds_line/,
     );
+  });
+
+  it('H1 書き手の印は個人のメモのシグナルだけ（0031 の 3）', () => {
+    const bad = { ...observed('s1'), payload: { ...observed('s1').payload, author: { kind: 'agent', name: 'codex' } } };
+    expect(() => fold([{ ...bad, seq: 1, at: T0 } as DomainEvent])).toThrow(/author is only for notes/);
+  });
+
+  it('H9 ThreadMirrored（created）: 写しでスレッドを作る。件名が要り、既にあるスレッドは作れない（0031 の 8）', () => {
+    const create = (threadId: string, fields: MirrorFields) =>
+      ({ ...draft('ThreadMirrored', { threadId, created: true, dataSourceId: 'ds_support', threadKey: 'UBS-7', fields, sourceRef: 'jira:UBS-7:c' }), seq: 1, at: T0 }) as DomainEvent;
+    const p = fold([create('t7', { title: '鍵の交換', holders: ['jira:alice'], closed: true })]);
+    expect(p.threads.t7).toMatchObject({ title: '鍵の交換', dataSourceId: 'ds_support', sourceKey: 'UBS-7', signalIds: [], closedAtSource: true, ball: { kind: 'none' }, source: { holders: ['jira:alice'] } });
+    expect(() => fold([create('t7', { holders: [] })])).toThrow(/has no title/);
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    expect(() => fold([...log.events, { ...create('t1', { title: 'x' }), seq: 99 }])).toThrow(/already exists/);
   });
 });
 

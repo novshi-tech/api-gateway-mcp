@@ -2,7 +2,7 @@ import type { CoreContext } from './context';
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
 import { DomainError } from './errors';
-import { AttributeValue, draft, type DraftEvent, type ThreadChoice } from './events';
+import { AttributeValue, draft, type Author, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
 import { directionOf } from './sides';
 import { linkCandidates } from './turn';
@@ -113,7 +113,7 @@ export function addNote(
   p: Projections,
   viewer: Viewer,
   ctx: CoreContext,
-  input: { threadId?: string; title?: string; body: string },
+  input: { threadId?: string; title?: string; body: string; author?: Author },
 ): { events: DraftEvent[]; threadId: string; signalId: string } {
   if (!input.body.trim()) throw new DomainError('invalid', 'body is required');
   const ds = notesDataSourceOf(ctx.dir, viewer);
@@ -143,6 +143,7 @@ export function addNote(
         to: [],
         body: input.body,
         sourceRef: `note:${signalId}`,
+        author: input.author ?? { kind: 'user' },
       }),
       draft('SignalThreaded', {
         signalId,

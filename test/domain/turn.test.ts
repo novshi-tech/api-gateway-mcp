@@ -52,6 +52,28 @@ describe('誰の番か（turnOf）', () => {
   });
 });
 
+describe('一覧の並び（lastActivityAt）', () => {
+  it('H2 一覧は自分か見える結んだ先の最新の更新の降順。結んだ先が動けば、メモにだれも書く前でもタスクが上に来る（0031 の 5）', () => {
+    const { log, ctx, shared } = world();
+    const task = addNote(log.state(), alice, ctx, { title: '雨漏りの対応', body: '着手する' });
+    log.push(task.events, '2026-10-16T10:00:00.000Z');
+    log.push(linkThreads(log.state(), alice, { threadId: task.threadId, otherThreadId: shared }), '2026-10-16T10:01:00.000Z');
+    const other = addNote(log.state(), alice, ctx, { title: '別の件', body: 'メモ' });
+    log.push(other.events, '2026-10-16T11:00:00.000Z');
+    const mine = () => listThreads(dir, alice, log.state(), { filter: 'mine' });
+    expect(mine().map((t) => t.id)).toEqual([other.threadId, task.threadId]);
+    // 結んだ先（support@ のスレッド）に返事が来る
+    ctx.setNow('2026-10-16T12:00:00.000Z');
+    ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r9', anchors: { inReplyTo: '<m1>' } }), () => answer({}));
+    expect(mine().map((t) => t.id)).toEqual([task.threadId, other.threadId]);
+    expect(mine()[0]).toMatchObject({ updatedAt: '2026-10-16T10:01:00.000Z', lastActivityAt: '2026-10-16T12:00:00.000Z' });
+    // 見えない結んだ先は数えない（Bob から見た Bob のメモ）
+    const bobs = addNote(log.state(), bob, ctx, { body: 'Bob の件' });
+    log.push(bobs.events, '2026-10-16T09:00:00.000Z');
+    expect(listThreads(dir, bob, log.state(), { filter: 'mine' })[0]!.lastActivityAt).toBe('2026-10-16T09:00:00.000Z');
+  });
+});
+
 describe('リンク先から導出したボール（derivedBall）', () => {
   it('H2 メモのスレッドのボールは、見えるリンク先から決まる（どれかが自分の番 → my_turn、全部相手待ち → waiting）', () => {
     const { log, ctx, shared, addressed } = world();

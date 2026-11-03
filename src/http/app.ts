@@ -156,7 +156,7 @@ export function createApp(opts: HttpOptions) {
 
   api.post('/notes', async (c) => {
     const b = AddNoteBody.parse(await json(c));
-    return c.json(await c.var.service.addNote(c.var.userId, { threadId: b.thread_id, title: b.title, body: b.body }));
+    return c.json(await c.var.service.addNote(c.var.userId, { threadId: b.thread_id, title: b.title, body: b.body, author: b.author }));
   });
 
   api.post('/threads/:id/claim', async (c) => {

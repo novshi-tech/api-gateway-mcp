@@ -12,7 +12,7 @@ import type { CommState, FoldedBall, Request, ThreadLogEntry } from './projectio
  * - 求めないシグナル → 送り主が求めた人でなければ応えたとみなしてボールを空にする。求めた人（追伸・お礼）なら変えない
  * - 持った・引き継いだ → その人。手放した → こちら
  * - 片付けた → 開き直すまで「なし」。その間もシグナルは綴じ、開き直したら綴じた分から決まる
- * - ソースの側で完了した（写しの done） → 片付けと同じく「なし」。完了が外れたら綴じた分から決まる
+ * - ソースの側で完了した（写しの closed） → 片付けと同じく「なし」。完了が外れたら綴じた分から決まる
  *
  * 返事期待: 記録した送信の期限が返事期待になり、その送り主以外からシグナルが来れば消える（遅れて返事が来れば期限超過も解消する）。
  * 期限超過は ReplyOverdue がその送信を指しているときだけ
@@ -85,8 +85,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
         if (e.signalId !== undefined && e.signalId === state.replyExpectedSignalId) state.overdue = true;
         break;
       case 'mirrored':
-        if (e.fields && typeof e.fields.done === 'boolean') state.closedAtSource = e.fields.done;
-        else if (e.fields && e.fields.done === null) state.closedAtSource = false;
+        if (e.fields?.closed !== undefined) state.closedAtSource = e.fields.closed;
         break;
       case 'note':
       case 'linked':

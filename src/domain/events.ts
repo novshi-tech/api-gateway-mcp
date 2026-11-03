@@ -39,6 +39,16 @@ export type Direction = z.infer<typeof Direction>;
  * イベントはアドレスだけを持ち、向き（こちらからか）と Contact はクエリ層がそのときのマスタで決める（0030）。
  * 古いイベントに残る direction・fromPartyId・toPartyIds は読まない
  */
+/**
+ * 個人のメモの書き手（0031 の 3・0032）。user は人の言葉（スタンドが中継したものを含む）、agent はエージェント自身が書いたもの。
+ * スタンドの自己申告で、誰の番・ボール・可視性には使わない
+ */
+export const Author = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('user') }),
+  z.object({ kind: z.literal('agent'), name: z.string().trim().min(1).max(64) }),
+]);
+export type Author = z.infer<typeof Author>;
+
 export const SignalObserved = z.object({
   signalId: z.string(),
   dataSourceId: z.string(),
@@ -51,6 +61,8 @@ export const SignalObserved = z.object({
   attachments: z.array(FileRef).default([]),
   /** データソースごとの重複排除キー */
   sourceRef: z.string(),
+  /** 書き手（個人のメモだけ） */
+  author: Author.optional(),
 });
 
 export const ThreadChoice = z.discriminatedUnion('kind', [
@@ -126,7 +138,7 @@ export const ThreadLinked = z.object({
 export const AttributeValue = z.union([z.string(), z.number(), z.boolean()]);
 export type AttributeValue = z.infer<typeof AttributeValue>;
 
-/** 本人が付ける属性の値（定義は AttributeDef）。value が null なら外す。ソースの写しの属性はこちらでは触らない（ThreadMirrored） */
+/** 本人が付ける属性の値（定義は個人のメモのデータソースの AttributeDef）。value が null なら外す。外のサービスのスレッドには付けない（0031） */
 export const ThreadAttributeSet = z.object({
   threadId: z.string(),
   name: z.string(),
@@ -134,27 +146,42 @@ export const ThreadAttributeSet = z.object({
   actorUserId: z.string(),
 });
 
+export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:\d{2}))?$/, 'not a date (YYYY-MM-DD)');
+
 /**
- * 状態の写し（0010・0014）。状態を持つデータソース（Jira の課題など）の状態を、スレッドの属性に片方向で写す。
- * fields は変わった属性だけ（null は空になった）。名前はデータソースの AttributeDef。Murmur が読むのは
- * `done`（boolean。完了ならボールは「なし」）と `assignee`（contact。誰の番か）だけで、ほかは見せるだけ
+ * 写しの項目（0031 の 6）。Murmur が決めた形で、コネクタはサービスの標準の意味で写す。省略は「変わっていない」
+ * - closed: ソースで完了しているか（ボールは「なし」）
+ * - holders: ソースの上でボールを持っているアカウント（アドレスの値。Contact への解決はクエリ層）。空はだれも持っていない
+ * - title: 件名（スレッドの件名になる）
+ * - statusLabel / due: 見せるだけ（null は空）
+ */
+export const MirrorFields = z
+  .object({
+    closed: z.boolean(),
+    holders: z.array(z.string().min(1)),
+    title: z.string().min(1),
+    statusLabel: z.string().min(1).nullable(),
+    due: IsoDate.nullable(),
+  })
+  .partial()
+  .strict();
+export type MirrorFields = z.infer<typeof MirrorFields>;
+
+/**
+ * 状態の写し（0010・0031）。状態を持つデータソース（Jira の課題・PR）の状態を、スレッドに片方向で写す。
+ * fields は変わった項目だけ。created なら、このイベントでスレッドを作る（課題の作成の通知より先に写しが届いたとき。fields.title が要る）
  */
 export const ThreadMirrored = z.object({
   threadId: z.string(),
+  created: z.boolean().default(false),
   dataSourceId: z.string(),
   /** ソースの区切り（課題キー） */
   threadKey: z.string(),
-  fields: z.record(z.string(), AttributeValue.nullable()),
+  fields: MirrorFields,
   /** ソースの更新の識別子（監査用） */
   sourceRef: z.string(),
 });
 
-/**
- * 送信の記録（0012）。スタンドがゲートウェイ経由で送った直後に記録する。本体は外に何も書かない。
- * - merged: false なら送ったシグナルをここで作る（続く SignalThreaded で置き先が決まる）
- * - merged: true なら、同じ sent_ref の観測された送信（SignalObserved）が先に届いていて、そのシグナルに記録を重ねる（H5）
- * sent_ref はシグナルの messageId になり、スレッドのアンカーになる
- */
 export const OutboundRecorded = z.object({
   signalId: z.string(),
   merged: z.boolean(),

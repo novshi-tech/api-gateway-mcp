@@ -51,8 +51,10 @@ export class Directory {
       .filter((c): c is Contact => c !== undefined);
   }
 
+  /** データソースの属性の定義。個人のメモには標準の定義（due）が付く（0031 の 4） */
   attributeDefs(dataSourceId: string): AttributeDef[] {
-    return this.seed.attributeDefs.filter((d) => d.dataSourceId === dataSourceId);
+    const own = this.seed.attributeDefs.filter((d) => d.dataSourceId === dataSourceId);
+    return this.dataSource(dataSourceId)?.kind === 'notes' ? [...standardNoteAttributeDefs(dataSourceId), ...own] : own;
   }
 
   address(addressId: string): Address | undefined {
@@ -99,6 +101,13 @@ function isValidAt(a: Address, at?: string): boolean {
  * - 個人のメモのリストの読者は本人だけ
  * - 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない。共有のデータソースは組織の資格情報（0013）
  */
+/** 個人のメモに標準で付く属性（0031 の 4）。マスタには置かない */
+export const STANDARD_NOTE_ATTRIBUTES = ['due'] as const;
+
+export function standardNoteAttributeDefs(dataSourceId: string): AttributeDef[] {
+  return [{ dataSourceId, name: 'due', type: 'date', description: 'タスクの期日（本人が付ける）' }];
+}
+
 export function seedProblems(seed: Seed): string[] {
   const dir = new Directory(seed);
   const problems: string[] = [];
@@ -137,6 +146,14 @@ export function seedProblems(seed: Seed): string[] {
   }
   for (const l of seed.lists) {
     if (!dir.dataSource(l.dataSourceId)) problems.push(`list ${l.id}: data source ${l.dataSourceId} がない`);
+  }
+  // 属性は個人のメモのスレッドだけのもの（0031）
+  for (const d of seed.attributeDefs) {
+    const ds = dir.dataSource(d.dataSourceId);
+    if (!ds) problems.push(`attribute ${d.dataSourceId}|${d.name}: data source がない`);
+    else if (ds.kind !== 'notes') problems.push(`attribute ${d.dataSourceId}|${d.name}: 属性を付けられるのは個人のメモのデータソースだけ`);
+    else if ((STANDARD_NOTE_ATTRIBUTES as readonly string[]).includes(d.name)) problems.push(`attribute ${d.dataSourceId}|${d.name}: 標準の属性と重なる`);
+    if (d.type === 'enum' && (d.options ?? []).length === 0) problems.push(`attribute ${d.dataSourceId}|${d.name}: enum の選択肢がない`);
   }
   for (const a of seed.contactAliases) {
     if (!seed.contacts.some((c) => c.id === a.contactId)) problems.push(`contact alias ${a.id}: まとめ先 ${a.contactId} がない`);

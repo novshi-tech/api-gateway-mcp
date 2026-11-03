@@ -48,11 +48,5 @@
     { "listId": "l_notes_nose", "userId": "u_nose" },
     { "listId": "l_notes_kato", "userId": "u_kato" }
   ],
-  "attributeDefs": [
-    { "dataSourceId": "ds_jira", "name": "status", "type": "string", "description": "課題のステータス（Jira の写し）" },
-    { "dataSourceId": "ds_jira", "name": "assignee", "type": "contact", "description": "担当者（Jira の写し）。読者のユーザーならその人の番" },
-    { "dataSourceId": "ds_jira", "name": "priority", "type": "string", "description": "優先度（Jira の写し）" },
-    { "dataSourceId": "ds_jira", "name": "due", "type": "date", "description": "期日（Jira の写し）" },
-    { "dataSourceId": "ds_jira", "name": "done", "type": "boolean", "description": "完了しているか（Jira の写し）。完了ならボールは「なし」" }
-  ]
+  "attributeDefs": []
 }

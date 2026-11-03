@@ -1,8 +1,8 @@
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
-import type { AttributeValue } from './events';
+import type { AttributeValue, Author, MirrorFields } from './events';
 import { sortLog } from './comm';
-import type { Ball, Projections, SignalRecord, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import type { Ball, Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
 import { commView, directionOf } from './sides';
 import { derivedBall, isMyTurn, linkCandidates, linkedActiveSinceDismissed, turnOf, type DerivedBall, type LinkCandidate, type Turn } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
@@ -43,12 +43,15 @@ export interface ThreadSummary {
   closedAtSource: boolean;
   links: ThreadLink[];
   attributes: Record<string, AttributeValue>;
+  source: SourceState | null;
   signalCount: number;
   updatedAt: string;
 }
 
 /** 一覧と詳細で返すスレッド。投影の要約に、クエリ層で導出したもの（誰の番か・リンク先から導出したボール・結び候補）を足す */
 export interface ThreadItem extends ThreadSummary {
+  /** 自分か、見える結んだ先のうち一番新しい更新（一覧の並び。0031 の 5） */
+  lastActivityAt: string;
   turn: Turn;
   derivedBall: DerivedBall | null;
   /** 閉じたスレッドに結ばれた先で、閉じたあとにシグナルが来た */
@@ -76,6 +79,7 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
     closedAtSource: t.closedAtSource,
     links: t.links,
     attributes: t.attributes,
+    source: t.source,
     signalCount: t.signalIds.length,
     updatedAt: t.updatedAt,
   };
@@ -84,6 +88,7 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
 export function threadItem(dir: Directory, viewer: Viewer, p: Projections, t: Thread): ThreadItem {
   return {
     ...summarizeThread(dir, p, t),
+    lastActivityAt: lastActivityAt(viewer, p, t),
     turn: turnOf(dir, p, t),
     derivedBall: derivedBall(dir, viewer, p, t),
     linkedActiveSinceDismissed: linkedActiveSinceDismissed(viewer, p, t),
@@ -119,18 +124,27 @@ export function listThreads(
     if (opts.since !== undefined && !movedSince(viewer, p, t, opts.since)) continue;
     out.push(threadItem(dir, viewer, p, t));
   }
-  return out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1));
+  return out.sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : a.lastActivityAt > b.lastActivityAt ? -1 : a.id < b.id ? -1 : 1));
+}
+
+/**
+ * 自分か、見える結んだ先のうち一番新しい更新（0031 の 5）。結んだ PR にレビューが返れば、メモにだれも書く前でもタスクが上に来る。
+ * fold は 1 段のまま（0014）、クエリ層で合わせる
+ */
+export function lastActivityAt(viewer: Viewer, p: Projections, t: Thread): string {
+  let at = t.updatedAt;
+  for (const l of t.links) {
+    const u = p.threads[l.threadId];
+    if (u && canReadDataSource(viewer, u.dataSourceId) && u.updatedAt > at) at = u.updatedAt;
+  }
+  return at;
 }
 
 function movedSince(viewer: Viewer, p: Projections, t: Thread, since: string): boolean {
-  if (t.updatedAt > since) return true;
-  return t.links.some((l) => {
-    const u = p.threads[l.threadId];
-    return !!u && canReadDataSource(viewer, u.dataSourceId) && u.updatedAt > since;
-  });
+  return lastActivityAt(viewer, p, t) > since;
 }
 
-export type SignalView = { direction: 'inbound' | 'outbound' } & Pick<
+export type SignalView = { direction: 'inbound' | 'outbound'; author?: Author } & Pick<
   SignalRecord,
   'signalId' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
 >;
@@ -150,6 +164,8 @@ function signalView(dir: Directory, s: SignalRecord): SignalView {
     threadedBy: s.threadedBy,
     needsResponse: s.needsResponse,
     recorded: s.recorded,
+    // 書き手の印より前のメモは本人が書いたもの
+    ...(s.channel === 'note' ? { author: s.author ?? { kind: 'user' as const } } : {}),
   };
 }
 
@@ -166,7 +182,7 @@ export interface TimelineEntry {
   route?: ThreadLogEntry['route'];
   name?: string;
   value?: AttributeValue | null;
-  fields?: Record<string, AttributeValue | null>;
+  fields?: MirrorFields;
   replyExpectedBy?: string | null;
 }
 
