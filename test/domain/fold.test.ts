@@ -252,6 +252,17 @@ describe('fold', () => {
       /mirror of ds_line/,
     );
   });
+
+  it('H9 ThreadMirrored（created）: 写しでスレッドを作る。件名が要り、既にあるスレッドは作れない（0031 の 8）', () => {
+    const create = (threadId: string, fields: MirrorFields) =>
+      ({ ...draft('ThreadMirrored', { threadId, created: true, dataSourceId: 'ds_support', threadKey: 'UBS-7', fields, sourceRef: 'jira:UBS-7:c' }), seq: 1, at: T0 }) as DomainEvent;
+    const p = fold([create('t7', { title: '鍵の交換', holders: ['jira:alice'], closed: true })]);
+    expect(p.threads.t7).toMatchObject({ title: '鍵の交換', dataSourceId: 'ds_support', sourceKey: 'UBS-7', signalIds: [], closedAtSource: true, ball: { kind: 'none' }, source: { holders: ['jira:alice'] } });
+    expect(() => fold([create('t7', { holders: [] })])).toThrow(/has no title/);
+    const log = new EventLog();
+    log.push([observed('s1'), intoNew('s1', 't1')], T0);
+    expect(() => fold([...log.events, { ...create('t1', { title: 'x' }), seq: 99 }])).toThrow(/already exists/);
+  });
 });
 
 function recorded(signalId: string, merged: boolean, replyExpectedBy: string | null) {

@@ -99,6 +99,29 @@ describe('状態の写し（planMirror）', () => {
     expect(() => planMirror(log.state(), ctx, { ...mirror('UBS-1', {}), dataSourceId: 'ds_support' })).toThrow(/is email, not jira/);
   });
 
+  it('H9 課題キーのスレッドがまだなければ、件名のある写しでスレッドを作る。あとから届いた作成の通知は課題キーで同じスレッドに入る（0031 の 8）', () => {
+    const log = new EventLog();
+    const ctx = ctxAt();
+    // 件名がなければ作らない
+    expect(planMirror(log.state(), ctx, mirror('UBS-3', { statusLabel: '未着手' }))).toEqual({ kind: 'no_thread', threadKey: 'UBS-3' });
+    const plan = planMirror(log.state(), ctx, mirror('UBS-3', { title: '雨漏りの修繕', statusLabel: '未着手', holders: ['jira:bob', 'jira:bob'], closed: false }));
+    expect(plan).toMatchObject({ kind: 'mirrored', newThread: true, fields: { title: '雨漏りの修繕', statusLabel: '未着手', holders: ['jira:bob'], closed: false } });
+    if (plan.kind !== 'mirrored') throw new Error('unreachable');
+    log.push(plan.events, '2026-10-16T09:00:00.000Z');
+    let p = log.state();
+    const t = p.threads[plan.threadId]!;
+    expect(t).toMatchObject({ dataSourceId: 'ds_jira', title: '雨漏りの修繕', signalIds: [], sourceKey: 'UBS-3', source: { holders: ['jira:bob'], statusLabel: '未着手', due: null } });
+    expect(turnOf(dir, p, t)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'holder' });
+    // 同じ写しがもう一度来ても作らない
+    expect(planMirror(p, ctx, mirror('UBS-3', { title: '雨漏りの修繕', holders: ['jira:bob'] }, 'u2'))).toEqual({ kind: 'unchanged', threadId: plan.threadId });
+    // 作成の通知があとから届く
+    const created = ingestPure(log, ctx, issueEvent('UBS-3'), answer(false));
+    expect(created.outcome).toMatchObject({ threadId: plan.threadId, newThread: false, by: 'anchor' });
+    p = log.state();
+    expect(p.threads[plan.threadId]).toMatchObject({ title: '雨漏りの修繕', signalIds: [created.signalId] });
+    expect(Object.keys(p.threads)).toHaveLength(1);
+  });
+
   it('H9 写しは Murmur の側では書けない（外のサービスのスレッドに set_attribute は断る）', () => {
     const log = new EventLog();
     const ctx = ctxAt();

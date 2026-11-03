@@ -91,7 +91,7 @@ export type IngestResult =
 
 /** 状態の写しの結果。no_thread はまだ課題のスレッドがない（写さない） */
 export type MirrorResult =
-  | { status: 'mirrored'; threadId: string; fields: MirrorFields }
+  | { status: 'mirrored'; threadId: string; newThread: boolean; fields: MirrorFields }
   | { status: 'unchanged'; threadId: string }
   | { status: 'no_thread'; threadKey: string };
 
@@ -208,7 +208,7 @@ export class MurmurService {
       const plan = planMirror(p, ctx, inbound);
       if (plan.kind === 'no_thread') return { events: [], result: { status: 'no_thread', threadKey: plan.threadKey } };
       if (plan.kind === 'unchanged') return { events: [], result: { status: 'unchanged', threadId: plan.threadId } };
-      return { events: plan.events, result: { status: 'mirrored', threadId: plan.threadId, fields: plan.fields } };
+      return { events: plan.events, result: { status: 'mirrored', threadId: plan.threadId, newThread: plan.newThread, fields: plan.fields } };
     });
   }
 

@@ -106,7 +106,9 @@ export function threadOfSourceKey(p: Projections, dataSourceId: string, key: str
   if (keyed) return keyed.threadId;
   const sid = p.index.messageIds[indexKey(dataSourceId, key)];
   const s = sid && sid !== exceptSignalId ? p.signals[sid] : undefined;
-  return s?.threadId ?? null;
+  if (s?.threadId) return s.threadId;
+  // 写しでできたスレッド（まだシグナルがない。0031 の 8）
+  return Object.values(p.threads).find((t) => t.dataSourceId === dataSourceId && t.sourceKey === key)?.id ?? null;
 }
 
 /** 1. アンカー。同じデータソースの中だけを見る。ソースの区切り（threadKey）は一致しなくても「新しい」に決まる */

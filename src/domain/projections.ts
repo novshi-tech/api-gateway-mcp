@@ -115,6 +115,8 @@ export interface Thread extends CommState {
   attributes: Record<string, AttributeValue>;
   /** ソースの状態の写し（ThreadMirrored）。写しを受けたことがなければ null。完了は closedAtSource、件名は title に入る */
   source: SourceState | null;
+  /** 写しのソースの区切り（課題キー）。写しでできたスレッドを課題キーで引くため */
+  sourceKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }

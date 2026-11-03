@@ -157,10 +157,11 @@ export type MirrorFields = z.infer<typeof MirrorFields>;
 
 /**
  * 状態の写し（0010・0031）。状態を持つデータソース（Jira の課題・PR）の状態を、スレッドに片方向で写す。
- * fields は変わった項目だけ
+ * fields は変わった項目だけ。created なら、このイベントでスレッドを作る（課題の作成の通知より先に写しが届いたとき。fields.title が要る）
  */
 export const ThreadMirrored = z.object({
   threadId: z.string(),
+  created: z.boolean().default(false),
   dataSourceId: z.string(),
   /** ソースの区切り（課題キー） */
   threadKey: z.string(),

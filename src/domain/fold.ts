@@ -69,6 +69,11 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
     }
     case 'ThreadMirrored': {
       const p = e.payload;
+      if (p.created) {
+        if (s.threads[p.threadId]) throw new FoldError(`thread ${p.threadId} already exists`);
+        if (p.fields.title === undefined) throw new FoldError(`mirror creating thread ${p.threadId} has no title`);
+        s.threads[p.threadId] = newThread(p.threadId, p.dataSourceId, p.fields.title, e.at);
+      }
       const t = mustThread(s, p.threadId);
       if (t.dataSourceId !== p.dataSourceId) throw new FoldError(`mirror of ${p.dataSourceId} cannot go into thread ${t.id} (${t.dataSourceId})`);
       const f = p.fields;
@@ -77,6 +82,7 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
       if (f.statusLabel !== undefined) src.statusLabel = f.statusLabel;
       if (f.due !== undefined) src.due = f.due;
       if (f.title !== undefined) t.title = f.title;
+      t.sourceKey = p.threadKey;
       t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
       recompute(s, t, e.at, c);
       return;
@@ -235,6 +241,7 @@ function newThread(id: string, dataSourceId: string, title: string, at: string):
     links: [],
     attributes: {},
     source: null,
+    sourceKey: null,
     createdAt: at,
     updatedAt: at,
     ...deriveComm([]),
