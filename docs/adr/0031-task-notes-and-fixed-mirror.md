@@ -127,3 +127,16 @@
 2. `record_sent` にも `author` を付けるか（エージェントが PR にコメントしたことを、送ったスレッドの側でも見分けたいか）
 3. PR が承認されたあと（マージ待ち）の `holders`。作者とするか、空とするか
 4. 写しでできたスレッド（決定 8）に、あとから作成の通知が届いたときの入り方（課題キーのアンカーで同じスレッドに入る見込み。実装で確かめる）
+
+## 実装の記録（2026-11-03）
+
+決定のとおりに実装した（6・7 → 8・9 → 3 → 4 → 5 の順に 1 コミットずつ）。決定に書いていなかったことと、実装で決めたこと:
+
+- 写しは投影の `source`（`holders`・`statusLabel`・`due`）に入れる。完了は今までどおり `closedAtSource`、件名は `title` を上書きする。写しを受けたことのないスレッドは `source: null`
+- `holders` は重複を除いて並べてから比べる（順番だけの違いは「変わっていない」）。誰の番の `by` は `assignee` から `holder` に改めた（API が変わった）。`holders` がだれにも解決できなければ、シグナルのボールのまま
+- 写しでスレッドを作るのは `ThreadMirrored` の `created: true`（新しいイベント型は足していない）。スレッドに `sourceKey`（課題キー）を持たせ、課題キーでの引き当て（`threadOfSourceKey`）がシグナルのないスレッドも引く。あとから届いた作成の通知・起票の記録は、アンカーで同じスレッドに入る
+- 書き手の印は `SignalObserved.author`（個人のメモだけ。fold が検査）。`add_note` は省略なら `{kind:'user'}` を入れる。印より前のメモは、タイムラインでは `user` として返す
+- **`due` は `ensureNotes` でマスタに書かず、Directory が個人のメモのデータソースに標準の定義として足して返す**（決定 4 の「既存のメモのデータソースにはマスタの書き換えで足す」が要らなくなる）。seed で `due` を定義すると「標準の属性と重なる」
+- `seedProblems` が、属性の定義を個人のメモのデータソースだけに許す（enum の選択肢がないものも咎める）。development の Jira の属性定義は外した
+- 一覧の並びは `ThreadItem.lastActivityAt`（自分か、見える結んだ先の `updatedAt` の最大）。`since` の判定も同じ値を使う。管理画面の一覧も同じ並び
+- HTTP API の変化: スレッドに `source`・`lastActivityAt`、`turn.by` の `holder`、`POST /notes` の `author`、タイムラインのメモの `signal.author`、写しの Webhook の `fields` は決まった形

@@ -1,4 +1,4 @@
-import { commView, directionOf, getThreadView, resolveBall, sortLog, turnOf, type AttributeValue, type Directory, type MirrorFields, type Projections, type Thread, type Turn, type Viewer } from '../domain';
+import { commView, directionOf, getThreadView, lastActivityAt, resolveBall, sortLog, turnOf, type AttributeValue, type Directory, type MirrorFields, type Projections, type Thread, type Turn, type Viewer } from '../domain';
 
 // 参照専用の管理画面（ステップ 5）とタイムライン。どれも純関数（マスタ・投影 → HTML 文字列）。
 // 運用者向けで、TIMELINE_TOKEN を知っている人には全データソースが見える。スタンドの可視性（H3）とは別の入口
@@ -189,13 +189,15 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
   const n = names(dir, p);
   const rows = Object.values(p.threads)
     .filter((t) => t.dataSourceId === list.dataSourceId)
-    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : a.id < b.id ? -1 : 1))
+    .map((t) => ({ t, at: lastActivityAt(operator(dir), p, t) }))
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.t.id < b.t.id ? -1 : 1))
+    .map(({ t }) => t)
     .map(
       (t) => `<tr class="${t.dismissed ? 'dismissed' : ''}"><td><a href="${esc(href(`/admin/threads/${t.id}`))}">${esc(t.title)}</a><br><small>${esc(t.id)} · ${t.signalIds.length} 件</small></td>
 <td>${turnLabel(dir, p, turnOf(dir, p, t))}<br><small>ボール: ${ballLabel(dir, p, t)}</small></td>
 <td>${t.links.map((l) => `<a href="${esc(href(`/admin/threads/${l.threadId}`))}">${esc(n.thread(l.threadId))}</a> <small>[${esc(l.route)}] ${esc(n.ds(p.threads[l.threadId]?.dataSourceId ?? ''))}</small>`).join('<br>')}</td>
 <td>${attrPairs(dir, t).map(([k, v]) => `${esc(k)}=${esc(v)}`).join('<br>')}</td>
-<td>${flags(t)}</td><td><time>${esc(t.updatedAt)}</time></td></tr>`,
+<td>${flags(t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
     )
     .join('\n');
   return page(

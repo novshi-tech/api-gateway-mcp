@@ -78,7 +78,7 @@ v1 と同じ（`docs/adr/0001`・`0003`）。本体 Worker 1 本、Neon、既存
 | DataSource | Tenant | 資格情報 + 絞り込み（組織や個人のメールボックス、Slack のチャネルや DM、LINE 公式アカウント、Jira のプロジェクト）、または個人のメモ（ユーザーごとに 1 つ）。リスト 1 つに対応する。外のサービスのものは送信元のアドレスを持つ |
 | List | Tenant | データソース 1 つに 1 つ。可視性の単位 |
 | ListMember | List | Party の所属（読者）。個人のメモのリストは本人だけ |
-| AttributeDef | DataSource | 本人が付ける属性の定義（主に個人のメモのデータソース）。名前・型・AI が読める意味の記述。ソースの写しの属性はコネクタが持ち込む |
+| AttributeDef | DataSource | 本人が付ける属性の定義（個人のメモのデータソースだけ。標準で `due` が付く）。名前・型・AI が読める意味の記述。写しは定義を使わない（0031） |
 
 v1 の ChannelPolicy と 0009 の Subscription はなくなる。置き先はデータソースから機械的に決まり、誰の番かは構造と持ち主で決まる。約束: 共有のデータソースは組織の資格情報で取り込む。個人の資格情報は読者 1 人のデータソースにしか使わない（0013）。
 
@@ -91,8 +91,8 @@ v1 の ChannelPolicy と 0009 の Subscription はなくなる。置き先はデ
 | SignalObserved | コネクタ・人・スタンド | データソースで観測されたシグナル。受信も、ツール外で行われた送信（相手への返信をメーラーから直接送ったなど）も同じ種別で、direction（inbound / outbound）で区別する。direction は from がデータソースの送信元（こちら）かどうかでコネクタが機械的に決める。データソース、from / to、anchors（In-Reply-To・thread\_ts・Jira キー・PR 番号・LINE の quotedMessageId）、body、attachments（参照のみ）、source\_ref（データソースごとの重複排除キー）。個人のメモのシグナル（電話や対面の記録、判断の記録、スタンドとのやりとりの控え）も同じ種別で、データソースが個人のメモ、from が本人。Murmur は中身を解釈せず、タイムラインに並べるだけ（0012。v2 当初の SignalReceived・SignalObservedSent・MatterNoted を 1 つにしたもの） |
 | SignalThreaded | Ingest・人 | シグナルをスレッドに入れる（既存 / 新規）。by（anchor / awaiting / no\_match（どの規則にも当たらず候補もない） / ai / human / self）、confidence、reason、返事や対応を求めているか。人の訂正（シグナルの移し替え）も同じイベントで追記する。個人のメモは本人が置き先を指定する（by: self。新規なら「この件」のスレッドができる） |
 | ThreadClaimed | 人・スタンド | 持ち主。ボールを特定のユーザーへ明示の操作で動かす。userId が null なら手放す（ボールは「こちら」= 組織に戻る）、別の人なら引き継ぐ。理由を残す |
-| ThreadMirrored | コネクタ | 状態を持つデータソース（Jira の課題など）の状態の写し（ステータス・担当者・優先度・期日・完了）。0010 の MatterMirrored の後継 |
-| ThreadAttributeSet | 人・スタンド | 本人が付ける属性の値の変更（主に個人のメモのスレッド。定義は AttributeDef）。写しの属性は ThreadMirrored で、こちらでは触らない |
+| ThreadMirrored | コネクタ | 状態を持つデータソース（Jira の課題・PR）の状態の写し。Murmur が決めた形（`closed / holders / title / statusLabel / due`）で、件名のある写しはスレッドも作る。0010 の MatterMirrored の後継（0031） |
+| ThreadAttributeSet | 人・スタンド | 本人が付ける属性の値の変更（個人のメモのスレッドだけ。定義は AttributeDef）。写しは ThreadMirrored で、こちらでは触らない |
 | ThreadLinked | 人・スタンド | スレッド A と B を結ぶ（unlink で外す）。リンクは無向で、1 つのイベントが両方のスレッドの投影に載る（A から見ても B から見ても同じ辺）。経路の sent には「元 → 送った」の由来があるが、それは経路の属性で、辺の向きではない。追記で、元の判断は消さない。経路（sent / anchor / manual）、操作した人、理由。起票や送信の副作用として付くものも同じ種別。v2 当初の ThreadLinked（スレッドを用件につなぐ）の後継で、両端ともスレッド |
 | ThreadDismissed / ThreadReopened | 人・スタンド | 片付けと開き直し。スレッドのボールを「なし」にし、理由を残す（v1 の IgnoreLog の後継）。状態を持たないデータソースの open / closed はこれで表す。個人のメモのスレッドも同じで、閉じた件に結ばれた先が動いても Murmur は自動で開き直さない（スタンドが判断する） |
 
@@ -175,7 +175,7 @@ Murmur が決めるのは「誰の番か」（ボール）まで。スレッド�
 
 ## 状態の写しを持つデータソース（Jira。0010・0013）
 
-- Jira のプロジェクトは、データソース 1 つとしてつなぐ。1 課題 = 1 スレッドで、コメントがシグナル、課題の状態は ThreadMirrored でスレッドの属性に写す。LINE やメールとの違いは、区切りと状態を元から持っていることだけ
+- Jira のプロジェクトは、データソース 1 つとしてつなぐ。1 課題 = 1 スレッドで、コメントがシグナル、課題の状態は ThreadMirrored でスレッドに写す（0031）。LINE やメールとの違いは、区切りと状態を元から持っていることだけ
 - 状態は Jira から Murmur への片方向。変えるときは Jira の画面か、スタンドがゲートウェイ経由で直接操作する
 - 会話（コメント）は両方向。Murmur を使わない人のコメントは受信、Murmur のユーザーが直接書いたものは観測された送信、スタンド経由は記録した送信（H5 で重複排除）
 - 担当者が Murmur のユーザーなら、その人の「自分の番」に出る。Slack のスレッドや PR は Jira キーのアンカーで結び候補になり、スタンドが結ぶ
