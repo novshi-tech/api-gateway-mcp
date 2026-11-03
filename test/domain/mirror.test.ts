@@ -40,13 +40,6 @@ const seed = Seed.parse({
   ],
   lists: [...base.lists, { id: 'l_jira', dataSourceId: 'ds_jira' }],
   listMembers: [...base.listMembers, { listId: 'l_jira', userId: 'u_alice' }, { listId: 'l_jira', userId: 'u_bob' }],
-  attributeDefs: [
-    ...base.attributeDefs,
-    { dataSourceId: 'ds_jira', name: 'status', type: 'string', description: '課題のステータス' },
-    { dataSourceId: 'ds_jira', name: 'assignee', type: 'contact', description: '担当者' },
-    { dataSourceId: 'ds_jira', name: 'due', type: 'date', description: '期日' },
-    { dataSourceId: 'ds_jira', name: 'done', type: 'boolean', description: '完了しているか' },
-  ],
 });
 const dir = new Directory(seed);
 const alice = deriveViewer(dir, 'u_alice');
@@ -81,24 +74,32 @@ const mirror = (key: string, fields: InboundMirror['fields'], ref = 'u1'): Inbou
 const answer = (needs_response: boolean) => () => ({ thread: null, thread_id: null, title: null, needs_response, reason: 'r', confidence: 1 });
 
 describe('状態の写し（planMirror）', () => {
-  it('H9 課題キーのスレッドに、変わった属性だけを写す。担当者はアカウントのまま写す（Contact への解決はクエリ層、0030）。同じ値なら何もしない', () => {
+  it('H9 課題キーのスレッドに、決まった形の写しの変わった項目だけを写す。holders はアカウントのまま（Contact への解決はクエリ層、0030）。同じ値なら何もしない（0031）', () => {
     const log = new EventLog();
     const ctx = ctxAt();
-    expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手' }))).toEqual({ kind: 'no_thread', threadKey: 'UBS-1' });
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { statusLabel: '未着手' }))).toEqual({ kind: 'no_thread', threadKey: 'UBS-1' });
     const created = ingestPure(log, ctx, issueEvent('UBS-1'), answer(false));
-    const plan = planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手', assignee: 'jira:alice', due: '2026-10-20', done: false }));
-    expect(plan).toMatchObject({ kind: 'mirrored', threadId: created.outcome!.threadId, fields: { status: '未着手', assignee: 'jira:alice', due: '2026-10-20', done: false } });
+    const id = created.outcome!.threadId;
+    const plan = planMirror(log.state(), ctx, mirror('UBS-1', { statusLabel: '未着手', holders: ['jira:alice'], due: '2026-10-20', closed: false }));
+    // closed: false は今と同じなので写さない
+    expect(plan).toMatchObject({ kind: 'mirrored', threadId: id, fields: { statusLabel: '未着手', holders: ['jira:alice'], due: '2026-10-20' } });
+    expect(plan.kind === 'mirrored' && 'closed' in plan.fields).toBe(false);
     log.push(plan.kind === 'mirrored' ? plan.events : [], '2026-10-16T09:10:00.000Z');
-    expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '未着手', assignee: 'jira:alice' }, 'u2'))).toEqual({ kind: 'unchanged', threadId: created.outcome!.threadId });
-    expect(planMirror(log.state(), ctx, mirror('UBS-1', { status: '進行中', assignee: 'jira:alice' }, 'u3'))).toMatchObject({ fields: { status: '進行中' } });
-    // 知らないアカウントもそのまま写す（名寄せされるまで誰の番にもならない）
-    expect(planMirror(log.state(), ctx, mirror('UBS-1', { assignee: 'jira:unknown' }, 'u4'))).toMatchObject({ fields: { assignee: 'jira:unknown' } });
-    expect(() => planMirror(log.state(), ctx, mirror('UBS-1', { priority: '高' }))).toThrow(/not defined/);
+    expect(log.state().threads[id]!.source).toEqual({ holders: ['jira:alice'], statusLabel: '未着手', due: '2026-10-20' });
+    expect(log.state().threads[id]!.attributes).toEqual({});
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { statusLabel: '未着手', holders: ['jira:alice', 'jira:alice'] }, 'u2'))).toEqual({ kind: 'unchanged', threadId: id });
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { statusLabel: '進行中', holders: ['jira:alice'] }, 'u3'))).toEqual(expect.objectContaining({ fields: { statusLabel: '進行中' } }));
+    // 知らないアカウントもそのまま写す（名寄せされるまで誰の番にもならない）。holders は重複を除いて並べる
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { holders: ['jira:unknown', 'jira:alice'] }, 'u4'))).toMatchObject({ fields: { holders: ['jira:alice', 'jira:unknown'] } });
+    // 件名も写す
+    expect(planMirror(log.state(), ctx, mirror('UBS-1', { title: '雨漏りの修繕（2F）' }, 'u5'))).toMatchObject({ fields: { title: '雨漏りの修繕（2F）' } });
+    // 決まった形のほかは受けない
+    expect(() => planMirror(log.state(), ctx, mirror('UBS-1', { priority: '高' } as never))).toThrow(/mirror fields/);
     expect(() => planMirror(log.state(), ctx, mirror('UBS-1', { due: 'あした' }))).toThrow(/not a date/);
     expect(() => planMirror(log.state(), ctx, { ...mirror('UBS-1', {}), dataSourceId: 'ds_support' })).toThrow(/is email, not jira/);
   });
 
-  it('H9 写しの属性は Murmur の側では書けない（set_attribute は断る）', () => {
+  it('H9 写しは Murmur の側では書けない（外のサービスのスレッドに set_attribute は断る）', () => {
     const log = new EventLog();
     const ctx = ctxAt();
     const created = ingestPure(log, ctx, issueEvent('UBS-1'), answer(false));
@@ -106,8 +107,8 @@ describe('状態の写し（planMirror）', () => {
   });
 });
 
-describe('担当者で決まる誰の番（turnOf）', () => {
-  it('H9 H8 担当者が読者のユーザーならその人の番（通知でボールが「なし」でも）。持ち主がいればそちら。読者でない相手ならその相手。完了なら誰の番でもない', () => {
+describe('ソースでボールを持つ人で決まる誰の番（turnOf）', () => {
+  it('H9 H8 holders に読者のユーザーがいればその人の番（通知でボールが「なし」でも）。持ち主がいればそちら。読者でない相手ならその相手。完了なら誰の番でもない', () => {
     const log = new EventLog();
     const ctx = ctxAt();
     const { outcome } = ingestPure(log, ctx, issueEvent('UBS-1'), answer(false));
@@ -119,14 +120,36 @@ describe('担当者で決まる誰の番（turnOf）', () => {
       const plan = planMirror(log.state(), ctx, mirror('UBS-1', fields, ref));
       if (plan.kind === 'mirrored') log.push(plan.events, at);
     };
-    apply({ assignee: 'jira:alice', done: false }, 'u1', '2026-10-16T09:10:00.000Z');
-    expect(turn()).toEqual({ kind: 'user', userIds: ['u_alice'], by: 'assignee' });
+    apply({ holders: ['jira:alice'], closed: false }, 'u1', '2026-10-16T09:10:00.000Z');
+    expect(turn()).toEqual({ kind: 'user', userIds: ['u_alice'], by: 'holder' });
     log.push([draft('ThreadClaimed', { threadId: id, userId: 'u_bob', actorUserId: 'u_bob' })], '2026-10-16T09:20:00.000Z');
     expect(turn()).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'owner' });
     log.push([draft('ThreadClaimed', { threadId: id, userId: null, actorUserId: 'u_bob' })], '2026-10-16T09:30:00.000Z');
-    apply({ assignee: 'jira:carol' }, 'u2', '2026-10-16T09:40:00.000Z');
+    apply({ holders: ['jira:carol'] }, 'u2', '2026-10-16T09:40:00.000Z');
     expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
-    apply({ assignee: 'jira:alice', done: true }, 'u3', '2026-10-16T09:50:00.000Z');
+    // だれも持っていなければシグナルのボールのまま（手放したのでこちら → 仕分け待ち）
+    apply({ holders: [] }, 'u3', '2026-10-16T09:45:00.000Z');
+    expect(turn()).toEqual({ kind: 'triage' });
+    apply({ holders: ['jira:alice'], closed: true }, 'u4', '2026-10-16T09:50:00.000Z');
+    expect(turn()).toEqual({ kind: 'none' });
+  });
+
+  it('H9 holders が複数（PR のレビュアーなど）なら、読者のユーザー全員の番。読者がいなければ相手全員。解決できないアカウントは数えない（0031）', () => {
+    const log = new EventLog();
+    const ctx = ctxAt();
+    const { outcome } = ingestPure(log, ctx, issueEvent('UBS-2'), answer(false));
+    const id = outcome!.threadId;
+    const turn = () => turnOf(dir, log.state(), log.state().threads[id]!);
+    const apply = (fields: InboundMirror['fields'], ref: string, at: string) => {
+      const plan = planMirror(log.state(), ctx, mirror('UBS-2', fields, ref));
+      if (plan.kind === 'mirrored') log.push(plan.events, at);
+    };
+    apply({ holders: ['jira:bob', 'jira:carol', 'jira:alice'] }, 'u1', '2026-10-16T09:10:00.000Z');
+    expect(turn()).toEqual({ kind: 'user', userIds: ['u_alice', 'u_bob'], by: 'holder' });
+    apply({ holders: ['jira:carol', 'jira:unknown'] }, 'u2', '2026-10-16T09:20:00.000Z');
+    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    // だれにも解決できなければ、シグナルのボールのまま
+    apply({ holders: ['jira:unknown'] }, 'u3', '2026-10-16T09:30:00.000Z');
     expect(turn()).toEqual({ kind: 'none' });
   });
 });
@@ -159,11 +182,11 @@ describe('起票とコメントの記録（Jira）', () => {
     expect(directionOf(dir, p.signals[filed.signalId]!)).toBe('outbound');
     expect(p.threads[filed.threadId]!.links).toMatchObject([{ threadId: support.outcome!.threadId, route: 'sent' }]);
 
-    const plan = planMirror(p, ctx, mirror('UBS-9', { status: '未着手', assignee: 'jira:bob', done: false }));
+    const plan = planMirror(p, ctx, mirror('UBS-9', { statusLabel: '未着手', holders: ['jira:bob'], closed: false }));
     expect(plan).toMatchObject({ kind: 'mirrored', threadId: filed.threadId });
     log.push(plan.kind === 'mirrored' ? plan.events : [], '2026-10-16T10:01:00.000Z');
     p = log.state();
-    expect(turnOf(dir, p, p.threads[filed.threadId]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'assignee' });
+    expect(turnOf(dir, p, p.threads[filed.threadId]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'holder' });
 
     // Bob が Jira で直接書いたコメント（観測された送信）は課題キーで同じスレッドに入る
     ctx.setNow('2026-10-16T11:00:00.000Z');

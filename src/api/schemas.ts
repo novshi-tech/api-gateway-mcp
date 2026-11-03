@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AddressRef, Anchors, AttributeValue, Channel, FileRef } from '../domain';
+import { AddressRef, Anchors, Channel, FileRef, MirrorFields } from '../domain';
 
 // HTTP API の入力スキーマ。キーはツール定義に合わせて snake_case。
 // ツールの一覧は計画 v2 の「スタンド接続」の表（ステップ 5）。スキルの API の表と合わせる
@@ -123,13 +123,13 @@ export const InboundSignalBody = z.object({
   sourceRef: z.string(),
 });
 
-/** 状態の写し（ダミーの Jira など）。fields の contact 型はそのチャネルのアドレス */
+/** 状態の写し（ダミーの Jira など）。holders はそのチャネルのアカウント（0031 の 6） */
 export const InboundMirrorBody = z.object({
   kind: z.literal('mirror'),
   dataSourceId: z.string(),
   channel: Channel,
   threadKey: z.string(),
-  fields: z.record(z.string(), AttributeValue.nullable()),
+  fields: MirrorFields,
   sourceRef: z.string(),
 });
 

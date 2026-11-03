@@ -1,8 +1,8 @@
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
-import type { AttributeValue } from './events';
+import type { AttributeValue, MirrorFields } from './events';
 import { sortLog } from './comm';
-import type { Ball, Projections, SignalRecord, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import type { Ball, Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
 import { commView, directionOf } from './sides';
 import { derivedBall, isMyTurn, linkCandidates, linkedActiveSinceDismissed, turnOf, type DerivedBall, type LinkCandidate, type Turn } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
@@ -43,6 +43,7 @@ export interface ThreadSummary {
   closedAtSource: boolean;
   links: ThreadLink[];
   attributes: Record<string, AttributeValue>;
+  source: SourceState | null;
   signalCount: number;
   updatedAt: string;
 }
@@ -76,6 +77,7 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
     closedAtSource: t.closedAtSource,
     links: t.links,
     attributes: t.attributes,
+    source: t.source,
     signalCount: t.signalIds.length,
     updatedAt: t.updatedAt,
   };
@@ -166,7 +168,7 @@ export interface TimelineEntry {
   route?: ThreadLogEntry['route'];
   name?: string;
   value?: AttributeValue | null;
-  fields?: Record<string, AttributeValue | null>;
+  fields?: MirrorFields;
   replyExpectedBy?: string | null;
 }
 

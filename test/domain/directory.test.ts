@@ -52,6 +52,14 @@ describe('H3 マスタの整合性（seedProblems）', () => {
     return seedProblems(Seed.parse(s));
   };
 
+  it('H2 属性の定義は個人のメモのデータソースだけに付く。enum には選択肢が要る（0031）', () => {
+    const def = (dataSourceId: string, over: object = {}) => ({ dataSourceId, name: 'x', type: 'string' as const, description: 'd', ...over });
+    expect(broken((s) => s.attributeDefs!.push(def('ds_support'))).join()).toMatch(/ds_support\|x: 属性を付けられるのは個人のメモのデータソースだけ/);
+    expect(broken((s) => s.attributeDefs!.push(def('ds_none'))).join()).toMatch(/ds_none\|x: data source がない/);
+    expect(broken((s) => s.attributeDefs!.push(def('ds_notes_alice', { type: 'enum' }))).join()).toMatch(/enum の選択肢がない/);
+    expect(broken((s) => s.attributeDefs!.push(def('ds_notes_alice', { type: 'enum', options: ['a'] })))).toEqual([]);
+  });
+
   it('データソース 1 つにリスト 1 つ', () => {
     expect(broken((s) => s.lists!.push({ id: 'l_dup', dataSourceId: 'ds_support' })).join()).toMatch(/ds_support: リストが 2 個/);
     expect(broken((s) => (s.lists = s.lists!.filter((l) => l.id !== 'l_line'))).join()).toMatch(/ds_line: リストが 0 個/);

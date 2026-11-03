@@ -55,8 +55,8 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 - **リンクは候補を見て、ユーザーと決めてから張る。** `get_thread` の `linkCandidates` はアンカー(課題キー・PR・メッセージ ID)が一致したものにすぎない。同じ件でなければ結ばない
 - メモ・属性・片付け・開き直しは本人の側の状態。結んだ先が動いても(`linkedActiveSinceDismissed`)、閉じたメモを勝手に開き直さない。ユーザーに知らせて決めてもらう
 - 属性は、リストの属性定義(`get_list` の `attributeDefs`)にあるものだけを使う。`description` を読んで意味を合わせる
-- **Jira など状態を持つデータソースのスレッドの属性(ステータス・担当者・優先度・期日・完了)はソースの写し。** Murmur では書けない(`set_attribute` は `invalid`)。変えるときは Jira の側で(jira スキルなど)変えれば、写しとして戻ってくる。`set_attribute` で書けるのは個人のメモのスレッドの属性だけ
-- 状態を持つデータソースのスレッドは、担当者(`attributes.assignee`)が読者のユーザーならその人の番(`turn.by` が `assignee`)。完了(`closedAtSource`)ならボールは「なし」で、`filter=open` にも出ない
+- **Jira など状態を持つデータソースのスレッドの状態はソースの写し(`source`: `holders` = ソースでボールを持つアカウント、`statusLabel`、`due`。完了は `closedAtSource`、件名は `title`)。** Murmur では書けない。変えるときは Jira の側で(jira スキルなど)変えれば、写しとして戻ってくる。属性(`set_attribute`)は個人のメモのスレッドだけのもの
+- 状態を持つデータソースのスレッドは、ソースでボールを持つ人(`source.holders`。Jira は担当者、PR はレビュー待ちならレビュアー・変更を求められたら作者)に読者のユーザーがいればその人の番(`turn.by` が `holder`)。完了(`closedAtSource`)ならボールは「なし」で、`filter=open` にも出ない
 - ボール(`ball`)・誰の番(`turn`)・返事期待(`replyExpectedBy`)・期限超過(`overdue`)はイベントから自動で決まる。属性で書き換えない。ボールを人に寄せたいときは `claim` で持つ
 
 ## API
@@ -66,7 +66,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | me | `GET /me` | | User(`user`)、自分の Contact(`contact`。まだなければ `null`)、読者になっているリスト(`lists`。データソース) |
 | list_lists | `GET /lists` | | 見えるリストの一覧(データソース・読者(`userId`・`name`・`contactId`)・属性定義) |
 | get_list | `GET /lists/{list_id}` | | データソース・読者・属性定義 |
-| list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(更新の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `assignee` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
+| list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(更新の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `holder` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`source`(写し)・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
 | get_thread | `GET /threads/{thread_id}` | `-q since=<ISO 8601>`(省略可。タイムラインをそれより後に絞る) | `thread`(一覧と同じ項目)、`dataSource`、`linked`(結んだ先。見えない先は id と経路だけ)、`timeline`(このスレッドのシグナル・メモ・操作と、結んだ先のシグナルを時刻順に) |
 | add_note | `POST /notes` | `{"body", "thread_id"?, "title"?}`。`thread_id` を渡せば既存のメモのスレッドに足し、渡さなければ新しいスレッド(「この件」)を作る。件名は `title`、なければ本文の 1 行目 | メモのスレッド(`get_thread` と同じ) |
 | claim_thread | `POST /threads/{thread_id}/claim` | `{"user_id"?, "reason"?}`。省略で自分が持つ、`null` で手放す、ほかの読者の User ID で引き継ぐ | `get_thread` と同じ |

@@ -71,10 +71,12 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
       const p = e.payload;
       const t = mustThread(s, p.threadId);
       if (t.dataSourceId !== p.dataSourceId) throw new FoldError(`mirror of ${p.dataSourceId} cannot go into thread ${t.id} (${t.dataSourceId})`);
-      for (const [name, value] of Object.entries(p.fields)) {
-        if (value === null) delete t.attributes[name];
-        else t.attributes[name] = value;
-      }
+      const f = p.fields;
+      const src = (t.source ??= { holders: [], statusLabel: null, due: null });
+      if (f.holders !== undefined) src.holders = [...f.holders];
+      if (f.statusLabel !== undefined) src.statusLabel = f.statusLabel;
+      if (f.due !== undefined) src.due = f.due;
+      if (f.title !== undefined) t.title = f.title;
       t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
       recompute(s, t, e.at, c);
       return;
@@ -232,6 +234,7 @@ function newThread(id: string, dataSourceId: string, title: string, at: string):
     log: [],
     links: [],
     attributes: {},
+    source: null,
     createdAt: at,
     updatedAt: at,
     ...deriveComm([]),

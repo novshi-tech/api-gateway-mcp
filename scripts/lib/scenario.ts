@@ -124,6 +124,7 @@ const ThreadExpectation = z
     overdue: z.boolean(),
     closedAtSource: z.boolean(),
     attributes: z.record(z.string(), z.unknown()),
+    source: z.unknown(),
     /** 結んだスレッド（"$<束縛名>"）と経路 */
     links: z.record(z.string(), z.enum(['sent', 'anchor', 'manual'])),
   })

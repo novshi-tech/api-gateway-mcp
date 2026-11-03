@@ -138,6 +138,13 @@ export function seedProblems(seed: Seed): string[] {
   for (const l of seed.lists) {
     if (!dir.dataSource(l.dataSourceId)) problems.push(`list ${l.id}: data source ${l.dataSourceId} がない`);
   }
+  // 属性は個人のメモのスレッドだけのもの（0031）
+  for (const d of seed.attributeDefs) {
+    const ds = dir.dataSource(d.dataSourceId);
+    if (!ds) problems.push(`attribute ${d.dataSourceId}|${d.name}: data source がない`);
+    else if (ds.kind !== 'notes') problems.push(`attribute ${d.dataSourceId}|${d.name}: 属性を付けられるのは個人のメモのデータソースだけ`);
+    if (d.type === 'enum' && (d.options ?? []).length === 0) problems.push(`attribute ${d.dataSourceId}|${d.name}: enum の選択肢がない`);
+  }
   for (const a of seed.contactAliases) {
     if (!seed.contacts.some((c) => c.id === a.contactId)) problems.push(`contact alias ${a.id}: まとめ先 ${a.contactId} がない`);
     if (seed.contacts.some((c) => c.id === a.id)) problems.push(`contact alias ${a.id}: まだ Contact として残っている`);

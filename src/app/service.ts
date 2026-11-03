@@ -45,7 +45,7 @@ import {
   unlinkThreads,
   type CoreContext,
   type DraftEvent,
-  type AttributeValue,
+  type MirrorFields,
   type InboundItem,
   type InboundMirror,
   type InboundSignal,
@@ -91,7 +91,7 @@ export type IngestResult =
 
 /** 状態の写しの結果。no_thread はまだ課題のスレッドがない（写さない） */
 export type MirrorResult =
-  | { status: 'mirrored'; threadId: string; fields: Record<string, AttributeValue | null> }
+  | { status: 'mirrored'; threadId: string; fields: MirrorFields }
   | { status: 'unchanged'; threadId: string }
   | { status: 'no_thread'; threadKey: string };
 
@@ -202,7 +202,7 @@ export class MurmurService {
     });
   }
 
-  /** 状態の写し（Jira の課題の状態など）。変わった属性だけを ThreadMirrored で写す */
+  /** 状態の写し（Jira の課題・PR の状態）。変わった項目だけを ThreadMirrored で写す（0031） */
   async mirror(inbound: InboundMirror): Promise<MirrorResult> {
     return this.run<MirrorResult>((p, ctx) => {
       const plan = planMirror(p, ctx, inbound);

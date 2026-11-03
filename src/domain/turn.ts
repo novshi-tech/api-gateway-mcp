@@ -7,13 +7,13 @@ import { canReadDataSource, type Viewer } from './viewer';
 // fold には持ち込まない（fold は 1 段）。Murmur は候補を出すだけで、自分ではリンクを張らない。
 
 /**
- * 誰の番か。スレッドのボールに、構造（担当者の写し・読者が 1 人のデータソース・宛先）を合わせたもの。
- * - user: 特定のユーザーの番（by: owner = 持ち主、assignee = ソースの担当者、reader = 読者が 1 人、addressed = 宛先・メンション）
+ * 誰の番か。スレッドのボールに、構造（写しの holders・読者が 1 人のデータソース・宛先）を合わせたもの。
+ * - user: 特定のユーザーの番（by: owner = 持ち主、holder = ソースの上でボールを持っている、reader = 読者が 1 人、addressed = 宛先・メンション）
  * - triage: こちら（組織）で、誰の番かが決まらない（仕分け待ち）
  * - contact / none: ボールのまま
  */
 export type Turn =
-  | { kind: 'user'; userIds: string[]; by: 'owner' | 'assignee' | 'reader' | 'addressed' }
+  | { kind: 'user'; userIds: string[]; by: 'owner' | 'holder' | 'reader' | 'addressed' }
   | { kind: 'triage' }
   | { kind: 'contact'; contactIds: string[] }
   | { kind: 'none' };
@@ -21,8 +21,8 @@ export type Turn =
 export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   const ball = resolveBall(dir, p, t);
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
-  const assignee = assigneeTurn(dir, t);
-  if (assignee) return assignee;
+  const held = holderTurn(dir, t);
+  if (held) return held;
   if (ball.kind === 'contact') return { kind: 'contact', contactIds: ball.contactIds };
   if (ball.kind === 'none') return { kind: 'none' };
 
@@ -40,21 +40,28 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
 }
 
 /**
- * 状態を持つデータソースの担当者（写しの assignee。0010 の黒子）。ソースの状態が正なので、持ち主がいなければ
- * シグナルのボールより先に効く。担当者が読者のユーザーならその人の番、そうでなければその相手。完了・片付けのスレッドには効かない
+ * 状態を持つデータソースの上でボールを持っている人（写しの holders。0010 の黒子・0031）。ソースの状態が正なので、
+ * 持ち主がいなければシグナルのボールより先に効く。読者のユーザーがいればその人たちの番、いなければその相手。
+ * 完了・片付けのスレッドと、だれにも解決できないアカウントだけのときは効かない
  */
-function assigneeTurn(dir: Directory, t: Thread): Turn | null {
-  if (t.dismissed || t.closedAtSource) return null;
-  const v = t.attributes.assignee;
-  if (typeof v !== 'string' || !dir.attributeDefs(t.dataSourceId).some((d) => d.name === 'assignee' && d.type === 'contact')) return null;
-  // ソースの写しはアカウントのアドレス（0030）、本人が付けた値は Contact の id
+function holderTurn(dir: Directory, t: Thread): Turn | null {
+  if (t.dismissed || t.closedAtSource || !t.source || t.source.holders.length === 0) return null;
   const ds = dir.dataSource(t.dataSourceId);
-  const contactId = dir.contact(v) ? v : ds?.kind === 'service' ? dir.contactIdOfAddress({ channel: ds.channel, value: v }) : null;
-  const contact = contactId ? dir.contact(contactId) : undefined;
-  if (!contact) return null;
+  if (ds?.kind !== 'service') return null;
   const list = dir.listOfDataSource(t.dataSourceId);
-  const reader = contact.userId !== undefined && list !== undefined && dir.readersOfList(list.id).includes(contact.userId);
-  return reader ? { kind: 'user', userIds: [contact.userId!], by: 'assignee' } : { kind: 'contact', contactIds: [contact.id] };
+  const readers = list ? dir.readersOfList(list.id) : [];
+  const users = new Set<string>();
+  const contacts = new Set<string>();
+  for (const value of t.source.holders) {
+    const contactId = dir.contactIdOfAddress({ channel: ds.channel, value });
+    const contact = contactId ? dir.contact(contactId) : undefined;
+    if (!contact) continue;
+    if (contact.userId !== undefined && readers.includes(contact.userId)) users.add(contact.userId);
+    else contacts.add(contact.id);
+  }
+  if (users.size > 0) return { kind: 'user', userIds: [...users].sort(), by: 'holder' };
+  if (contacts.size > 0) return { kind: 'contact', contactIds: [...contacts].sort() };
+  return null;
 }
 
 export function isMyTurn(turn: Turn, viewer: Viewer): boolean {

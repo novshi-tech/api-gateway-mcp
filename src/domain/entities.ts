@@ -100,7 +100,7 @@ export const ListMember = z.object({ listId: z.string(), userId: z.string() });
 export type ListMember = z.infer<typeof ListMember>;
 
 export const AttributeType = z.enum(['string', 'number', 'boolean', 'date', 'enum', 'contact']);
-/** 本人が付ける属性の定義。データソースに付く（ステップ 3 で使う） */
+/** 本人が付ける属性の定義。個人のメモのデータソースだけに付く（0031。写しは決まった形で、定義を使わない） */
 export const AttributeDef = z.object({
   dataSourceId: z.string(),
   name: z.string(),

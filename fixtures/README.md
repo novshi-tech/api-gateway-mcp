@@ -26,9 +26,9 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 {"id":"o01","at":"...","action":{"tool":"record_sent","as":"u_sato","input":{"data_source":"ds_support","to":["ops@clean-toto.example"],"body":"...","sent_ref":"<u1@ubs.example>","source_thread_id":"$comp","reply_expected_by":"2026-10-16T22:00:00+09:00"}},"echo":true,"bind":{"partner":"thread.id"}}
 // Cron（取り込みのポーリングと期限の見回り）
 {"id":"c01","at":"...","cron":true}
-// 状態の写し（ダミーの Jira の課題の更新。ステップ 7）。fields は変わった属性（名前は seed の attributeDefs、contact 型はそのチャネルのアドレス）。
+// 状態の写し（ダミーの Jira の課題の更新。ステップ 7・0031）。fields は決まった形の変わった項目（closed / holders / title / statusLabel / due。holders はそのチャネルのアカウント）。
 // 課題キー（threadKey）のスレッドに写す。スレッドはシグナル（課題の作成・起票の記録）で作られ、ID を使わないので AI の記録のキーは変わらない
-{"id":"m01","at":"...","mirror":{"dataSourceId":"ds_jira","channel":"jira","threadKey":"NVT-42","fields":{"status":"進行中","assignee":"acct-kato","done":false},"sourceRef":"jira:NVT-42:u1"}}
+{"id":"m01","at":"...","mirror":{"dataSourceId":"ds_jira","channel":"jira","threadKey":"NVT-42","fields":{"statusLabel":"進行中","holders":["acct-kato"],"closed":false},"sourceRef":"jira:NVT-42:u1"}}
 ```
 
 - `"$name"` は束縛した値に置き換わる（本文に `$` から始まる文字列を書くと失敗する）
