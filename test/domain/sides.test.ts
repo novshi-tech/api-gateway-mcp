@@ -59,6 +59,18 @@ describe('どちら側か（sides）', () => {
     expect(commView(named, p, t)).toMatchObject({ counterpartContactIds: ['p_carol', 'p_stranger'], counterpartAddresses: [unresolved[0]] });
   });
 
+  it('H8 こちらが求めても保持者がいなければ（宛先のない起票・窓口だけに送ったもの）、ボールなし', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const r = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: [], sourceRef: 'o1' }), () => answer({ title: '控え' }));
+    const p = log.state();
+    const t = p.threads[r.outcome!.threadId]!;
+    expect(t.request?.holders).toEqual([]);
+    expect(resolveBall(dir, p, t)).toEqual({ kind: 'none' });
+    const cc = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['support@ubs.example'], sourceRef: 'o2' }), () => answer({ title: '控え 2' }));
+    expect(resolveBall(dir, log.state(), log.state().threads[cc.outcome!.threadId]!)).toEqual({ kind: 'none' });
+  });
+
   it('H8 宛先による「自分の番」は、相手が求めたシグナルの保持者に読者のアドレスが入っているか（受信の CC）', () => {
     const log = new EventLog();
     const ctx = makeCtx(T(9));

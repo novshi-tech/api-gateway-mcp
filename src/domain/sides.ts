@@ -70,7 +70,8 @@ export function requestIsOurs(dir: Directory, p: Projections, t: Thread): boolea
 /**
  * fold が畳んだボールを、どちら側かに解決する。
  * - 持った・手放した → その人・こちら
- * - こちらが求めた → 相手（保持者の Contact）
+ * - こちらが求めた → 相手（保持者の Contact と、解決できなかったアドレス）。保持者がいなければ（宛先のない起票、
+ *   窓口のアドレスだけに送ったもの）、待っている相手がいないのでボールなし
  * - 相手が求めた → 持ち主がいればその人、いなければこちら
  */
 export function resolveBall(dir: Directory, p: Projections, t: Thread): Ball {
@@ -80,7 +81,9 @@ export function resolveBall(dir: Directory, p: Projections, t: Thread): Ball {
   if (requestIsOurs(dir, p, t)) {
     const at = p.signals[b.request.signalId]?.at;
     const ds = dir.dataSource(t.dataSourceId);
-    return { kind: 'contact', ...resolveAddresses(dir, b.request.holders, at, (r) => isOurs(dir, ds, r, at)) };
+    const holders = resolveAddresses(dir, b.request.holders, at, (r) => isOurs(dir, ds, r, at));
+    if (holders.contactIds.length === 0 && holders.addresses.length === 0) return { kind: 'none' };
+    return { kind: 'contact', ...holders };
   }
   return t.ownerUserId ? { kind: 'user', userId: t.ownerUserId } : { kind: 'us' };
 }
