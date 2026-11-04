@@ -14,7 +14,10 @@
 - **同じ日に採用した**（単語は保留）。0003・0020・0021・0024・0029 の状態に「0023 で改める」の注記、CLAUDE.md に方向を 1 行足した（配線の説明は実装まで今のまま）。採用したら直すものの本文の書き換えは実装のときに
 - **段取り 1（リポジトリをまとめる）をやった**（直樹の判断で統合を Teams より先に）: murmur#22 で docs を main に入れ、その main を api-gateway-mcp の `murmur/` に `git subtree add` で取り込んだ（履歴つき。ブランチ `claude/gifted-mccarthy-3ab6w1`）。`murmur/` は別のパッケージで npm に移した（`package-lock.json`。コマンドは `npm run scenario verify all -- --ai replay` のように、フラグの前に `--`）。ルートの CI に murmur のジョブ、ルートの vitest から `murmur/` を外した。ゲートウェイ側に ADR 0005（Murmur を機能として持つ。本体は 0023）。確認: murmur 308 件緑・4 シナリオ（replay・d1 も）一致・ドライランのバンドルは gzip 376 KiB、ゲートウェイ 132 件緑
   - これからの作業場所は api-gateway-mcp の `murmur/`。novshi-tech/murmur は、PR が main に入ったら archive する（直樹）。murmur-deployments は段取り 4 まで今のまま（`murmur/deployments/` に clone する）
-  - 次: 段取り 2（中核の口と、実行時の依存の削減）。そのあと 3（1 つの Worker）、4（UBS の移行）。Teams はそのあと
+- **段取り 2（中核の口と依存の削減）もやった**（同じブランチ、api-gateway-mcp#39 に積んだ）。詳細は 0023 の「実装の記録」。要点: `src/ports/gateway.ts` の口、今の実装は `connectors/gateway/remote.ts`、読める口の許可リストを口が強制（メールの送信・起票は通らない）、`@anthropic-ai/sdk`・`hono` を外して実行時の依存は `zod`・`drizzle-orm` だけ（バンドル gzip 214 KiB）、境界のテスト。320 件緑、4 シナリオは replay・d1 も一致
+  - 挙動の変更 1 つ: 同意は有効で接続がゲートウェイで「つなぎ直し」を要るときは 409（前は Murmur の同意を取り直させていた）
+  - Graph の GET は `/v1.0/me` の下を広めに許した（delta の続きのリンクの形を固定しないため）。UBS に出したら、通知 → delta が通るかを見る
+  - 次: 段取り 3（1 つの Worker）。ゲートウェイの中核が口を実装する。入口の組み立て、Murmur の有効化と本人の同意の画面、`identity`・Service Binding・CIMD を外す。そのあと 4（UBS の移行）。Teams はそのあと
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:

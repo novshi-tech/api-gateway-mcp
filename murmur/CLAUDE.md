@@ -17,7 +17,7 @@
 - タスクは 1 つの個人のメモのスレッドで追い、共有スレッドには事実と構造の操作だけを書く。属性はメモのスレッドだけのもの（標準は `due`）。写しは Murmur が決めた形（`closed / holders / title / statusLabel / due`）で、コネクタはサービスの標準の意味で写す（`docs/adr/0031`、2026-11-03 に採用）
 - 状態を持つデータソースで「アクションが要る」のは、ソースでボールを持つ人（`holders`。Jira は担当者）に自分がいるものだけ。ほかは文脈として取り込み、範囲の外の話しかけ（Jira の範囲外のメンション）は取り込まない（ソースの通知がメールで入る経路で気づく）。解決されていない登場人物はスタンドが Contact を作る（`docs/adr/0035`）
 - エージェントは「次の一手を決める者が書く」。オーケストレータの下で動くものは書かず、直接の参加者は書き手の印（`author`）を付けて書く。書き手の印は番に使わない（`docs/adr/0032`、0027 を改めた）
-- Murmur をゲートウェイの機能にし、1 つの Worker・1 つのデプロイ・1 つのリポジトリにまとめる（`docs/adr/0023`、2026-11-04 に採用）。段取り 1（リポジトリ）は済み: Murmur は novshi-tech/api-gateway-mcp の `murmur/` にあり、パッケージ管理は npm（コマンドはこのディレクトリで実行）。運用はゲートウェイに合わせて PR で回す。Worker はまだ 2 つ。コードの境界は vertical slice（互いの実装を import しない、env は入口だけ、秘密ではなく能力を渡す、Murmur は実行時の依存を足さない）。MCP のツールは足さず、スキルと REST で使う。実装が終わるまで、下の「注意」の配線（identity・Service Binding・CIMD）は今の実装の説明
+- Murmur をゲートウェイの機能にし、1 つの Worker・1 つのデプロイ・1 つのリポジトリにまとめる（`docs/adr/0023`、2026-11-04 に採用）。段取り 1（リポジトリ）と 2（口と依存の削減）は済み: Murmur は novshi-tech/api-gateway-mcp の `murmur/` にあり、パッケージ管理は npm（コマンドはこのディレクトリで実行）。運用はゲートウェイに合わせて PR で回す。ゲートウェイとのやりとりは全部 `src/ports/gateway.ts` の口を通す。Worker はまだ 2 つ。コードの境界は vertical slice（互いの実装を import しない、env は入口だけ、秘密ではなく能力を渡す、Murmur は実行時の依存を足さない）。MCP のツールは足さず、スキルと REST で使う。実装が終わるまで、下の「注意」の配線（identity・Service Binding・CIMD）は今の実装の説明
 - ADR には汎用の製品としての決定を書く。特定の会社の事情（どの会社のアカウントで回すか、どの会社をまとめるか）は書かない
 
 ## 約束事
@@ -36,7 +36,7 @@
 
 ## 構成: Functional Core / Imperative Shell
 
-判断はすべて純関数のコアに置き、副作用（DB・Claude・コネクタ・HTTP・時計・ID 生成・暗号）はシェルに集める。`test/architecture.test.ts` がこの境界を検査する。
+判断はすべて純関数のコアに置き、副作用（DB・Claude・コネクタ・HTTP・時計・ID 生成・暗号）はシェルに集める。`test/architecture.test.ts` がこの境界を検査する。同じテストが vertical slice（0023 の決定 7）も検査する: ゲートウェイの口の実装を import するのは入口だけ、`env` と `cloudflare:workers` は入口だけ、実行時の依存は `zod` と `drizzle-orm` だけ、グローバルを書き換えない。
 
 `src/domain/` はステップ 2 でスレッド 1 種類のデータモデル（`docs/adr/0013`・`0014`）に組み替え、ステップ 3 で個人のメモ・持ち主・リンク・属性と、クエリ層の「誰の番か」・結び候補・導出したボール・タイムラインを足した。ステップ 4 で送信の記録（`record_sent` → `OutboundRecorded`）、期限の見回り、観測された送信との統合を足した。ステップ 7 で状態の写し（`ThreadMirrored`。Jira の課題の状態をスレッドに写す）と、担当者で決まる「誰の番」を足した。0031 で写しを決まった形にし、属性はメモのスレッドだけのものにした。
 
@@ -63,12 +63,13 @@ src/
   store/         イベントストア・投影・マスタ（メモリ実装と D1 実装。投影は変わった行だけ upsert する）、取り込みの運用の状態（connector-state.ts）
   ingest/        Claude 呼び出し（記録・再生）、Decider
   connectors/    Connector インタフェース（取り込みだけ。シグナルと状態の写し）+ dummy/
-    gateway/       ゲートウェイの OAuth クライアント（CIMD）と MCP（list_credentials・issue_token）・REST
+    gateway/       ゲートウェイの口の今の実装（remote.ts）: OAuth クライアント（CIMD）と MCP（list_credentials・issue_token）・REST。入口のほかから import しない
     graph/         Outlook（0024）: 正規化・delta・サブスクリプションの計画（純関数）と、キューの仕事をこなす同期
     jira/          Jira（0034）: 写像（純関数）・差分の JQL と Webhook の計画（純関数）・呼べる口を固定した API・キューの仕事
+  ports/gateway.ts  ゲートウェイの口（型と取り決めだけ。0023）。認証・本人の接続・上流を読む関数・同意。読める口の許可リストは入口で固定し、口の実装が強制する
   api/           HTTP API の入力スキーマ
   auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
-  http/          Hono ルート、参照専用の管理画面（admin.ts: /admin・timeline.html）
+  http/          経路（router.ts は app.ts が使う口だけの小さな仕組み）、参照専用の管理画面（admin.ts: /admin・timeline.html）
   index.ts       Worker の入口（fetch / scheduled / queue）と配線
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/

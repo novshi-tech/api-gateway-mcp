@@ -139,6 +139,21 @@ Worker を分ければ isolate で隔てられる。同じ Worker の中では�
 3. **1 つの Worker にする**: 入口で Murmur をつなぎ、口の実装を中核の直接呼び出しに差し替える。機能の有効化（決定 1）と画面の同意を作る。テスト用のデプロイで確かめる
 4. **既存のデプロイを移す**: UBS では D1 は同じアカウントにあるので、ゲートウェイの Worker に同じ D1 を束縛すればデータは移さなくてよい。Outlook のサブスクリプションと Jira の Webhook は通知先の URL が変わるので作り直す。Murmur への同意（CIMD）は画面の有効化でやり直す。古い Murmur の Worker を消す
 
+## 実装の記録
+
+### 段取り 1（2026-11-04）: リポジトリをまとめた
+
+novshi-tech/murmur の main を api-gateway-mcp の `murmur/` に `git subtree add` で取り込んだ（履歴つき）。`murmur/` は別のパッケージで、pnpm から npm に移した。ルートの CI に murmur のジョブを足し、ルートの vitest から外した。ゲートウェイ側の ADR は api-gateway-mcp の `docs/adr/0005`。
+
+### 段取り 2（2026-11-04）: 中核の口と、実行時の依存の削減
+
+- **口**: `src/ports/gateway.ts`（型と取り決めだけ。何も import しない）。`authenticate`（API のトークン → User）、`credentials`（本人の接続。同意がなければ `ConsentRequired`）、`upstream`（本人の接続で上流を呼ぶ関数。トークンは口の実装の中だけで使う）、`consent`（`begin` / `complete`）。今の実装は `src/connectors/gateway/remote.ts`（CIMD・MCP・REST）で、段取り 3 でゲートウェイの中核が同じ口を直に実装する
+- **読める口（決定 4）**: 種類（`graph` / `jira`）ごとの許可リストを入口で固定して口の実装に渡し、口の実装が送る前に断る（`UpstreamRefused`）。Graph は `/v1.0/me` の下の GET とサブスクリプションの作成・延長・削除だけ（`src/connectors/graph/scope.ts`。GET は広めにした: 読み取りは安全側で、delta の続きのリンクの形を固定しないため）。Jira は 0034 の許可リスト（`JIRA_SCOPE`）。メールの送信・起票・コメントは口を通らないことをテストで確かめた
+- **挙動の変更 1 つ**: 同意は有効で、選んだ接続がゲートウェイで「つなぎ直し」を要るときは 409 にした。前は Murmur の同意を捨てて取り直させていたが、それでは直らない
+- **依存（決定 7 の 5）**: `@anthropic-ai/sdk` を fetch に（ヘッダーと本文は SDK が送っていたものと同じ。API の版も 2023-06-01 のまま。429・5xx・通信の失敗は 2 回まで試し直す）、`hono` を `src/http/router.ts`（`app.ts` が使う口だけ）に置き換えた。実行時の依存は `zod` と `drizzle-orm` だけ。バンドルは gzip 376 KiB → 214 KiB
+- **境界のテスト（決定 7 の 1・2・4・5）**: `test/architecture.test.ts` に、口の実装を import してよいのは入口と口の実装だけ、`ports/` は何も import しない、`env` と `cloudflare:workers` は入口だけ、実行時の依存の許可リスト、グローバルを書き換えない、を足した
+- 決定 7 の 6（バンドルの許可リストの検査）は、1 つの Worker にしたとき（段取り 3）にルートの CI で行う
+
 ## 未決
 
 1. ~~MCP のツールを足すか~~ → 足さない（決定 5、2026-11-04 直樹）

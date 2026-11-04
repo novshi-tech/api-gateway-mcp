@@ -129,7 +129,7 @@ export class Router<V> {
     return this;
   }
 
-  fetch = async (request: Request, ..._rest: unknown[]): Promise<Response> => {
+  async fetch(request: Request, ..._rest: unknown[]): Promise<Response> {
     const { pathname } = new URL(request.url);
     let matched: { route: Route<V>; params: Record<string, string> } | undefined;
     for (const route of this.routes) {
@@ -148,7 +148,7 @@ export class Router<V> {
     } catch (err) {
       return this.errorHandler(err, c);
     }
-  };
+  }
 
   /** テスト用: パスだけでリクエストを作って通す */
   request(path: string, init?: RequestInit): Promise<Response> {
