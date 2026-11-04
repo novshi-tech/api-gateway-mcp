@@ -1,0 +1,63 @@
+{
+  "key": "29efe796a36e863cb9a1d17fb5374b35",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたは連絡の索引の Ingest 判断係です。\nデータソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。\n何をすべきか、誰が担当するかは判断しません。\n\n1. スレッドの区切り（mode が choose のときだけ）\n   候補のスレッドのどれかと同じ話題の続きなら thread を \"existing\" にして、その thread_id を選ぶ。\n   別の話題なら thread を \"new\" にして、短い件名を title に書く。\n   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。\n2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）\n   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。\n   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。\n   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。\n\nmode が new のとき: スレッドは新しく作られる。thread を \"new\"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。\nmode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。\n\nconfidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。",
+    "user": "{\n  \"mode\": \"fixed\",\n  \"data_source\": {\n    \"name\": \"Slack 共有チャンネル #client-mori\",\n    \"description\": \"クライアント PM（森さん）との共有チャンネル。能勢の資格情報で取り込む\",\n    \"channel\": \"slack\",\n    \"group\": true\n  },\n  \"signal\": {\n    \"direction\": \"received\",\n    \"from\": \"T_CLIENT/U_MORI\",\n    \"to\": [\n      \"T_NVT/U_NOSE\"\n    ],\n    \"subject\": null,\n    \"body\": \"スクリーンショットです\",\n    \"attachments\": [\n      \"screenshot.png\"\n    ]\n  },\n  \"thread\": {\n    \"thread_id\": \"thr_2\",\n    \"title\": \"ログイン画面の500エラー（昨日のリリース後）\",\n    \"recent\": [\n      {\n        \"at\": \"2026-10-16T09:00:00.000Z\",\n        \"direction\": \"inbound\",\n        \"from\": \"T_CLIENT/U_MORI\",\n        \"excerpt\": \"ログイン画面で 500 エラーが出ます。昨日のリリース後からです。至急見てもらえますか。\"\n      }\n    ]\n  }\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "existing",
+                "new"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "thread",
+        "thread_id",
+        "title",
+        "needs_response",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"thread\":null,\"thread_id\":null,\"title\":null,\"needs_response\":true,\"reason\":\"mode が fixed のためスレッドの判断は不要。森さんは直前に「ログイン画面で500エラー、至急見てもらえますか」と調査を依頼しており、今回の「スクリーンショットです」はその依頼の補足資料（スクリーンショット添付）にあたる。補足は依頼の一部として扱うため、対応が必要（true）と判断した。\",\"confidence\":0.9}"
+}

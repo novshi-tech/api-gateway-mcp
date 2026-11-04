@@ -1,0 +1,63 @@
+{
+  "key": "23820edf4716b1340f862df994e7ef48",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたは連絡の索引の Ingest 判断係です。\nデータソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。\n何をすべきか、誰が担当するかは判断しません。\n\n1. スレッドの区切り（mode が choose のときだけ）\n   候補のスレッドのどれかと同じ話題の続きなら thread を \"existing\" にして、その thread_id を選ぶ。\n   別の話題なら thread を \"new\" にして、短い件名を title に書く。\n   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。\n2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）\n   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。\n   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。\n   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。\n\nmode が new のとき: スレッドは新しく作られる。thread を \"new\"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。\nmode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。\n\nconfidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。",
+    "user": "{\n  \"mode\": \"new\",\n  \"data_source\": {\n    \"name\": \"support@（組織のメールボックス）\",\n    \"description\": \"顧客と協力会社とのやりとりの窓口\",\n    \"channel\": \"email\",\n    \"group\": false\n  },\n  \"signal\": {\n    \"direction\": \"received\",\n    \"from\": \"owner@tanaka-bldg.example\",\n    \"to\": [\n      \"support@ubs.example\"\n    ],\n    \"subject\": \"エントランスの床について\",\n    \"body\": \"今朝の清掃のあと、エントランスの床が濡れたままで、来客が転倒しかけました。大事故になるところです。至急対応と原因の説明を求めます。\",\n    \"attachments\": []\n  }\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "existing",
+                "new"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "thread",
+        "thread_id",
+        "title",
+        "needs_response",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"thread\":\"new\",\"thread_id\":null,\"title\":\"エントランス床の濡れ・転倒未遂の対応依頼\",\"needs_response\":true,\"reason\":\"mode が new のためスレッドは新規作成。顧客（owner@tanaka-bldg.example）が、清掃後にエントランスの床が濡れたままで来客が転倒しかけたと報告し、「至急対応と原因の説明を求めます」と明確に対応と回答を要求している。direction は received で、返事・対応を求めているため needs_response は true。\",\"confidence\":0.97}"
+}

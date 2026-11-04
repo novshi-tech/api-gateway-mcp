@@ -1,0 +1,63 @@
+{
+  "key": "43a1683277a574b77787d320d1d7e718",
+  "request": {
+    "purpose": "ingest_decision",
+    "model": "claude-sonnet-5-5",
+    "system": "あなたは連絡の索引の Ingest 判断係です。\nデータソース（メールボックス・チャット・LINE など）で観測された 1 件のメッセージ（シグナル）について、次の 2 つだけを判断します。\n何をすべきか、誰が担当するかは判断しません。\n\n1. スレッドの区切り（mode が choose のときだけ）\n   候補のスレッドのどれかと同じ話題の続きなら thread を \"existing\" にして、その thread_id を選ぶ。\n   別の話題なら thread を \"new\" にして、短い件名を title に書く。\n   区切りの基準は時間ではなく話題。同じ相手でも話題が違えば new にする。\n2. 返事や対応を求めているか（needs_response。signal.direction が received のときだけ）\n   こちらに返事・回答・対応・確認を求めているなら true。直前の依頼の補足（資料の追加など）は依頼の一部として true。\n   お礼だけ、スタンプだけ、了解・承知・承諾の返事、自動の通知、広告・お知らせ、挨拶だけなら false。\n   signal.direction が sent_by_us（こちらが送ったもの）なら null にする。\n\nmode が new のとき: スレッドは新しく作られる。thread を \"new\"、thread_id を null にし、title に短い件名を書き、needs_response を判断する。\nmode が fixed のとき: スレッドは決まっている。thread・thread_id・title を null にし、needs_response だけを判断する。\n\nconfidence は判断の確からしさ（0〜1）。reason は後で人が監査できるよう具体的に日本語で書く。",
+    "user": "{\n  \"mode\": \"fixed\",\n  \"data_source\": {\n    \"name\": \"support@（組織のメールボックス）\",\n    \"description\": \"顧客と協力会社とのやりとりの窓口\",\n    \"channel\": \"email\",\n    \"group\": false\n  },\n  \"signal\": {\n    \"direction\": \"received\",\n    \"from\": \"ops@clean-toto.example\",\n    \"to\": [\n      \"support@ubs.example\"\n    ],\n    \"subject\": \"Re: 田中ビル 本日朝の作業報告のお願い\",\n    \"body\": \"作業員に確認したところ、時間が押していたため乾拭きを省略していました。誠に申し訳ありません。再発防止として、作業後の乾燥確認をチェックリストに追加します。\",\n    \"attachments\": []\n  },\n  \"thread\": {\n    \"thread_id\": \"thr_4\",\n    \"title\": \"田中ビル 本日朝の作業報告のお願い\",\n    \"recent\": [\n      {\n        \"at\": \"2026-10-16T09:20:00.000Z\",\n        \"direction\": \"outbound\",\n        \"from\": \"support@ubs.example\",\n        \"excerpt\": \"クリーンサービス東都 御中\\n本日朝の田中ビル エントランス清掃について、作業手順（特に水拭き後の乾拭き・乾燥確認）の実施状況を至急ご報告ください。\"\n      }\n    ]\n  }\n}",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "existing",
+                "new"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thread_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs_response": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "thread",
+        "thread_id",
+        "title",
+        "needs_response",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "maxTokens": 2048
+  },
+  "response": "{\"thread\":null,\"thread_id\":null,\"title\":null,\"needs_response\":false,\"reason\":\"協力会社が、こちらの報告依頼への回答として乾拭き省略の事実と謝罪、再発防止策（チェックリスト追加）を報告している。新たな依頼や質問、確認要求は含まれておらず、報告の受領通知にあたる内容のため返信を求めていないと判断した。ただし、内容次第で社内で対応を検討する可能性はあるが、送信者への返事を求めるものではない。\",\"confidence\":0.72}"
+}

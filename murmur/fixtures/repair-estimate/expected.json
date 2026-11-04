@@ -1,0 +1,98 @@
+{
+  "ingest": {
+    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
+    "o01": { "thread": "$custThread", "needsResponse": null, "by": "anchor" },
+    "s02": { "thread": "$partnerThread", "needsResponse": true, "by": "anchor" },
+    "o03": { "thread": "$custThread", "needsResponse": null, "by": "anchor" },
+    "s03": { "thread": "$custThread", "needsResponse": true, "by": "anchor" },
+    "s04": { "thread": "new", "needsResponse": false, "by": "no_match" },
+    "s05": { "thread": "new", "needsResponse": true, "title": "駐車場の照明の交換" },
+    "s06": { "duplicate": true }
+  },
+  "checkpoints": [
+    {
+      "after": "s01",
+      "threads": { "$custThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-16T09:00:00.000Z" } },
+      "views": [{ "as": "u_sato", "threads": { "filter": "my_turn" }, "expect": [] }, { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$custThread"] }]
+    },
+    {
+      "after": "o01",
+      "threads": { "$custThread": { "ball": { "kind": "contact", "contactIds": ["p_takahashi"], "addresses": [] }, "lastOutboundAt": "2026-10-16T09:20:00.000Z", "unansweredSince": null } }
+    },
+    {
+      "after": "o02",
+      "threads": {
+        "$partnerThread": {
+          "ball": { "kind": "contact", "contactIds": ["p_yamada"], "addresses": [] },
+          "dataSourceId": "ds_suzuki_mail",
+          "replyExpectedBy": "2026-10-17T03:00:00.000Z",
+          "links": { "$custThread": "sent" }
+        }
+      },
+      "views": [
+        { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": [], "mustNotContain": ["$partnerThread", "山田工務店 御中"] },
+        { "as": "u_suzuki", "thread": "$custThread", "access": "full", "mustContain": ["山田工務店 御中"] }
+      ]
+    },
+    {
+      "after": "c_due",
+      "threads": { "$partnerThread": { "overdue": true } },
+      "views": [
+        { "as": "u_suzuki", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] },
+        { "as": "u_sato", "threads": { "filter": "overdue" }, "expect": [] }
+      ]
+    },
+    {
+      "after": "s02",
+      "threads": { "$partnerThread": { "ball": { "kind": "us" }, "unansweredSince": "2026-10-17T15:00:00.000Z", "overdue": false, "replyExpectedBy": null } },
+      "views": [
+        { "as": "u_suzuki", "threads": { "filter": "my_turn" }, "expect": ["$partnerThread"] },
+        { "as": "u_suzuki", "thread": "$partnerThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_suzuki"], "by": "reader" } } },
+        { "as": "u_sato", "threads": { "filter": "my_turn" }, "expect": [] }
+      ]
+    },
+    { "after": "o03", "threads": { "$custThread": { "ball": { "kind": "contact", "contactIds": ["p_takahashi"], "addresses": [] } } } },
+    { "after": "s03", "threads": { "$custThread": { "ball": { "kind": "us" } } } }
+  ],
+  "final": {
+    "threads": {
+      "$custThread": {
+        "dataSourceId": "ds_support",
+        "ball": { "kind": "us" },
+        "counterpartContactIds": ["p_takahashi"],
+        "signalCount": 4,
+        "dismissed": false,
+        "lastInboundAt": "2026-10-20T10:00:00.000Z",
+        "lastOutboundAt": "2026-10-17T16:00:00.000Z",
+        "links": { "$partnerThread": "sent" }
+      },
+      "$partnerThread": {
+        "dataSourceId": "ds_suzuki_mail",
+        "ball": { "kind": "none" },
+        "dismissed": true,
+        "counterpartContactIds": ["p_yamada"],
+        "signalCount": 2,
+        "links": { "$custThread": "sent" }
+      },
+      "$adThread": { "ball": { "kind": "none" }, "dismissed": false, "counterpartContactIds": [], "signalCount": 1 },
+      "$lightThread": { "ball": { "kind": "us" }, "counterpartContactIds": ["p_takahashi"], "signalCount": 1 }
+    },
+    "threadCount": 4,
+    "eventCounts": { "SignalObserved": 7, "SignalThreaded": 8, "ThreadDismissed": 1, "ThreadReopened": 0, "OutboundRecorded": 1, "ThreadLinked": 1, "ReplyOverdue": 1 }
+  },
+  "visibility": [
+    { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": ["雨漏り", "385,000"] },
+    { "as": "u_sato", "thread": "$partnerThread", "access": null },
+    { "as": "u_suzuki", "thread": "$partnerThread", "access": "full", "mustContain": ["350,000", "見積書_グランメゾン302.pdf"] },
+    { "as": "u_outsider", "thread": "$custThread", "access": null },
+    { "as": "u_sato", "signals": 6 },
+    { "as": "u_suzuki", "signals": 8 },
+    { "as": "u_outsider", "signals": 0 },
+    { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$custThread", "$lightThread"] },
+    { "as": "u_suzuki", "threads": { "filter": "triage" }, "expect": ["$custThread", "$lightThread"] },
+    { "as": "u_suzuki", "threads": { "filter": "open" }, "expect": ["$custThread", "$adThread", "$lightThread"] },
+    { "as": "u_suzuki", "threads": { "filter": "all", "dataSource": "ds_suzuki_mail" }, "expect": ["$partnerThread"] },
+    { "as": "u_sato", "threads": { "filter": "all", "dataSource": "ds_suzuki_mail" }, "expect": [] },
+    { "ghostContact": "p_takahashi" }
+  ]
+}
