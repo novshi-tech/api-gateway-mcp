@@ -11,11 +11,18 @@
 - **同じ日に採用し、実装した**（直樹: 共有リスト同士は両方の `ListMember` に入っているときだけ見える）。ブランチ `claude/gifted-mccarthy-3ab6w1`。クエリ層だけでイベントと fold は変えていない。expected の 3 か所（見えないリンク先の id が見える、を確かめていた）を反転した。238 件緑、4 シナリオは `--ai replay`・`--db d1` も一致。詳細は 0033 の「実装の記録」
 - スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` を 0.1.1 に（`linked` の説明、共有したい進みは共有のデータソースに書く）。ゲートウェイを先に main に入れる
 - **同じ日に main に入れてデプロイした**: ゲートウェイ（api-gateway-mcp#35、`api-gateway-murmur` 0.1.1）を nvt・ubs・kujira に出し直したあと、本体（murmur#17、main の eef53db）を UBS に出した（Worker のバージョン `ab34465b-43a0-4506-8a62-26e3ba5c35fd`。D1 のマイグレーションはなし）。UBS のゲートウェイ経由の `GET /me`・`GET /threads` が 200。使っている人は Cowork で `api-gateway-murmur` を入れ直す
-- 次: Outlook のブランチ（下）を main に載せ直す。そのあと Jira のコネクタの ADR（個人リスト既定、0024 の個人の箱の経路にゲートウェイの `jira`（3LO）を載せる、JQL で差分、写しは 0031 の形、シグナルは起票とコメント）を書く
+- 次: Outlook を main に入れる（下）。そのあと Jira のコネクタの ADR（個人リスト既定、0024 の個人の箱の経路にゲートウェイの `jira`（3LO）を載せる、JQL で差分、写しは 0031 の形、シグナルは起票とコメント）を書く
 
-**（申し送りの漏れ）Outlook の個人の箱は実装済みで、main に入っていない。** ブランチ `claude/determined-goldberg-yuf8v3`（2026-10-30、murmur-dev で通した。結果は同ブランチの `docs/research/2026-10-30-graph-delta.md`）。委任（本体がゲートウェイの OAuth クライアント、CIMD、`issue_token`）、`src/connectors/graph/`、`src/store/connector-state.ts`、キューの同期。
-- main から 26 コミット遅れていて、0030（Party → Contact）・0031 とぶつかる見込み。Jira のコネクタはこの土台に載せるので、先に main に載せ直す
-- ブランチ側の `docs/adr/0029-unresolved-counterpart-addresses.md` は main の `0029-deployment-configs-outside-the-repo.md` と番号がぶつかる。中身は main の 0030 で置き換わっているはずなので、載せ直すときに扱いを決める
+**2026-11-04（後半）: Outlook の個人の箱（0024。ブランチ `claude/determined-goldberg-yuf8v3`、2026-10-30 に murmur-dev で通したもの）を main に載せ直した（ブランチ `claude/gifted-mccarthy-3ab6w1`）。** 10-30 のブランチは main の 26 コミット前（0030・0031 より前）から分かれていたので、Outlook の 5 コミットのコードを 1 つにまとめて当て直した。
+- データソースの作り方を 0030 に合わせた: `planMailboxSource`（Party・`selfAddressIds`・`MasterStore.append`）→ `connectMailbox`（`src/domain/connection.ts`）。0030 の個人のリスト（`createPersonalDataSource`）の上で、主のアドレスをアイデンティティにし、エイリアスも本人の Contact に付ける。マスタの書き換えは `changeMaster`（変更の記録に残る）。サインインした User なら Contact がなくてもつなげる（0030 の個人のリストと同じ）
+- D1: 取り込みの運用の状態のテーブルは `drizzle/0002_connectors.sql`（ブランチの `0001_connectors` と同じ SQL を、main の `0001_master_keys` の後ろに作り直した）。**UBS に出すときは `pnpm db:migrate ubs` を先に当てる**
+- 外部コネクタは `PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効。設定の書き方は `wrangler.example.jsonc` の末尾（キュー・`GATEWAY_WEB`）。UBS の設定にはまだ書いていない（つなぐときに足す）
+- ブランチ側の 0029（ボールの相手側を `them` + `awaiting` のアドレスで持つ）とその実装は載せなかった。main の 0030（イベントはアドレスだけ、Contact はクエリ層で解決、名寄せは人とスタンド）に置き換わっている。番号もぶつかっていた（main の 0029 はデプロイの設定）
+- **未決（直樹に確かめる）**: 0030 の今の実装でも、Contact に解決できない保持者はボールが `{ kind: 'contact', contactIds: [] }` になる（0030 の決定は「解決できなければアドレスのまま」だが、`Ball`・`Turn` はアドレスを持たない）。実データの個人の箱では普通に起きる。0029 の問題意識はここに残っている
+- スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.2（「Outlook をつなぐ」の手順と connections の API の表）
+- テスト: 282 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
+- 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は、main に入ったら消してよい
+- 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
 - api-gateway-mcp: `plugins/api-gateway-murmur`（0.1.0）を足した。中身は 0030・0031・0032 に合わせた版（タスクを 1 つのメモのスレッドで追う手順、エージェントとして参加するときの約束を足した）。マーケットプレイスと README の表にも足した

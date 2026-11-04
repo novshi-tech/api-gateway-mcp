@@ -320,3 +320,63 @@ describe('HTTP API', () => {
     expect((await http.request('/admin/threads/thr_nope?token=tok')).status).toBe(404);
   });
 });
+
+describe('H3 外部コネクタの公開ルート（0024）', () => {
+  async function app(withConnectors = true) {
+    const ctx = await makeService(seed);
+    const notified: unknown[] = [];
+    const connectOutlook = async (userId: string, credentialId?: string) => ({ status: 'authorize', authorize_url: `https://gw/authorize?u=${userId}&c=${credentialId ?? ''}` });
+    const http = createApp({
+      service: () => ctx.service,
+      authenticate: async (token) => {
+        const r = await verifyIdentity(token, jwks, expect_, NOW);
+        return r.ok ? r.sub : null;
+      },
+      webhookVerify: async () => false,
+      connectors: withConnectors
+        ? () => ({
+            connections: { connectOutlook, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
+            clientMetadata: { client_id: 'https://murmur.test/oauth/client.json' },
+            notifications: async (body) => {
+              notified.push(body);
+              return 1;
+            },
+          })
+        : undefined,
+    });
+    return { http, notified };
+  }
+
+  it('Graph の受け口: 作成時の検証は validationToken をそのまま text/plain で返し、通知は積んで 202', async () => {
+    const { http, notified } = await app();
+    const v = await http.request('/webhooks/graph?validationToken=Validation%3A%20abc', { method: 'POST' });
+    expect(v.status).toBe(200);
+    expect(v.headers.get('content-type')).toMatch(/text\/plain/);
+    expect(await v.text()).toBe('Validation: abc');
+    const n = await http.request('/webhooks/graph', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: [{ subscriptionId: 's' }] }) });
+    expect(n.status).toBe(202);
+    expect(notified).toEqual([{ value: [{ subscriptionId: 's' }] }]);
+    expect((await http.request('/webhooks/graph', { method: 'POST', body: 'not json' })).status).toBe(400);
+  });
+
+  it('CIMD のメタデータとコールバックは公開、/api/connections は本人の JWT が要る', async () => {
+    const { http } = await app();
+    expect(await (await http.request('/oauth/client.json')).json()).toEqual({ client_id: 'https://murmur.test/oauth/client.json' });
+    const cb = await http.request('/oauth/callback?state=s&code=c');
+    expect(cb.status).toBe(200);
+    expect(await cb.text()).toContain('&lt;b&gt;つないだ&lt;/b&gt;');
+    expect((await http.request('/api/connections/outlook', { method: 'POST' })).status).toBe(401);
+    const res = await http.request('/api/connections/outlook', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${await sign(claims('u_bob'))}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ credential_id: 'gw_1' }),
+    });
+    expect(await res.json()).toEqual({ status: 'authorize', authorize_url: 'https://gw/authorize?u=u_bob&c=gw_1' });
+  });
+
+  it('設定がなければ 404', async () => {
+    const { http } = await app(false);
+    expect((await http.request('/oauth/client.json')).status).toBe(404);
+    expect((await http.request('/webhooks/graph', { method: 'POST', body: '{}' })).status).toBe(404);
+  });
+});

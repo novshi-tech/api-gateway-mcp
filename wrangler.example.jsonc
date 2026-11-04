@@ -29,4 +29,16 @@
     { "binding": "DB", "database_name": "murmur", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }
   ]
   // secrets（pnpm secret <名前> put <KEY>）: ANTHROPIC_API_KEY, WEBHOOK_SECRET, TIMELINE_TOKEN
+  //
+  // 外部コネクタ（個人の箱の Outlook、docs/adr/0024）。使わないデプロイは何も書かなくてよい。
+  // vars の PUBLIC_URL（本体の公開 URL。workers_dev か routes で公開する）と、secret の TOKEN_KEY
+  // （openssl rand -base64 32。ゲートウェイのリフレッシュトークンを包む）がそろうと有効になる。
+  // ゲートウェイの URL は GATEWAY_URL（省けば IDENTITY_ISSUER）、Graph のサービス名は GRAPH_SERVICE（省けば graph）。
+  // 取り込みのキューは wrangler queues create <名前>-sync で作ってから、次を足す（consumer は同時実行 1 で直列にする）:
+  //   "queues": {
+  //     "producers": [{ "binding": "SYNC_QUEUE", "queue": "<名前>-sync" }],
+  //     "consumers": [{ "queue": "<名前>-sync", "max_batch_size": 10, "max_batch_timeout": 1, "max_concurrency": 1, "max_retries": 5 }]
+  //   }
+  // ゲートウェイが同じアカウントの workers.dev にあると公開 URL への fetch が通らない（1042）ので、
+  //   "services": [{ "binding": "GATEWAY_WEB", "service": "<ゲートウェイの Worker 名>" }] でデフォルトの入口に行く
 }

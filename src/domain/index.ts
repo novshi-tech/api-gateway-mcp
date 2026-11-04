@@ -18,3 +18,4 @@ export * from './sides';
 export * from './turn';
 export * from './visibility';
 export * from './canonical';
+export * from './connection';

@@ -15,6 +15,13 @@
       "when": 1793446579729,
       "tag": "0001_master_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793766756868,
+      "tag": "0002_connectors",
+      "breakpoints": true
     }
   ]
 }

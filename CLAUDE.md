@@ -51,18 +51,22 @@ src/
     outbound.ts    送信の記録の判断（置き先・観測との統合・経路 sent のリンク）と期限の見回り
     mirror.ts      状態の写しの判断（課題キーのスレッドに、決まった形の写しの変わった項目だけを写す。なければ写しでスレッドを作る。0031）
     master.ts      マスタの書き換えの判断（差分・当て方・整合性。マスタはイベントにせず、変更の記録に残す。0030）
+    connection.ts  個人の箱をつないだときのデータソースの作成（0024。作り方は people.ts の個人のリスト）
     people.ts      User と Contact の作り方と名寄せ（サインイン・個人のリスト・アイデンティティ・未解決のアドレス・まとめる。0030）
     sides.ts       クエリ層の「どちら側か」（窓口のアドレス + 読者の Contact のアドレスがこちら）、ボールの解決、相手・未応答（0030）
     turn.ts        クエリ層の「誰の番か」（持ち主・担当者の写し・読者が 1 人・宛先）、リンク先から導出したボール、結び候補
     visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）、一覧のフィルタ、スレッドの詳細とタイムライン
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存
-  store/         イベントストア・投影・マスタ（メモリ実装と D1 実装。投影は変わった行だけ upsert する）
+  app/connections.ts 個人の箱をつなぐ（ゲートウェイの OAuth の同意 → 実行時のデータソースの作成）
+  store/         イベントストア・投影・マスタ（メモリ実装と D1 実装。投影は変わった行だけ upsert する）、取り込みの運用の状態（connector-state.ts）
   ingest/        Claude 呼び出し（記録・再生）、Decider
   connectors/    Connector インタフェース（取り込みだけ。シグナルと状態の写し）+ dummy/
+    gateway/       ゲートウェイの OAuth クライアント（CIMD）と MCP（list_credentials・issue_token）・REST
+    graph/         Outlook（0024）: 正規化・delta・サブスクリプションの計画（純関数）と、キューの仕事をこなす同期
   api/           HTTP API の入力スキーマ
   auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
   http/          Hono ルート、参照専用の管理画面（admin.ts: /admin・timeline.html）
-  index.ts       Worker の入口（fetch / scheduled）と配線
+  index.ts       Worker の入口（fetch / scheduled / queue）と配線
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/
 tools/wrangler.mjs  デプロイの設定 deployments/<名前>.jsonc を渡して wrangler を呼ぶラッパー
@@ -91,7 +95,7 @@ pnpm run deploy <名前> / pnpm secret <名前> put <KEY> / pnpm tail <名前>  
 
 ## 注意
 
-- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。いまの実装はダミーコネクタのみ
+- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。実装は個人の箱の Outlook（`src/connectors/graph/`。`PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効）とダミーコネクタ
 - 初めてつないだ sub は User の行だけ作る（名無し、Contact なし）。自分の Contact はリストに入るときのアイデンティティで決まり、名寄せは人とスタンドが API で付ける（`docs/adr/0030`）。seed の `--user` の差し替えはシナリオを実環境で回すときだけ
-- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*` と、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
+- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*`（Graph の通知は clientState で照合）、ゲートウェイの OAuth のクライアントのメタデータとコールバック（`/oauth/client.json`・`/oauth/callback`）、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
 - スタンド（Cowork / Claude Code）用のスキルは novshi-tech/api-gateway-mcp の `plugins/api-gateway-murmur/skills/murmur/SKILL.md`（プラグイン `api-gateway-murmur`。ゲートウェイに同梱し、`/setup` とマーケットプレイスで配る）、接続手順は `docs/stand/connect.md`。下書きは置かない。HTTP API を変えたら、同じ時期にゲートウェイのスキル（API の表と手順）も直し、プラグインの版を上げる

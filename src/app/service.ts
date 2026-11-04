@@ -225,7 +225,8 @@ export class MurmurService {
     const dir = await this.directory();
     const results: (IngestResult | MirrorResult)[] = [];
     for (const ds of dir.seed.dataSources) {
-      if (ds.kind !== 'service') continue;
+      // 実行時につないだデータソース（Graph など）はキューの同期が取り込む（0024）
+      if (ds.kind !== 'service' || ds.connector) continue;
       const connector = this.deps.connectors[ds.channel];
       if (!connector) continue;
       const { items } = await connector.pull(ds, null);
