@@ -199,3 +199,12 @@ Murmur は Contact を自分で作らず、アドレスを Contact に自動で�
 - まとめて消えた ID は `contactAliases`（マスタの種類）に残し、`Directory.contact` が読み替える
 - D1 の `master` を (kind, key) で引けるようにし、変更の記録の表 `master_changes` を足した（`drizzle/0001_master_keys.sql`）。投影とマスタの形が変わったので、既存のデプロイは seed を入れ直す
 
+### 追記（2026-11-04）: 解決できない保持者をアドレスのまま返す
+
+決定の「解決できなければアドレスのまま」が実装に入っていなかった（`contactsOf` が解決できないアドレスを落とし、ボールが `{ kind: 'contact', contactIds: [] }` になっていた）。個人の箱（Outlook）を main に載せ直すときに見つけて直した。クエリ層だけで、イベントと fold は変えていない。
+
+- `Ball`・`Turn` の `contact` に `addresses`（Contact に解決できなかった保持者のアドレス）を足した。スレッドに `counterpartAddresses`（相手のうち解決できなかったアドレス）を足した。どちらも、こちらのアドレス（窓口・読者の Contact）は載せない。大文字小文字の違いは 1 つにまとめる
+- 名寄せすると、そのアドレスは `addresses` から `contactIds` に移る（過去のスレッドにも効く）
+- 状態の写しの担当者（`source.holders`）は、だれにも解決できないアカウントだけのときは今までどおり効かない（シグナルのボールに任せる）。解決できた相手がいれば、残りをアドレスのまま並べる
+- HTTP API の返り値が増えた。スキルは `api-gateway-murmur` 0.1.3
+

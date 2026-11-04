@@ -31,7 +31,15 @@ export type FoldedBall = { kind: 'request'; request: Request } | { kind: 'claime
  * - contact: 相手（こちらが返事を待っている）
  * - none: 誰の番でもない
  */
-export type Ball = { kind: 'us' } | { kind: 'user'; userId: string } | { kind: 'contact'; contactIds: string[] } | { kind: 'none' };
+/**
+ * クエリ層で解決したボール（0030）。相手側は、Contact に解決できた保持者（contactIds）と、
+ * 解決できなかった保持者のアドレス（addresses。名寄せすると contactIds に移る）
+ */
+export type Ball =
+  | { kind: 'us' }
+  | { kind: 'user'; userId: string }
+  | { kind: 'contact'; contactIds: string[]; addresses: AddressRef[] }
+  | { kind: 'none' };
 
 /** 通信状態。綴じたシグナルのアドレス・「返事や対応を求めているか」・持ち主・片付けだけから導出される（comm.ts） */
 export interface CommState {

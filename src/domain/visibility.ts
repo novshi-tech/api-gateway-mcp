@@ -1,6 +1,6 @@
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
-import type { AttributeValue, Author, MirrorFields } from './events';
+import type { AddressRef, AttributeValue, Author, MirrorFields } from './events';
 import { sortLog } from './comm';
 import type { Ball, Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
 import { commView, directionOf } from './sides';
@@ -31,6 +31,8 @@ export interface ThreadSummary {
   /** クエリ時のマスタで解決したボール（0030） */
   ball: Ball;
   counterpartContactIds: string[];
+  /** 相手のうち、Contact に解決できなかったアドレス（0030） */
+  counterpartAddresses: AddressRef[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
   unansweredSince: string | null;
@@ -67,6 +69,7 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
     title: t.title,
     ball: comm.ball,
     counterpartContactIds: comm.counterpartContactIds,
+    counterpartAddresses: comm.counterpartAddresses,
     lastInboundAt: comm.lastInboundAt,
     lastOutboundAt: comm.lastOutboundAt,
     unansweredSince: comm.unansweredSince,

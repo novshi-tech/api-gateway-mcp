@@ -16,7 +16,7 @@ describe('MurmurService.ingest', () => {
     const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
     expect(decider.requests).toHaveLength(1);
-    expect(view(await service.state(), 'thr_2').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(view(await service.state(), 'thr_2').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {

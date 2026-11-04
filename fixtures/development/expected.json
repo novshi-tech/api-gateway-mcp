@@ -24,7 +24,7 @@
       ]
     },
     { "after": "s02", "threads": { "$clientThread": { "ball": { "kind": "us" }, "signalCount": 2 } } },
-    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] } } } },
+    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] } } } },
     {
       "after": "s04",
       "threads": { "$prThread": { "ball": { "kind": "us" } } },
@@ -58,10 +58,10 @@
       "threads": { "$docThread": { "source": { "holders": ["acct-nose"], "statusLabel": "未着手", "due": null } } },
       "views": [{ "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] }]
     },
-    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] } } } },
+    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] } } } },
     {
       "after": "o03",
-      "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"] }, "links": {} } },
+      "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] }, "links": {} } },
       "views": [{ "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$issueThread", "$prThread", "$docThread"] }]
     },
     {
@@ -76,7 +76,7 @@
     {
       "after": "o04",
       "threads": {
-        "$regThread": { "dataSourceId": "ds_jira", "title": "ログインの回帰テストを追加", "ball": { "kind": "contact", "contactIds": ["p_kato"] }, "signalCount": 1, "links": { "$clientThread": "sent" } },
+        "$regThread": { "dataSourceId": "ds_jira", "title": "ログインの回帰テストを追加", "ball": { "kind": "contact", "contactIds": ["p_kato"], "addresses": [] }, "signalCount": 1, "links": { "$clientThread": "sent" } },
         "$clientThread": { "links": { "$issueThread": "anchor", "$regThread": "sent" } }
       }
     },
@@ -92,10 +92,10 @@
     },
     {
       "after": "o05",
-      "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_nose"] }, "signalCount": 2 } },
+      "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_nose"], "addresses": [] }, "signalCount": 2 } },
       "views": [{ "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "holder" } } }]
     },
-    { "after": "c02", "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_kato"] }, "signalCount": 3 } } },
+    { "after": "c02", "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_kato"], "addresses": [] }, "signalCount": 3 } } },
     {
       "after": "m06",
       "threads": { "$regThread": { "ball": { "kind": "none" }, "closedAtSource": true } },
@@ -106,7 +106,7 @@
     "threads": {
       "$clientThread": {
         "dataSourceId": "ds_slack_client",
-        "ball": { "kind": "contact", "contactIds": ["p_mori"] },
+        "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] },
         "counterpartContactIds": ["p_mori"],
         "signalCount": 6,
         "unansweredSince": null,

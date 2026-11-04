@@ -46,7 +46,7 @@ describe('誰の番か（turnOf）', () => {
     const { log, ctx, shared } = world();
     ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     const p = log.state();
-    expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
     log.push(dismissThread(p, alice, { threadId: shared, reason: 'x' }), '2026-10-16T10:00:00.000Z');
     expect(turnOf(dir, log.state(), log.state().threads[shared]!)).toEqual({ kind: 'none' });
   });

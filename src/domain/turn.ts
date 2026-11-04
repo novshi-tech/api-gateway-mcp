@@ -1,4 +1,5 @@
 import type { Directory } from './directory';
+import type { AddressRef } from './events';
 import type { Projections, Thread } from './projections';
 import { contactsOf, requestIsOurs, resolveBall } from './sides';
 import { canReadDataSource, type Viewer } from './viewer';
@@ -15,7 +16,8 @@ import { canReadDataSource, type Viewer } from './viewer';
 export type Turn =
   | { kind: 'user'; userIds: string[]; by: 'owner' | 'holder' | 'reader' | 'addressed' }
   | { kind: 'triage' }
-  | { kind: 'contact'; contactIds: string[] }
+  /** 相手の番。addresses は Contact に解決できなかった保持者（0030。名寄せすると contactIds に移る） */
+  | { kind: 'contact'; contactIds: string[]; addresses: AddressRef[] }
   | { kind: 'none' };
 
 export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
@@ -23,7 +25,7 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
   const held = holderTurn(dir, t);
   if (held) return held;
-  if (ball.kind === 'contact') return { kind: 'contact', contactIds: ball.contactIds };
+  if (ball.kind === 'contact') return { kind: 'contact', contactIds: ball.contactIds, addresses: ball.addresses };
   if (ball.kind === 'none') return { kind: 'none' };
 
   const list = dir.listOfDataSource(t.dataSourceId);
@@ -52,15 +54,20 @@ function holderTurn(dir: Directory, t: Thread): Turn | null {
   const readers = list ? dir.readersOfList(list.id) : [];
   const users = new Set<string>();
   const contacts = new Set<string>();
+  const unresolved: AddressRef[] = [];
   for (const value of t.source.holders) {
     const contactId = dir.contactIdOfAddress({ channel: ds.channel, value });
     const contact = contactId ? dir.contact(contactId) : undefined;
-    if (!contact) continue;
+    if (!contact) {
+      unresolved.push({ channel: ds.channel, value });
+      continue;
+    }
     if (contact.userId !== undefined && readers.includes(contact.userId)) users.add(contact.userId);
     else contacts.add(contact.id);
   }
   if (users.size > 0) return { kind: 'user', userIds: [...users].sort(), by: 'holder' };
-  if (contacts.size > 0) return { kind: 'contact', contactIds: [...contacts].sort() };
+  // だれにも解決できないアカウントだけのときは効かない（シグナルのボールに任せる）。解決できた相手がいれば、残りはアドレスのまま並べる
+  if (contacts.size > 0) return { kind: 'contact', contactIds: [...contacts].sort(), addresses: unresolved };
   return null;
 }
 

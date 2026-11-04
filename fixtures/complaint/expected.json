@@ -38,7 +38,7 @@
       "after": "o01",
       "threads": {
         "$partnerThread": {
-          "ball": { "kind": "contact", "contactIds": ["p_cleanco"] },
+          "ball": { "kind": "contact", "contactIds": ["p_cleanco"], "addresses": [] },
           "replyExpectedBy": "2026-10-16T13:00:00.000Z",
           "overdue": false,
           "links": { "$compThread": "sent" }
@@ -47,7 +47,7 @@
       }
     },
     { "after": "c_o01", "threads": { "$partnerThread": { "signalCount": 1 } } },
-    { "after": "o02", "threads": { "$compThread": { "ball": { "kind": "contact", "contactIds": ["p_tanaka"] } } } },
+    { "after": "o02", "threads": { "$compThread": { "ball": { "kind": "contact", "contactIds": ["p_tanaka"], "addresses": [] } } } },
     {
       "after": "o02",
       "threads": {},
@@ -63,7 +63,7 @@
     },
     {
       "after": "c_due",
-      "threads": { "$partnerThread": { "overdue": true, "ball": { "kind": "contact", "contactIds": ["p_cleanco"] } } },
+      "threads": { "$partnerThread": { "overdue": true, "ball": { "kind": "contact", "contactIds": ["p_cleanco"], "addresses": [] } } },
       "views": [
         { "as": "u_sato", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] },
         { "as": "u_suzuki", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] }
@@ -76,7 +76,7 @@
     },
     {
       "after": "r03",
-      "threads": { "$compThread": { "replyExpectedBy": "2026-10-18T09:00:00.000Z", "signalCount": 3, "ball": { "kind": "contact", "contactIds": ["p_tanaka"] } } }
+      "threads": { "$compThread": { "replyExpectedBy": "2026-10-18T09:00:00.000Z", "signalCount": 3, "ball": { "kind": "contact", "contactIds": ["p_tanaka"], "addresses": [] } } }
     },
     { "after": "s03", "threads": { "$compThread": { "ball": { "kind": "none" }, "signalCount": 4 } } },
     { "after": "a01", "threads": { "$compThread": { "dismissed": true, "activeSinceDismissed": false } } },

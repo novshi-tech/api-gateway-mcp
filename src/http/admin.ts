@@ -65,7 +65,7 @@ function ballLabel(dir: Directory, p: Projections, t: Thread): string {
     : b.kind === 'user'
       ? `持ち主: ${esc(n.user(b.userId))}`
       : b.kind === 'contact'
-        ? `相手: ${b.contactIds.map((id) => esc(n.contact(id))).join(', ') || '(不明)'}`
+        ? `相手: ${[...b.contactIds.map((id) => esc(n.contact(id))), ...b.addresses.map((a) => esc(a.value))].join(', ') || '(不明)'}`
         : 'なし';
 }
 
@@ -78,7 +78,7 @@ function turnLabel(dir: Directory, p: Projections, t: Turn): string {
     case 'triage':
       return '仕分け待ち';
     case 'contact':
-      return `相手待ち: ${t.contactIds.map((id) => esc(n.contact(id))).join(', ') || '(不明)'}`;
+      return `相手待ち: ${[...t.contactIds.map((id) => esc(n.contact(id))), ...t.addresses.map((a) => esc(a.value))].join(', ') || '(不明)'}`;
     case 'none':
       return 'なし';
   }

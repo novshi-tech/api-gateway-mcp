@@ -207,7 +207,7 @@ describe('H5 H6 個人の箱の同期（偽の Graph）', () => {
     const dir = await ctx.service.directory();
     expect(thread!.signalIds.map((id) => directionOf(dir, p.signals[id]!))).toEqual(['inbound', 'outbound']);
     // 送信でボールは相手へ（保持者のアドレスを、クエリ層で Contact に解決する。0030）
-    expect(resolveBall(dir, p, thread!)).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(resolveBall(dir, p, thread!)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
   });
 
   it('記録した送信（下書きの internetMessageId）があとで送信済みに現れても 1 本のまま（H5）', async () => {

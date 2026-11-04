@@ -18,9 +18,9 @@
 - D1: 取り込みの運用の状態のテーブルは `drizzle/0002_connectors.sql`（ブランチの `0001_connectors` と同じ SQL を、main の `0001_master_keys` の後ろに作り直した）。**UBS に出すときは `pnpm db:migrate ubs` を先に当てる**
 - 外部コネクタは `PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効。設定の書き方は `wrangler.example.jsonc` の末尾（キュー・`GATEWAY_WEB`）。UBS の設定にはまだ書いていない（つなぐときに足す）
 - ブランチ側の 0029（ボールの相手側を `them` + `awaiting` のアドレスで持つ）とその実装は載せなかった。main の 0030（イベントはアドレスだけ、Contact はクエリ層で解決、名寄せは人とスタンド）に置き換わっている。番号もぶつかっていた（main の 0029 はデプロイの設定）
-- **未決（直樹に確かめる）**: 0030 の今の実装でも、Contact に解決できない保持者はボールが `{ kind: 'contact', contactIds: [] }` になる（0030 の決定は「解決できなければアドレスのまま」だが、`Ball`・`Turn` はアドレスを持たない）。実データの個人の箱では普通に起きる。0029 の問題意識はここに残っている
-- スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.2（「Outlook をつなぐ」の手順と connections の API の表）
-- テスト: 282 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
+- 0030 の今の実装でも、Contact に解決できない保持者はボールが `{ kind: 'contact', contactIds: [] }` になっていた（決定の「解決できなければアドレスのまま」が入っていなかった）。同じブランチで直した: `Ball`・`Turn` の `contact` に `addresses`、スレッドに `counterpartAddresses`（クエリ層だけ。0030 の末尾の追記）。0029 の問題意識はこれで片付く
+- スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.3（0.1.2 で「Outlook をつなぐ」の手順と connections の API の表、0.1.3 で解決できなかった相手のアドレス）
+- テスト: 283 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
 - 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は、main に入ったら消してよい
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 

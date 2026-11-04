@@ -83,7 +83,7 @@ describe('fold', () => {
     const log = new EventLog();
     log.push([sent('o1'), intoNew('o1', 't1', true)], T0);
     expect(log.state().signals.o1!.needsResponse).toBe(true);
-    expect(view(log.state(), 't1').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(view(log.state(), 't1').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
   });
 
   it('H1 片付けるとボールは「なし」、その後のシグナルは綴じるが片付けたまま（開き直しで戻る）', () => {
