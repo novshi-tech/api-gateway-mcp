@@ -89,7 +89,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway-murmur"
       },
-      "version": "0.1.2",
+      "version": "0.1.3",
       "description": "API ゲートウェイ経由で、連絡の索引 Murmur(スレッド・誰の番・個人のメモでのタスクの追跡・送信の記録)を読み書きするスキル。api-gateway プラグインと一緒に使う。",
       "dependencies": [
         "api-gateway"

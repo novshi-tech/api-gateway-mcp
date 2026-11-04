@@ -60,6 +60,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 - `GET /contacts?q=` で候補を出し、**同じ相手かをユーザーに確かめてから** `POST /contacts`(新しく作る)か `POST /contacts/{id}/addresses`(付ける)を呼ぶ。推測で付けない
 - 付け替えるときは、今の付け先を `POST /contacts/{id}/addresses/{address_id}/end` で終わらせてから付ける。過去のシグナルは元の付け先のまま
 - 名寄せを直すと、過去のスレッドの相手と「誰の番」も直る(イベントはそのまま)
+- 相手の番(`ball`・`turn` の `kind: "contact"`)とスレッドの相手は、Contact に解決できた相手(`contactIds`・`counterpartContactIds`)と、解決できなかった相手のアドレス(`addresses`・`counterpartAddresses`)に分かれて出る。アドレスで出ている相手は、ユーザーに見せるときはアドレスのまま見せ、名寄せの候補として扱う。名寄せすると `contactIds` に移る
 
 ### タスクとして追う(1 タスク = 1 メモのスレッド)
 
