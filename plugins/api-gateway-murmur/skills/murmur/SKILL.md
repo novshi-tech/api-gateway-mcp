@@ -74,6 +74,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 
 - **送ったら記録する。** スタンド経由で外へ送った・起票した・コメントしたら、その直後に `record_sent` を呼ぶ。送る前には呼ばない(送れなかったものを記録しない)。`sent_ref` は送信の API が返した ID(メールの Message-ID、Slack の ts、LINE の sentMessages[].id、Jira の課題キーやコメント ID)。同じ `sent_ref` で 2 回呼んでも 1 回分しか残らない
 - **共有のスレッドには、事実と構造の操作だけ。** 送信の記録・持つ・結ぶ・振り分けの直し・片付けは共有のスレッドにしてよい。進み具合・作業のメモ・属性は、個人のメモのスレッドに書く
+- **リンクは両端を読める人にしか見えない。** 共有のスレッドを自分のメモや自分の受信トレイ・自分の Jira のスレッドと結んでも、ほかの読者にはリンクがあることも見えない。チームに伝えたい進み(メールで先方に確かめた、課題で直した など)は、ユーザーと伝える粒度を決めて、共有のデータソースに書く(LINE で返す、Slack のスレッドに書く、課題にコメントする)。書いたら `record_sent` で記録する
 - **組織をまたがない。** 送ったのと同じ組織のコネクタの Murmur に記録する。組織が違えば Murmur も違うので、別の組織の連絡やスレッドを、この組織の Murmur のメモに書き写したり結んだりしない
 - 送る前の確認(宛先・本文・送信元・返事期待)はユーザーに見せて、送信の指示をもらう。これは Murmur の承認ではなく、ユーザーとの会話でのゲート
 - **リンクは候補を見て、ユーザーと決めてから張る。** `get_thread` の `linkCandidates` はアンカー(課題キー・PR・メッセージ ID)が一致したものにすぎない。同じ件でなければ結ばない
@@ -91,7 +92,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | list_lists | `GET /lists` | | 見えるリストの一覧(データソース・読者(`userId`・`name`・`contactId`)・属性定義) |
 | get_list | `GET /lists/{list_id}` | | データソース・読者・属性定義 |
 | list_threads | `GET /threads` | `-q filter=my_turn\|mine\|open\|overdue\|triage\|all`(既定 `open`)、`-q data_source=...`、`-q since=<ISO 8601>`(それより後に動いたものだけ。メモのスレッドは結んだ先が動いても入る) | スレッドの一覧(自分か見える結んだ先の最新の更新 `lastActivityAt` の新しい順)。各スレッドに `ball`・`turn`(`by` は `owner` / `holder` / `reader` / `addressed`)・`ownerUserId`・`links`・`attributes`・`source`(写し)・`derivedBall`・`linkCandidates`・`overdue`・`closedAtSource`(ソースで完了) など |
-| get_thread | `GET /threads/{thread_id}` | `-q since=<ISO 8601>`(省略可。タイムラインをそれより後に絞る) | `thread`(一覧と同じ項目)、`dataSource`、`linked`(結んだ先。見えない先は id と経路だけ)、`timeline`(このスレッドのシグナル・メモ・操作と、結んだ先のシグナルを時刻順に) |
+| get_thread | `GET /threads/{thread_id}` | `-q since=<ISO 8601>`(省略可。タイムラインをそれより後に絞る) | `thread`(一覧と同じ項目)、`dataSource`、`linked`(結んだ先。両端を読めるものだけ。見えないスレッドへのリンクは、あることも出ない)、`timeline`(このスレッドのシグナル・メモ・操作と、結んだ先のシグナルを時刻順に) |
 | add_note | `POST /notes` | `{"body", "thread_id"?, "title"?, "author"?}`。`thread_id` を渡せば既存のメモのスレッドに足し、渡さなければ新しいスレッド(「この件」)を作る。件名は `title`、なければ本文の 1 行目。`author` は書き手で、人の言葉(中継を含む)なら省略か `{"kind":"user"}`、エージェント自身が書いたもの(judge・結果の要約・提案)なら `{"kind":"agent","name":"orchestrator"}` のように名前を付ける。タイムラインのメモに `signal.author` で出る(誰の番には使わない) | メモのスレッド(`get_thread` と同じ) |
 | claim_thread | `POST /threads/{thread_id}/claim` | `{"user_id"?, "reason"?}`。省略で自分が持つ、`null` で手放す、ほかの読者の User ID で引き継ぐ | `get_thread` と同じ |
 | link_threads | `POST /threads/{thread_id}/links` | `{"thread_id", "reason"?}`(結ぶ相手) | `get_thread` と同じ。候補から張れば経路 `anchor`、それ以外は `manual` |
