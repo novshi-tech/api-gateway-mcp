@@ -1,7 +1,7 @@
 {
   "name": "api-gateway-atlassian",
   "displayName": "API Gateway: Atlassian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "API ゲートウェイ経由で Jira(課題の検索・作成・更新・コメント・遷移)を操作するスキル。api-gateway プラグインと一緒に使う。",
   "author": {
     "name": "novshi-tech"
