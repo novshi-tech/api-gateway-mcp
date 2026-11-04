@@ -200,9 +200,11 @@ describe('HTTP API', () => {
     const linked = await call('POST', `/api/threads/${noteId}/links`, 'u_alice', { thread_id: threadId, reason: 'この件の問い合わせ' });
     expect(linked.body.thread.links).toMatchObject([{ threadId, route: 'manual' }]);
     expect(linked.body.timeline.map((e: { threadId: string }) => e.threadId)).toContain(threadId);
-    // Bob には辺は見えるが、メモのスレッドの中身は見えない
+    // Bob にはメモのスレッドが読めないので、辺も見えない（0033 の 3）
     const bobView = await call('GET', `/api/threads/${threadId}`, 'u_bob');
-    expect(bobView.body.linked).toEqual([expect.objectContaining({ threadId: noteId, visible: false })]);
+    expect(bobView.body.linked).toEqual([]);
+    expect(bobView.body.thread.links).toEqual([]);
+    expect(JSON.stringify(bobView.body)).not.toContain(noteId);
     expect(JSON.stringify(bobView.body)).not.toContain('電話で状況');
 
     const attr = await call('POST', `/api/threads/${noteId}/attributes`, 'u_alice', { name: 'status', value: 'todo' });

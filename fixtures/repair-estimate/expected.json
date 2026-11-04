@@ -30,7 +30,7 @@
         }
       },
       "views": [
-        { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": ["$partnerThread"], "mustNotContain": ["山田工務店 御中"] },
+        { "as": "u_sato", "thread": "$custThread", "access": "full", "mustContain": [], "mustNotContain": ["$partnerThread", "山田工務店 御中"] },
         { "as": "u_suzuki", "thread": "$custThread", "access": "full", "mustContain": ["山田工務店 御中"] }
       ]
     },

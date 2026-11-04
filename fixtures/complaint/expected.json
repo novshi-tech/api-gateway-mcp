@@ -154,8 +154,8 @@
       "as": "u_suzuki",
       "thread": "$compThread",
       "access": "full",
-      "mustContain": ["$noteThread"],
-      "mustNotContain": ["協力会社に作業報告を求め"],
+      "mustContain": [],
+      "mustNotContain": ["$noteThread", "協力会社に作業報告を求め"],
       "item": { "ownerUserId": "u_sato" }
     },
     { "as": "u_sato", "thread": "$noteThread", "access": "full", "item": { "dismissed": true, "linkedActiveSinceDismissed": false, "derivedBall": { "kind": "none" } } },

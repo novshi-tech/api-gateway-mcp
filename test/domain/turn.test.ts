@@ -136,8 +136,27 @@ describe('結び候補（linkCandidates）', () => {
   });
 });
 
+describe('リンクの可視性（0033）', () => {
+  it('H3 共有リスト同士のリンクは、両方のリストの読者にだけ見える', () => {
+    const { log, shared, line: lineThread } = world();
+    // Bob は support@ と LINE の両方の読者、Alice は support@ だけ
+    log.push(linkThreads(log.state(), bob, { threadId: shared, otherThreadId: lineThread }), '2026-10-16T10:01:00.000Z');
+    const p = log.state();
+    const bobView = getThreadView(dir, bob, p, shared)!;
+    expect(bobView.linked.map((l) => l.threadId)).toEqual([lineThread]);
+    expect(bobView.thread.links.map((l) => l.threadId)).toEqual([lineThread]);
+    const aliceView = getThreadView(dir, alice, p, shared)!;
+    expect(aliceView.linked).toEqual([]);
+    expect(aliceView.thread.links).toEqual([]);
+    expect(aliceView.thread.derivedBall).toBeNull();
+    expect(aliceView.timeline.map((e) => e.kind)).not.toContain('linked');
+    expect(JSON.stringify(aliceView)).not.toContain(lineThread);
+    expect(derivedBall(dir, alice, p, p.threads[shared]!)).toBeNull();
+  });
+});
+
 describe('タイムライン（getThreadView）', () => {
-  it('H2 自分のスレッドの綴じたものと、見えるリンク先のシグナルを時刻順に並べる。since で差分に絞る。見えない先は id だけ', () => {
+  it('H2 自分のスレッドの綴じたものと、見えるリンク先のシグナルを時刻順に並べる。since で差分に絞る。見えない先へのリンクは、あることも出さない（0033）', () => {
     const { log, ctx, shared } = world();
     const n = addNote(log.state(), alice, ctx, { body: '電話で聞いた' });
     log.push(n.events, '2026-10-16T10:00:00.000Z');
@@ -153,8 +172,16 @@ describe('タイムライン（getThreadView）', () => {
     expect(getThreadView(dir, alice, log.state(), n.threadId, { since: '2026-10-16T10:00:30.000Z' })!.timeline.map((e) => e.kind)).toEqual(['linked', 'attribute']);
 
     const bobView = getThreadView(dir, bob, log.state(), shared)!;
-    expect(bobView.linked).toEqual([{ threadId: n.threadId, route: 'manual', linkedAt: '2026-10-16T10:01:00.000Z', actorUserId: 'u_alice', visible: false }]);
+    expect(bobView.linked).toEqual([]);
+    expect(bobView.thread.links).toEqual([]);
+    expect(bobView.thread.derivedBall).toBeNull();
+    expect(bobView.timeline.map((e) => e.kind)).not.toContain('linked');
+    expect(JSON.stringify(bobView)).not.toContain(n.threadId);
     expect(JSON.stringify(bobView)).not.toContain('電話で聞いた');
+    // Alice には両端が見える
+    const aliceView = getThreadView(dir, alice, log.state(), shared)!;
+    expect(aliceView.linked).toEqual([expect.objectContaining({ threadId: n.threadId, visible: true, dataSourceId: 'ds_notes_alice' })]);
+    expect(aliceView.timeline.map((e) => e.kind)).toContain('linked');
     expect(getThreadView(dir, bob, log.state(), n.threadId)).toBeNull();
   });
 });

@@ -208,7 +208,7 @@ export function linkThreads(
   return [draft('ThreadLinked', { a: a.id, b: b.id, op: 'link', route, actorUserId: viewer.userId, reason: input.reason })];
 }
 
-/** リンクを外す。外す側のスレッドが見えていればよい（相手の中身が見えなくても、辺は見えている） */
+/** リンクを外す。両端とも読める必要がある（見えない辺は結んでいないのと同じ扱い。0033 の 3） */
 export function unlinkThreads(
   p: Projections,
   viewer: Viewer,
@@ -216,7 +216,8 @@ export function unlinkThreads(
 ): DraftEvent[] {
   const a = visibleThreadOrThrow(p, viewer, input.threadId);
   const link = a.links.find((l) => l.threadId === input.otherThreadId);
-  if (!link) return [];
+  const other = link ? p.threads[link.threadId] : undefined;
+  if (!link || !other || !canReadDataSource(viewer, other.dataSourceId)) return [];
   return [draft('ThreadLinked', { a: a.id, b: link.threadId, op: 'unlink', route: link.route, actorUserId: viewer.userId, reason: input.reason })];
 }
 
