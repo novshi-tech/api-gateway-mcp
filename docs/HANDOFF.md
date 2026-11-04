@@ -31,7 +31,8 @@
 - **Jira のコネクタの ADR `docs/adr/0034`（案）を書いた。** 個人リストとして本人の権限（ゲートウェイの `jira`、本体の同意は Outlook と共有）、範囲は本人の JQL（既定は担当・起票・ウォッチ）＋開いているスレッドの課題キー、差分は相対時刻の JQL、通知はヒント（動的 Webhook は S0 で確かめてから）、写像は 0031 の形（状態の変更は写しだけ、シグナルは起票とコメント）。直樹のレビュー待ち
   - 直樹の指示で、動的 Webhook を最初の版から入れる形に直した（Outlook と同じ）。受け口は URL に入れたデータソースごとの秘密で守る（Graph の clientState と同じ強さ。Jira の署名の JWT はゲートウェイの Atlassian のアプリの鍵なので本体だけでは検証できない）
   - S0 は UBS で回す（直樹）。UBS のゲートウェイに組み込みの `jira` を有効にする: Atlassian の developer console で OAuth 2.0 のアプリを作り（Callback は `https://gateway.urban-b.com/connect/callback`、スコープは api-gateway-mcp の README の Jira の節）、`OAUTH_ATLASSIAN_CLIENT_ID` / `_SECRET` を ubs のゲートウェイに入れる
-- 次: 0034 のレビュー。2 週間の試用（0016 の段階 5）の数え方
+- **UBS のゲートウェイに組み込みの `jira` を有効にし（Atlassian のアプリ。User identity API の `read:me` を足し忘れて一度失敗）、0034 の S0 を回した**（`docs/research/2026-11-04-jira-s0.md`）。読み取りは全部通る（GET の search/jql・相対時刻・`nextPageToken`・コメントは課題ごと）。動的 Webhook は登録・到達とも通った。わかった制約: URL は本人ごとに 1 つ、jqlFilter に `watcher` は使えない。0034 に反映した。テストの Webhook とコメントは消した
+- 次: 0034 のレビュー（採用なら S1 の写像から）。2 週間の試用（0016 の段階 5）の数え方
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
