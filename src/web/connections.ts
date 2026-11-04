@@ -5,6 +5,7 @@ import { signToken, verifyToken } from "../tokens";
 import { exchangeCode, upstreamAuthorizationUrl, UpstreamOAuthError } from "../upstream-oauth";
 import { ALREADY_CONNECTED, vaultFor, type CredentialInfo } from "../vault";
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { featureRows } from "./features";
 import { grantRows, listGrants } from "./grants";
 import { html, type Html } from "./html";
 import { page } from "./layout";
@@ -49,6 +50,7 @@ function notice(url: URL, credentials: CredentialInfo[], services: Services): Ht
   if (reconnected) return html`<p class="notice" role="status">${displayName(services, reconnected.service)} をつなぎ直しました。</p>`;
   if (url.searchParams.has("deleted")) return html`<p class="notice" role="status">接続を削除しました。</p>`;
   if (url.searchParams.has("revoked")) return html`<p class="notice" role="status">アプリのアクセスを取り消しました。</p>`;
+  if (url.searchParams.has("disabled")) return html`<p class="notice" role="status">機能を無効にしました。</p>`;
   return false;
 }
 
@@ -86,6 +88,7 @@ export async function home(request: Request, env: Env & { OAUTH_PROVIDER: OAuthH
   const duplicated = new Set(credentials.filter((c, i) => credentials.findIndex((d) => d.service === c.service) !== i).map((c) => c.service));
   const rows = [...credentials.map((c) => connectionRow(c, services, duplicated.has(c.service))), ...identity.map(identityRow)];
   const grants = await listGrants(env, user.sub);
+  const featureSection = await featureRows(env, user.sub);
   return page(
     `API ゲートウェイ · ${organizationName(env)}`,
     html`${masthead(env, user)}
@@ -96,6 +99,7 @@ ${grants.length === 0 && html`<div class="card start"><p><strong>はじめに、
 ${rows.length > 0
   ? html`<ul class="list">${rows}</ul>`
   : html`<p class="empty">つながっているサービスはまだありません。<a href="/connections/new">接続を追加</a>から始めてください。</p>`}
+${featureSection}
 <h2>アクセスを許可したアプリ</h2>
 <p>Claude や Murmur など、あなたがサインインして許可したアプリです。取り消すと、そのアプリはここでつないだサービスを使えなくなります。</p>
 ${grantRows(grants)}

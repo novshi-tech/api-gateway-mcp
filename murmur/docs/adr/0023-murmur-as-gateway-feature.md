@@ -154,6 +154,23 @@ novshi-tech/murmur の main を api-gateway-mcp の `murmur/` に `git subtree a
 - **境界のテスト（決定 7 の 1・2・4・5）**: `test/architecture.test.ts` に、口の実装を import してよいのは入口と口の実装だけ、`ports/` は何も import しない、`env` と `cloudflare:workers` は入口だけ、実行時の依存の許可リスト、グローバルを書き換えない、を足した
 - 決定 7 の 6（バンドルの許可リストの検査）は、1 つの Worker にしたとき（段取り 3）にルートの CI で行う
 
+### 段取り 3（2026-11-04）: 1 つの Worker
+
+ゲートウェイの Worker が Murmur を機能として持つ形を実装した。ゲートウェイの側の詳細は api-gateway-mcp の `docs/adr/0005` の「段取り 3 の形」。決定からずれたところと、決めた細部:
+
+- **Murmur の API の URL は変えなかった**（決定 5 の「`/murmur/api/*` に置く」から変えた）。スタンドは今までどおり `issue_token` の `identity:murmur` で発行したトークンで `/api/murmur/...` を呼び、ゲートウェイの中継が同じ Worker の Murmur に渡す。Murmur はそのトークンを口（`authenticate`）でもう一度確かめる。スキルと使い方が変わらず、移行のときにスタンドの側で何もしなくてよい
+- **組み立ては `src/feature.ts`**（env を読まず、設定と口だけで組み立てる）。入口は 2 つ: 単独の Worker（`src/index.ts`。段取り 4 まで残す）と、ゲートウェイの `src/murmur-feature.ts`
+- **同意**（決定 1 の「本人が画面で有効にする」）: Murmur の `Connections` の流れはそのまま（`begin` → 同意の画面 → コールバックの `complete`）。口の実装を差し替えただけで、CIMD の代わりにゲートウェイの `/features/murmur/consent` に案内し、ゲートウェイが署名した本人のコードで戻ってくる
+- **秘密**（決定 7）: ゲートウェイの入口が Murmur に渡すのは、Murmur の D1・キュー・`ANTHROPIC_API_KEY`・`MURMUR_WEBHOOK_SECRET`（Jira の Webhook の秘密を導く鍵。`TOKEN_KEY` の代わり）と口だけ。ゲートウェイの `SIGNING_KEY`・`ENCRYPTION_KEY` は口の実装の中でだけ使う
+- **残り**: 決定 7 の 6（バンドルに入ったパッケージを許可リストと比べる検査）はまだ。CI は Worker のドライランのビルドまで
+
+### 段取り 4（未着手）: 既存のデプロイを移す
+
+- ゲートウェイのデプロイの設定に、今の Murmur の D1（同じアカウント）を `MURMUR_DB` で束ね、キュー・cron・シークレットを足す。D1 のデータは移さなくてよい
+- Outlook のサブスクリプションの通知先が `<ゲートウェイ>/murmur/webhooks/graph` に変わる。今の見回りは通知先の変更を見ないので、移すときに作り直す手当てが要る（データソースを setup に戻すか、見回りで通知先の違いを見る）。Jira の Webhook も URL（秘密）が変わるので登録し直す
+- 本人の同意は、ゲートウェイの画面で有効にし直してもらう（CIMD の許可は使わない）
+- 移し終えたら、単独の Worker（`src/index.ts`・`connectors/gateway/`・`auth/` の JWKS の検証）と、ゲートウェイの `SERVICES` の `murmur`（identity・Service Binding）、murmur-deployments を消す
+
 ## 未決
 
 1. ~~MCP のツールを足すか~~ → 足さない（決定 5、2026-11-04 直樹）

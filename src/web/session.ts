@@ -51,11 +51,17 @@ export function sameOrigin(request: Request, env: Env): boolean {
   return request.headers.get("origin") === new URL(publicUrl(env)).origin;
 }
 
+// Where to go after signing in: a path on this site only, never another origin.
+function localPath(value: string | null): string | undefined {
+  return value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/\\") ? value : undefined;
+}
+
 export async function login(request: Request, env: Env): Promise<Response> {
   const state = randomToken();
   const verifier = randomToken();
   const nonce = randomToken();
-  const { token } = await signToken(env.SIGNING_KEY, publicUrl(env), "login", state, { verifier, nonce }, LOGIN_TTL_SECONDS);
+  const next = localPath(new URL(request.url).searchParams.get("next"));
+  const { token } = await signToken(env.SIGNING_KEY, publicUrl(env), "login", state, { verifier, nonce, ...(next ? { next } : {}) }, LOGIN_TTL_SECONDS);
   const location = await authorizationUrl(env, {
     redirectUri: `${publicUrl(env)}${LOGIN_CALLBACK_PATH}`,
     state,
@@ -69,7 +75,7 @@ export async function loginCallback(request: Request, env: Env): Promise<Respons
   const params = new URL(request.url).searchParams;
   const stored = readCookie(request, LOGIN_COOKIE);
   const pending = stored
-    ? await verifyToken<{ verifier: string; nonce: string }>(env.SIGNING_KEY, publicUrl(env), "login", stored)
+    ? await verifyToken<{ verifier: string; nonce: string; next?: string }>(env.SIGNING_KEY, publicUrl(env), "login", stored)
     : null;
   const code = params.get("code");
   if (!pending || pending.sub !== params.get("state") || !code) {
@@ -86,7 +92,7 @@ export async function loginCallback(request: Request, env: Env): Promise<Respons
     const headers = new Headers();
     headers.append("set-cookie", cookie(SESSION_COOKIE, token, SESSION_TTL_SECONDS));
     headers.append("set-cookie", cookie(LOGIN_COOKIE, "", 0));
-    return redirect("/", headers);
+    return redirect(localPath(pending.next ?? null) ?? "/", headers);
   } catch (error) {
     if (error instanceof SignInError) {
       console.warn(JSON.stringify({ type: "signin_rejected", reason: error.message }));

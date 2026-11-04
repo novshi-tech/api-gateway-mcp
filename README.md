@@ -21,7 +21,11 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 
 ## Murmur
 
-[`murmur/`](murmur/) は、ゲートウェイと組み合わせて使う「チームの仕事の記憶」(Murmur)です。メールや Jira などの連絡から対応の要る件を拾い、誰の番かを追います。利用者は意識せず、Claude が裏で読んで「いまやるべきこと」に答えるための記憶です。いまは別の Worker としてデプロイしますが、ゲートウェイの機能として 1 つのデプロイにまとめていきます([docs/adr/0005](docs/adr/0005-murmur-as-a-feature.md))。ゲートウェイだけを使うなら、`murmur/` は無視してかまいません。
+[`murmur/`](murmur/) は、ゲートウェイの機能の 1 つ「チームの仕事の記憶」(Murmur)です。メールや Jira などの連絡から対応の要る件を拾い、誰の番かを追います。利用者は意識せず、Claude が裏で読んで「いまやるべきこと」に答えるための記憶です([docs/adr/0005](docs/adr/0005-murmur-as-a-feature.md))。
+
+- ゲートウェイの Worker に入っていて、デプロイの設定に Murmur の D1 を足すと有効になります(`wrangler.example.jsonc` の末尾)。足さなければ、ゲートウェイは Murmur なしで今までどおり動きます
+- 利用者ごとに、ゲートウェイの画面で有効にします(Claude から Murmur に接続をつなぐよう頼むと、有効にする画面に案内されます)。有効にした人の接続だけを、読み取りだけで使います。「つないだサービス」の画面でいつでも無効にできます
+- Claude からは、ほかのサービスと同じく `issue_token`(`identity:murmur`)と REST(`/api/murmur/...`)で使います。使い方はプラグイン `api-gateway-murmur` のスキルです
 
 ## 前提
 
@@ -325,7 +329,7 @@ npm run typecheck
 npm test          # Worker のテストと、スキルのスクリプトのテスト
 ```
 
-Murmur は `murmur/` の中で別のパッケージになっています(`cd murmur && npm install && npm test`。詳しくは [murmur/CLAUDE.md](murmur/CLAUDE.md))。
+Murmur は `murmur/` の中で別のパッケージになっています。ルートの `npm install` が `murmur/` の依存も入れます(Worker が Murmur を一緒にバンドルするため)。Murmur のテストは `cd murmur && npm test`(詳しくは [murmur/CLAUDE.md](murmur/CLAUDE.md))。
 
 ## License
 

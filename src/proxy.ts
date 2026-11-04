@@ -1,4 +1,5 @@
 import { publicUrl, type ServiceConfig } from "./config";
+import { feature, withPath } from "./features";
 import { IDENTITY_CREDENTIAL, signIdentity } from "./identity";
 import { getUpstream } from "./services";
 import { bearer, verifyToken, type GatewayClaims } from "./tokens";
@@ -40,7 +41,7 @@ function forwardHeaders(incoming: Headers, injected: Record<string, string>): He
   return headers;
 }
 
-export async function handleProxy(request: Request, env: Env): Promise<Response> {
+export async function handleProxy(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const rest = url.pathname.slice(API_PREFIX.length);
   const slash = rest.indexOf("/");
@@ -51,6 +52,14 @@ export async function handleProxy(request: Request, env: Env): Promise<Response>
   if (!token) return denied(401, "missing gateway token");
   const claims = await verifyToken<GatewayClaims>(env.SIGNING_KEY, publicUrl(env), "api", token);
   if (!claims) return denied(401, "invalid or expired gateway token");
+
+  // A feature of this Worker (src/features.ts) takes its name over a configured service. The
+  // request keeps the gateway token: the feature checks it again through the gateway's port.
+  const f = feature(env, service);
+  if (f) {
+    if (claims.creds?.[service] !== IDENTITY_CREDENTIAL) return denied(403, `token does not cover service: ${service}`);
+    return f.fetch(withPath(request, `/api${upstreamPath}`), ctx);
+  }
 
   const target = await getUpstream(env, service);
   // client_credentials services belong to the deployment and are reached only through the Background entrypoint.

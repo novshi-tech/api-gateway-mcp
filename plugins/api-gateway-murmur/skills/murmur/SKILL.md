@@ -41,11 +41,11 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 ### Outlook をつなぐ
 
-本人の Outlook のメールボックスを、本人だけが読む個人のリストとして取り込む。Murmur がゲートウェイの OAuth クライアントになり、本人がゲートウェイで Murmur を許可する。
+本人の Outlook のメールボックスを、本人だけが読む個人のリストとして取り込む。本人がゲートウェイの画面で Murmur を有効にする(許可する)と、Murmur は本人のゲートウェイの接続を読めるようになる(読むだけで、送信や書き込みはしない)。
 
 1. ゲートウェイで Microsoft Graph がつながっているか(`list_credentials`)を確かめる。なければ先にゲートウェイでつないでもらう
 2. `POST /connections/outlook` を呼び、`status` で分ける:
-   - `authorize`: `authorize_url` をユーザーに開いてもらい、ゲートウェイの画面で Murmur を許可してもらう。許可すると Murmur の画面に結果が出る。終わったら `GET /connections` で確かめる
+   - `authorize`: `authorize_url` をユーザーに開いてもらい、ゲートウェイの画面で Murmur を有効にしてもらう(「Murmur を有効にしますか?」、または OAuth の許可の画面)。終わると結果の画面が出る。終わったら `GET /connections` で確かめる
    - `choose`: Graph の接続が複数ある。`credentials` からユーザーに選んでもらい、`credential_id` を付けてもう一度呼ぶ
    - `no_credential`: ゲートウェイで Microsoft Graph をつないでから、もう一度呼ぶ
    - `connected`: つながった(`data_source`)。何度呼んでもよい
@@ -54,7 +54,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 
 ### Jira をつなぐ
 
-Jira は課題の状態(担当者・ステータス・期日)を自分で持つので、自分のリスト(読者は自分だけ)として取り込む。同意は Outlook と同じもの(Outlook をつないでいれば、許可の画面は出ない)。
+Jira は課題の状態(担当者・ステータス・期日)を自分で持つので、自分のリスト(読者は自分だけ)として取り込む。同意は Outlook と同じもの(Outlook をつないでいれば、有効にする画面は出ない)。
 
 1. ゲートウェイで Jira がつながっているか(`list_credentials` の `jira`)を確かめる。なければ先にゲートウェイでつないでもらう
 2. どの課題を追いたいかをユーザーに聞き、JQL にする(`jql`)。省けば「担当・起票・ウォッチ」(`assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()`)。並び(`ORDER BY`)は書かなくてよい
