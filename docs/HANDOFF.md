@@ -10,6 +10,7 @@
 - リンクは両端を読める人にだけ見せる（個人リストのスレッドとのリンクは持ち主だけ）。共有したい情報はスタンドが共有のデータソースに書く（個人とチームの間で要約のレベルを変える作業。0020・0022 と同じ形）
 - **同じ日に採用し、実装した**（直樹: 共有リスト同士は両方の `ListMember` に入っているときだけ見える）。ブランチ `claude/gifted-mccarthy-3ab6w1`。クエリ層だけでイベントと fold は変えていない。expected の 3 か所（見えないリンク先の id が見える、を確かめていた）を反転した。238 件緑、4 シナリオは `--ai replay`・`--db d1` も一致。詳細は 0033 の「実装の記録」
 - スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` を 0.1.1 に（`linked` の説明、共有したい進みは共有のデータソースに書く）。ゲートウェイを先に main に入れる
+- **同じ日に main に入れてデプロイした**: ゲートウェイ（api-gateway-mcp#35、`api-gateway-murmur` 0.1.1）を nvt・ubs・kujira に出し直したあと、本体（murmur#17、main の eef53db）を UBS に出した（Worker のバージョン `ab34465b-43a0-4506-8a62-26e3ba5c35fd`。D1 のマイグレーションはなし）。UBS のゲートウェイ経由の `GET /me`・`GET /threads` が 200。使っている人は Cowork で `api-gateway-murmur` を入れ直す
 - 次: Outlook のブランチ（下）を main に載せ直す。そのあと Jira のコネクタの ADR（個人リスト既定、0024 の個人の箱の経路にゲートウェイの `jira`（3LO）を載せる、JQL で差分、写しは 0031 の形、シグナルは起票とコメント）を書く
 
 **（申し送りの漏れ）Outlook の個人の箱は実装済みで、main に入っていない。** ブランチ `claude/determined-goldberg-yuf8v3`（2026-10-30、murmur-dev で通した。結果は同ブランチの `docs/research/2026-10-30-graph-delta.md`）。委任（本体がゲートウェイの OAuth クライアント、CIMD、`issue_token`）、`src/connectors/graph/`、`src/store/connector-state.ts`、キューの同期。
