@@ -45,6 +45,8 @@ python3 $GW POST jira $J/issue --json @new-issue.json
 - 起票は `POST .../issue` に `{"fields": {"project": {"key": "PROJ"}, "issuetype": {"name": "Task"}, "summary": "...", "description": <ADF>}}`。必須のフィールドはプロジェクトと課題タイプで違うので、先に `GET .../issue/createmeta/PROJ/issuetypes` と `.../issuetypes/<id>` で確かめる。
 - 更新は `PUT .../issue/<key>` に `{"fields": {...}}`。ステータスは `fields` では変えられないので、`GET .../transitions` で遷移の ID を調べて `POST .../transitions` する。
 - 担当者は `accountId` で指定する(`PUT .../issue/<key>/assignee` に `{"accountId": "..."}`)。名前やメールアドレスからは `GET .../user/search?query=...` で探す。
+- `accountId` から表示名を引くのは `GET .../user?accountId=<id>`(`displayName`)。
+- ウォッチは `GET .../issue/<key>/watchers` で一覧、`POST .../issue/<key>/watchers` で足す(本文は accountId の JSON 文字列 `"<accountId>"`。省くと自分)、`DELETE .../issue/<key>/watchers?accountId=<id>` で外す。
 - カスタムフィールドは `customfield_10010` のような ID。名前との対応は `GET .../field` で調べる。
 
 ## 権限
