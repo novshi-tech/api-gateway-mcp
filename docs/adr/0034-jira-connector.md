@@ -98,3 +98,15 @@ Outlook の個人の箱（0024）を main に載せ直し、実物で取り込�
 2. `key in (...)` で引く開いているスレッドの数の上限
 3. 署名の JWT をゲートウェイで検証する口を足すか（今の案は URL の秘密だけ）
 4. 同じ課題が何人かの個人リストに入るときの、コメントの「返事や対応を求めているか」の AI の呼び出しの重複（0033 の未決 3）
+
+## 実装の記録（2026-11-04）
+
+S1・S2 を実装した（ブランチ `claude/gifted-mccarthy-3ab6w1`）。
+
+- 写像（`src/connectors/jira/normalize.ts`、純関数）: 決定 4 のとおり。ADF は段落・改行・メンション（`@名前`）・リンクのカードをテキストにし、メンションの accountId をコメントの宛先に使う。起票とコメントは `since`（取り込みの位置から重なりを引いた時刻）より後のものだけ（つなぐ前の過去は取らない）。時刻は UTC にそろえる（Jira はコロンなしのオフセット）
+- 接続（`src/app/connections.ts`）: `POST /connections/jira`（`credential_id`・`site`（cloudId）・`jql`）。同意の途中の記録に何をつなぐか（`request`）を持たせ、コールバックで Outlook と Jira を分ける。サイトが複数なら `choose_site`。データソースは `connectJiraSource`（`src/domain/connection.ts`）で 0030 の個人のリストとして作る。範囲の変更は `PATCH /connections/{data_source}`（`jql`）で、Webhook を登録し直して取り直す。JQL の `ORDER BY` は落とす
+- 同期（`src/connectors/jira/sync.ts`）: Graph と同じキューに `jira-sync` を足し、`setup`・`maintain`・`disconnect` は Outlook と Jira の両方が受けて自分の経路のデータソースだけ扱う。位置（`syncedUntil`）は取り込みを終えてから進める。ページの上限（10）で止めたら、検索の位置（`nextPageToken`）と課題キーの並びを持ち越して同じ JQL で再開する（最初は「読んだ所まで位置を進める」にしていたが、重なりで同じ先頭を読み直して先に進めないのをテストが見つけた）
+- Webhook: 受け口は `/webhooks/jira/<本人ごとの秘密>`。秘密は `TOKEN_KEY` と User から導く（保管しない）。jqlFilter は範囲の JQL から `watcher` を外して広げ、断られたら担当・起票で登録する。期限は延長の結果で置き、7 日前から延長する。見回りの差分は 10 分おき。届いた本文はキーと `webhookEvent`・`matchedWebhookIds` だけをログに残す（S0 の残り: 本文の形を確かめる）
+- 呼べる口（`src/connectors/jira/api.ts` の `ALLOWED`）: 読み取り（`accessible-resources`・`myself`・`search/jql`・課題のコメント）と Webhook の登録・延長・削除だけ。テストで書き込みの口（起票・コメント・更新・遷移）が断られることを確かめる
+- 設定: `JIRA_SERVICE`（省けば `jira`）。D1 のマイグレーションは要らない（取り込みの運用の状態は JSON の列）
+

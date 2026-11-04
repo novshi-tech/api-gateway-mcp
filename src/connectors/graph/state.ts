@@ -10,8 +10,24 @@ export interface FolderCursor {
   lastReceivedAt: string | null;
 }
 
-/** 実行時に作ったデータソースの取り込みの状態 */
+/**
+ * Jira の取り込みの位置（0034 の決定 3）。syncedUntil までの更新は取り込んだ（次の JQL の起点。重なりを足して取り直す）。
+ * Webhook は本人ごとに 1 つの URL に、データソースごとに登録する（S0: REST の Webhook の URL は本人ごとに 1 つ）
+ */
+export interface JiraCursor {
+  syncedUntil: string;
+  webhookIds: number[];
+  webhookExpiresAt: string | null;
+  /**
+   * ページの上限で止めた差分の続き。同じ JQL（startedAt と keys で決まる）の検索のページの位置から再開する。
+   * 読み終えるまで syncedUntil は進めない
+   */
+  resume?: { startedAt: string; keys: string[]; batch: number; nextPageToken: string | null };
+}
+
+/** 実行時に作ったデータソースの取り込みの状態。kind がなければ Outlook（Jira より前の行） */
 export interface SourceState {
+  kind?: 'outlook' | 'jira';
   dataSourceId: string;
   /** 個人の箱の本人（ゲートウェイの User） */
   userId: string;
@@ -19,7 +35,10 @@ export interface SourceState {
   status: SourceStatus;
   /** broken・disconnected の理由 */
   reason: string | null;
+  /** Outlook: フォルダごとの delta の位置（Jira では空） */
   folders: Record<string, FolderCursor>;
+  /** Jira: 取り込みの位置と Webhook */
+  jira?: JiraCursor;
   connectedAt: string;
   /** 最後に全フォルダの delta を終えた時刻 */
   lastSyncAt: string | null;

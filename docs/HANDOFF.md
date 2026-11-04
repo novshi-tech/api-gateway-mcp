@@ -32,7 +32,8 @@
   - 直樹の指示で、動的 Webhook を最初の版から入れる形に直した（Outlook と同じ）。受け口は URL に入れたデータソースごとの秘密で守る（Graph の clientState と同じ強さ。Jira の署名の JWT はゲートウェイの Atlassian のアプリの鍵なので本体だけでは検証できない）
   - S0 は UBS で回す（直樹）。UBS のゲートウェイに組み込みの `jira` を有効にする: Atlassian の developer console で OAuth 2.0 のアプリを作り（Callback は `https://gateway.urban-b.com/connect/callback`、スコープは api-gateway-mcp の README の Jira の節）、`OAUTH_ATLASSIAN_CLIENT_ID` / `_SECRET` を ubs のゲートウェイに入れる
 - **UBS のゲートウェイに組み込みの `jira` を有効にし（Atlassian のアプリ。User identity API の `read:me` を足し忘れて一度失敗）、0034 の S0 を回した**（`docs/research/2026-11-04-jira-s0.md`）。読み取りは全部通る（GET の search/jql・相対時刻・`nextPageToken`・コメントは課題ごと）。動的 Webhook は登録・到達とも通った。わかった制約: URL は本人ごとに 1 つ、jqlFilter に `watcher` は使えない。0034 に反映した。テストの Webhook とコメントは消した
-- 次: 0034 のレビュー（採用なら S1 の写像から）。2 週間の試用（0016 の段階 5）の数え方
+- **0034 を採用し、S1・S2 を実装した**（0034 の「実装の記録」）。`POST /connections/jira`・`PATCH /connections/{id}`・`/webhooks/jira/<秘密>`。307 件緑、4 シナリオは `--ai replay`・`--db d1` も一致。スキルは api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.4
+- 次: 2 本の PR（スキルを先に）→ UBS に出す（マイグレーションなし。ゲートウェイの `jira` は有効化済み）→ 直樹が Jira をつなぎ、届いた Webhook の本文の形（ログの `jira_webhook`）を確かめる。そのあと 2 週間の試用（0016 の段階 5）の数え方
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。

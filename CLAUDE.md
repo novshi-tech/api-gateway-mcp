@@ -63,6 +63,7 @@ src/
   connectors/    Connector インタフェース（取り込みだけ。シグナルと状態の写し）+ dummy/
     gateway/       ゲートウェイの OAuth クライアント（CIMD）と MCP（list_credentials・issue_token）・REST
     graph/         Outlook（0024）: 正規化・delta・サブスクリプションの計画（純関数）と、キューの仕事をこなす同期
+    jira/          Jira（0034）: 写像（純関数）・差分の JQL と Webhook の計画（純関数）・呼べる口を固定した API・キューの仕事
   api/           HTTP API の入力スキーマ
   auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
   http/          Hono ルート、参照専用の管理画面（admin.ts: /admin・timeline.html）
@@ -95,7 +96,7 @@ pnpm run deploy <名前> / pnpm secret <名前> put <KEY> / pnpm tail <名前>  
 
 ## 注意
 
-- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。実装は個人の箱の Outlook（`src/connectors/graph/`。`PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効）とダミーコネクタ
+- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。実装は個人の箱の Outlook（`src/connectors/graph/`）と個人リストの Jira（`src/connectors/jira/`。0034）とダミーコネクタ。外部コネクタは `PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効
 - 初めてつないだ sub は User の行だけ作る（名無し、Contact なし）。自分の Contact はリストに入るときのアイデンティティで決まり、名寄せは人とスタンドが API で付ける（`docs/adr/0030`）。seed の `--user` の差し替えはシナリオを実環境で回すときだけ
-- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*`（Graph の通知は clientState で照合）、ゲートウェイの OAuth のクライアントのメタデータとコールバック（`/oauth/client.json`・`/oauth/callback`）、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
+- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*`（Graph の通知は clientState、Jira の通知は URL の本人ごとの秘密で照合）、ゲートウェイの OAuth のクライアントのメタデータとコールバック（`/oauth/client.json`・`/oauth/callback`）、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
 - スタンド（Cowork / Claude Code）用のスキルは novshi-tech/api-gateway-mcp の `plugins/api-gateway-murmur/skills/murmur/SKILL.md`（プラグイン `api-gateway-murmur`。ゲートウェイに同梱し、`/setup` とマーケットプレイスで配る）、接続手順は `docs/stand/connect.md`。下書きは置かない。HTTP API を変えたら、同じ時期にゲートウェイのスキル（API の表と手順）も直し、プラグインの版を上げる

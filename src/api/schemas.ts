@@ -140,3 +140,13 @@ export const InboundItemBody = z.union([InboundMirrorBody, InboundSignalBody]);
 
 /** POST /api/connections/outlook。credential_id はゲートウェイの Graph の接続（複数あるときに選ぶ） */
 export const ConnectOutlookBody = z.object({ credential_id: z.string().min(1).optional() });
+
+/** Jira をつなぐ（0034）。site はサイトの cloudId（choose_site で返したもの）、jql は範囲（省けば担当・起票・ウォッチ） */
+export const ConnectJiraBody = z.object({
+  credential_id: z.string().min(1).optional(),
+  site: z.string().min(1).optional(),
+  jql: z.string().trim().min(1).max(2000).optional(),
+});
+
+/** つないだものの設定を変える。今は Jira の範囲の JQL だけ */
+export const PatchConnectionBody = z.object({ jql: z.string().trim().min(1).max(2000) });

@@ -9,6 +9,7 @@ import { connectorOwner, deriveViewer } from '../../src/domain';
 import { MemoryConnectorState } from '../../src/store/connector-state';
 import { counterIds, makeService } from '../helpers/service';
 import { FakeGraph } from '../helpers/fake-graph';
+import { FakeJira } from '../helpers/fake-jira';
 import { seed } from '../helpers/world';
 
 // 個人の箱をつなぐ（0024 の決定 3）。ゲートウェイは偽物（OAuth のトークンの入れ替わりと MCP の 2 つのツールだけ）
@@ -94,6 +95,7 @@ describe('H3 個人の箱をつなぐ', () => {
   let queued: SyncJob[];
   let now: string;
   let ctx: Awaited<ReturnType<typeof setup>>;
+  let jira: FakeJira;
 
   async function setup() {
     const made = await makeService(seed);
@@ -110,6 +112,8 @@ describe('H3 個人の箱をつなぐ', () => {
       newId: counterIds(),
       graphService: 'graph',
       graphFor: () => new FakeGraph({ id: 'oid', displayName: 'Bob', addresses: ['bob@ubs.example', 'bob.alias@ubs.example'] }),
+      jiraService: 'jira',
+      jiraFor: () => jira,
     });
     return { ...made, connections, deps };
   }
@@ -131,6 +135,7 @@ describe('H3 個人の箱をつなぐ', () => {
     state = new MemoryConnectorState();
     queued = [];
     now = '2026-10-30T00:00:00.000Z';
+    jira = new FakeJira(() => now);
     ctx = await setup();
   });
 
@@ -212,5 +217,64 @@ describe('H3 個人の箱をつなぐ', () => {
     now = '2026-10-31T00:00:00.000Z';
     expect(await ctx.connections.connectOutlook('u_bob')).toMatchObject({ status: 'connected', created: false });
     expect(await state.source(view!.data_source)).toMatchObject({ status: 'setup', connectedAt: now, folders: {} });
+  });
+
+  describe('Jira（0034 の決定 1・2）', () => {
+    async function consentJira(asUser: string, input: { jql?: string } = {}) {
+      const r = await ctx.connections.connectJira('u_bob', input);
+      if (r.status !== 'authorize') throw new Error(`expected authorize, got ${r.status}`);
+      const url = new URL(r.authorize_url);
+      return ctx.connections.callback({ state: url.searchParams.get('state'), code: gw.approve(asUser), error: null });
+    }
+
+    beforeEach(() => {
+      gw.credentials.set('u_bob', [{ id: 'gw_bob', service: 'graph', label: 'ubs' }, { id: 'gw_jira', service: 'jira', label: 'Jira' }]);
+    });
+
+    it('同意 → サイトが 1 つならそのまま、本人の accountId をアイデンティティにして個人リストを作る', async () => {
+      expect(await consentJira('u_bob')).toMatchObject({ ok: true, message: expect.stringMatching(/Jira/) });
+      const dir = await ctx.service.directory();
+      const ds = dir.seed.dataSources.find((d) => d.kind === 'service' && d.connector?.kind === 'jira')!;
+      expect(ds).toMatchObject({
+        channel: 'jira',
+        name: 'Bob の Jira（acme）',
+        connector: { kind: 'jira', cloudId: 'cloud-1', site: 'https://acme.atlassian.net', jql: 'assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()' },
+      });
+      expect(connectorOwner(dir.seed, ds)).toBe('u_bob');
+      expect(deriveViewer(dir, 'u_alice').dataSourceIds).not.toContain(ds.id);
+      expect(dir.contactIdOfAddress({ channel: 'jira', value: 'acct-bob' })).toBe('p_bob');
+      expect(queued).toEqual([{ kind: 'setup', dataSourceId: ds.id }]);
+      expect(await state.source(ds.id)).toMatchObject({ kind: 'jira', gatewayCredentialId: 'gw_jira', status: 'setup', jira: { syncedUntil: now, webhookIds: [] } });
+      expect(await ctx.connections.list('u_bob')).toEqual([expect.objectContaining({ kind: 'jira', site: 'https://acme.atlassian.net', status: 'setup' })]);
+    });
+
+    it('同意は Outlook と共有。Outlook をつないだあとは認可を飛ばす。サイトが複数なら選んでもらう', async () => {
+      await consent('u_bob');
+      jira.siteList.push({ id: 'cloud-2', url: 'https://other.atlassian.net', name: 'other' });
+      expect(await ctx.connections.connectJira('u_bob')).toMatchObject({ status: 'choose_site', sites: [{ id: 'cloud-1' }, { id: 'cloud-2' }] });
+      expect(await ctx.connections.connectJira('u_bob', { cloudId: 'cloud-2', jql: 'project = OPS ORDER BY created DESC' })).toMatchObject({ status: 'connected', created: true });
+      const ds = (await ctx.service.directory()).seed.dataSources.find((d) => d.kind === 'service' && d.connector?.kind === 'jira')!;
+      // 並びは取り込みが付けるので落とす
+      expect(ds.kind === 'service' && ds.connector).toMatchObject({ cloudId: 'cloud-2', jql: 'project = OPS' });
+      expect(await ctx.connections.connectJira('u_bob', { cloudId: 'cloud-2' })).toMatchObject({ status: 'connected', created: false });
+    });
+
+    it('ゲートウェイに Jira の接続がなければ、つなげない', async () => {
+      gw.credentials.set('u_bob', [{ id: 'gw_bob', service: 'graph', label: 'ubs' }]);
+      expect(await consentJira('u_bob')).toMatchObject({ ok: false, message: expect.stringMatching(/Jira/) });
+      await consent('u_bob');
+      expect(await ctx.connections.connectJira('u_bob')).toMatchObject({ status: 'no_credential' });
+    });
+
+    it('範囲の JQL を変える: マスタを書き換え、ok なら setup をやり直す。本人以外は変えられない', async () => {
+      await consentJira('u_bob');
+      const [view] = await ctx.connections.list('u_bob');
+      const s = (await state.source(view!.data_source))!;
+      await state.putSource({ ...s, status: 'ok' });
+      queued = [];
+      await expect(ctx.connections.setJiraScope('u_alice', view!.data_source, 'project = X')).rejects.toThrow(/not found/);
+      expect(await ctx.connections.setJiraScope('u_bob', view!.data_source, 'project = SPW')).toEqual([expect.objectContaining({ jql: 'project = SPW', status: 'setup' })]);
+      expect(queued).toEqual([{ kind: 'setup', dataSourceId: view!.data_source }]);
+    });
   });
 });

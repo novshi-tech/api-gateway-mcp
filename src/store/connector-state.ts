@@ -21,6 +21,8 @@ export interface PendingAuthorization {
   /** 本人が選んだゲートウェイの接続（なければ 1 つだけのときに選ぶ） */
   credentialId: string | null;
   createdAt: string;
+  /** 何をつなぐ途中か。なければ Outlook（Jira より前の行）。Jira はサイトと範囲の JQL も持ち越す（0034） */
+  request?: { kind: 'outlook' } | { kind: 'jira'; cloudId?: string; jql?: string };
 }
 
 export interface ConnectorStateStore {

@@ -13,7 +13,7 @@ import {
   MergeContactBody,
   RenameBody,
   ClaimBody,
-  ConnectOutlookBody,
+  ConnectJiraBody, ConnectOutlookBody, PatchConnectionBody,
   DismissBody,
   GetThreadQuery,
   InboundItemBody,
@@ -46,6 +46,8 @@ export interface ConnectorHttp {
   clientMetadata: Record<string, unknown>;
   /** Graph の通知を照合してキューに積む。積んだ数を返す */
   notifications(body: unknown): Promise<number>;
+  /** Jira の Webhook（0034）。URL の本人ごとの秘密を照合し、その本人の Jira を取り直すよう積む。照合できなければ null */
+  jiraNotified(secret: string, body: unknown): Promise<number | null>;
 }
 
 type Env = { Variables: { userId: string; service: MurmurService } };
@@ -251,6 +253,16 @@ export function createApp(opts: HttpOptions) {
     return c.json(await (await connectors(c)).connections.connectOutlook(c.var.userId, b.credential_id));
   });
 
+  api.post('/connections/jira', async (c) => {
+    const b = ConnectJiraBody.parse(await json(c));
+    return c.json(await (await connectors(c)).connections.connectJira(c.var.userId, { credentialId: b.credential_id, cloudId: b.site, jql: b.jql }));
+  });
+
+  api.patch('/connections/:id', async (c) => {
+    const b = PatchConnectionBody.parse(await json(c));
+    return c.json(await (await connectors(c)).connections.setJiraScope(c.var.userId, c.req.param('id'), b.jql));
+  });
+
   api.post('/connections/:id/disconnect', async (c) =>
     c.json(await (await connectors(c)).connections.disconnect(c.var.userId, c.req.param('id'))),
   );
@@ -286,6 +298,14 @@ export function createApp(opts: HttpOptions) {
     }
     await k.notifications(body);
     return c.body(null, 202);
+  });
+
+  // Jira の動的 Webhook（0034）。URL の本人ごとの秘密で照合し、中身は使わずに差分の取り直しを積むだけ
+  app.post('/webhooks/jira/:secret', async (c) => {
+    const k = await connectors(c);
+    const body = await c.req.json().catch(() => null);
+    const n = await k.jiraNotified(c.req.param('secret'), body);
+    return n === null ? c.json({ error: 'not found' }, 404) : c.body(null, 202);
   });
 
   // 本体はゲートウェイの OAuth クライアント（CIMD）。ゲートウェイがこのメタデータを読みに来る
