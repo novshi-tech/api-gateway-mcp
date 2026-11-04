@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { drizzle } from 'drizzle-orm/d1';
 import { MurmurService, randomIds, systemClock } from './app/service';
 import { DEFAULT_POLICY } from './domain';
@@ -60,7 +59,7 @@ const CHANNELS = ['email', 'slack', 'line', 'jira', 'bitbucket'] as const;
 /** 組み立て（IO の配線）。D1 はバインディングなので接続を張ったり閉じたりしない */
 function build(env: Env): MurmurService {
   const db = drizzle(env.DB) as Db;
-  const llm = new AnthropicLlm(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }));
+  const llm = new AnthropicLlm({ apiKey: env.ANTHROPIC_API_KEY });
   const backend = new D1DummyBackend(db);
   const connectors: Connectors = Object.fromEntries(
     CHANNELS.map((ch) => [ch, new DummyConnector(ch, backend)]),

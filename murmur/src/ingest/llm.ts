@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { canonicalJson } from '../domain';
 
 // Claude 呼び出しの境界。Claude API の呼び出しは必ずこの層（記録・再生）を通す。
@@ -23,12 +22,38 @@ export interface LlmClient {
 
 export class LlmRefusalError extends Error {}
 
-/** 本物の Claude API */
+/** fetch の形（Worker の fetch でもテストの偽物でもよい） */
+export type HttpFetch = (url: string, init: RequestInit) => Promise<Response>;
+
+export interface AnthropicLlmOptions {
+  apiKey: string;
+  fetch?: HttpFetch;
+  /** 429・5xx・通信の失敗を試し直す回数（SDK の既定と同じ 2） */
+  maxRetries?: number;
+  /** 試し直しの前に待つ（テストでは待たない） */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
+
+/**
+ * 本物の Claude API（Messages API を fetch で直に呼ぶ。0023 の決定 7: 実行時の依存を足さない）。
+ * ヘッダーと本文は、置き換える前の @anthropic-ai/sdk の beta.messages.create が送っていたものと同じ。
+ * API の版も SDK が送っていた 2023-06-01 のまま（上げるときは記録を取り直す）。
+ */
 export class AnthropicLlm implements LlmClient {
-  constructor(private readonly client: Anthropic) {}
+  private readonly fetch: HttpFetch;
+  private readonly maxRetries: number;
+  private readonly sleep: (ms: number) => Promise<void>;
+
+  constructor(private readonly opts: AnthropicLlmOptions) {
+    this.fetch = opts.fetch ?? ((url, init) => fetch(url, init));
+    this.maxRetries = opts.maxRetries ?? 2;
+    this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
 
   async complete(req: LlmRequest): Promise<string> {
-    const res = await this.client.beta.messages.create({
+    const body = {
       model: req.model,
       max_tokens: req.maxTokens ?? 4096,
       system: req.system,
@@ -36,19 +61,69 @@ export class AnthropicLlm implements LlmClient {
       // 判断は軽い用途なので low。ポリシー判定で断られたときはサーバ側の既定のフォールバックに任せる
       output_config: {
         effort: 'low',
-        ...(req.schema ? { format: { type: 'json_schema' as const, schema: req.schema } } : {}),
+        ...(req.schema ? { format: { type: 'json_schema', schema: req.schema } } : {}),
       },
-      betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-    });
+    };
+    const res = (await this.post(body)) as { stop_reason?: string; content?: { type: string; text?: string }[] };
     if (res.stop_reason === 'refusal') throw new LlmRefusalError(`refused (${req.purpose})`);
-    const text = res.content
-      .filter((b): b is Extract<(typeof res.content)[number], { type: 'text' }> => b.type === 'text')
-      .map((b) => b.text)
+    const text = (res.content ?? [])
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text ?? '')
       .join('');
     if (!text) throw new Error(`empty response (${req.purpose}, stop_reason=${res.stop_reason})`);
     return text;
   }
+
+  private async post(body: unknown): Promise<unknown> {
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      try {
+        res = await this.fetch(MESSAGES_URL, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': this.opts.apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'server-side-fallback-2026-07-01',
+          },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        if (attempt < this.maxRetries) {
+          await this.sleep(backoff(attempt, null));
+          continue;
+        }
+        throw err;
+      }
+      if (res.ok) return res.json();
+      const retryable = res.status === 408 || res.status === 409 || res.status === 429 || res.status >= 500;
+      if (retryable && attempt < this.maxRetries) {
+        await this.sleep(backoff(attempt, res.headers.get('retry-after')));
+        continue;
+      }
+      const detail = (await res.json().catch(() => null)) as { error?: { type?: string; message?: string } } | null;
+      throw new LlmApiError(res.status, detail?.error?.type ?? 'error', detail?.error?.message ?? res.statusText);
+    }
+  }
+}
+
+/** Claude API のエラー応答（試し直しても通らなかったもの） */
+export class LlmApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly type: string,
+    message: string,
+  ) {
+    super(`claude api ${status} ${type}: ${message}`);
+    this.name = 'LlmApiError';
+  }
+}
+
+function backoff(attempt: number, retryAfter: string | null): number {
+  const s = retryAfter === null ? NaN : Number(retryAfter);
+  if (Number.isFinite(s) && s >= 0 && s <= 60) return s * 1000;
+  return Math.min(8000, 500 * 2 ** attempt);
 }
 
 export interface Recording {

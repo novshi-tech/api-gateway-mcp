@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type Anthropic from '@anthropic-ai/sdk';
 import { AiDecider } from '../../src/ingest/deciders';
 import type { IngestRequest } from '../../src/domain';
 import {
   AnthropicLlm,
+  LlmApiError,
   LlmRefusalError,
   MemoryRecordingStore,
   recordingKey,
@@ -63,33 +63,56 @@ describe('記録・再生', () => {
 });
 
 describe('AnthropicLlm', () => {
-  const fake = (res: unknown) => {
-    const create = vi.fn().mockResolvedValue(res);
-    return { client: { beta: { messages: { create } } } as unknown as Anthropic, create };
+  const fake = (...responses: Array<Response | Error>) => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => {
+      const next = responses.shift();
+      if (!next) throw new Error('no more responses');
+      if (next instanceof Error) throw next;
+      return next;
+    });
+    const llm = new AnthropicLlm({ apiKey: 'k', fetch, sleep: async () => {} });
+    return { llm, fetch, body: (i = 0) => JSON.parse(String(fetch.mock.calls[i]![1].body)), headers: (i = 0) => fetch.mock.calls[i]![1].headers as Record<string, string> };
   };
+  const ok = (res: unknown) => Response.json(res);
 
   it('構造化出力・フォールバック・effort を付けて呼び、テキストをつなげて返す', async () => {
-    const { client, create } = fake({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '{"a"' }, { type: 'text', text: ':1}' }] });
-    expect(await new AnthropicLlm(client).complete(req)).toBe('{"a":1}');
-    expect(create.mock.calls[0]![0]).toMatchObject({
+    const { llm, fetch, body, headers } = fake(ok({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '{"a"' }, { type: 'text', text: ':1}' }] }));
+    expect(await llm.complete(req)).toBe('{"a":1}');
+    expect(fetch.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages');
+    expect(headers()).toMatchObject({ 'x-api-key': 'k', 'anthropic-version': '2023-06-01', 'anthropic-beta': 'server-side-fallback-2026-07-01' });
+    expect(body()).toMatchObject({
       model: 'claude-sonnet-5-5',
       system: 's',
       messages: [{ role: 'user', content: 'u' }],
       output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object' } } },
-      betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
     });
   });
 
   it('schema がなければ format を付けない', async () => {
-    const { client, create } = fake({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'hi' }] });
-    await new AnthropicLlm(client).complete({ ...req, schema: undefined });
-    expect(create.mock.calls[0]![0].output_config).toEqual({ effort: 'low' });
+    const { llm, body } = fake(ok({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'hi' }] }));
+    await llm.complete({ ...req, schema: undefined });
+    expect(body().output_config).toEqual({ effort: 'low' });
   });
 
   it('refusal と空応答はエラー', async () => {
-    await expect(new AnthropicLlm(fake({ stop_reason: 'refusal', content: [] }).client).complete(req)).rejects.toBeInstanceOf(LlmRefusalError);
-    await expect(new AnthropicLlm(fake({ stop_reason: 'max_tokens', content: [] }).client).complete(req)).rejects.toThrow(/empty/);
+    await expect(fake(ok({ stop_reason: 'refusal', content: [] })).llm.complete(req)).rejects.toBeInstanceOf(LlmRefusalError);
+    await expect(fake(ok({ stop_reason: 'max_tokens', content: [] })).llm.complete(req)).rejects.toThrow(/empty/);
+  });
+
+  it('429・5xx・通信の失敗は 2 回まで試し直し、400 は試し直さない', async () => {
+    const good = ok({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'x' }] });
+    const { llm, fetch } = fake(new Response('', { status: 429 }), new TypeError('network'), good);
+    expect(await llm.complete(req)).toBe('x');
+    expect(fetch).toHaveBeenCalledTimes(3);
+
+    const bad = fake(Response.json({ error: { type: 'invalid_request_error', message: 'nope' } }, { status: 400 }));
+    await expect(bad.llm.complete(req)).rejects.toBeInstanceOf(LlmApiError);
+    expect(bad.fetch).toHaveBeenCalledTimes(1);
+
+    const down = fake(new Response('', { status: 503 }), new Response('', { status: 503 }), new Response('', { status: 503 }));
+    await expect(down.llm.complete(req)).rejects.toThrow(/503/);
+    expect(down.fetch).toHaveBeenCalledTimes(3);
   });
 });
 

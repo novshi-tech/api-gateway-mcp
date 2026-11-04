@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicLlm } from '../src/ingest/llm';
 import { d1Repo } from '../src/store/d1';
 import { localD1 } from './lib/d1';
@@ -23,7 +22,7 @@ async function main() {
         kind: 'ai',
         mode: aiMode,
         model,
-        live: aiMode === 'replay' ? undefined : new AnthropicLlm(new Anthropic()),
+        live: aiMode === 'replay' ? undefined : new AnthropicLlm({ apiKey: requireApiKey() }),
       }
     : { kind: 'hint' };
 
@@ -66,3 +65,9 @@ main().catch((e) => {
   console.error(e instanceof Error ? e.message : e);
   process.exitCode = 1;
 });
+
+function requireApiKey(): string {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('--ai record / rerecord には ANTHROPIC_API_KEY が要る');
+  return key;
+}

@@ -18,9 +18,7 @@
     "tail": "node tools/wrangler.mjs tail"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.135.0",
     "drizzle-orm": "^0.45.4",
-    "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'hono';
+import { Router, type Context as RouterContext } from './router';
 import { ZodError } from 'zod';
 import { DomainError } from '../domain';
 import type { MurmurService } from '../app/service';
@@ -50,7 +50,8 @@ export interface ConnectorHttp {
   jiraNotified(secret: string, body: unknown): Promise<number | null>;
 }
 
-type Env = { Variables: { userId: string; service: MurmurService } };
+type Vars = { userId: string; service: MurmurService };
+type Context = RouterContext<Vars>;
 
 const STATUS: Record<DomainError['code'], 400 | 403 | 404 | 409> = {
   invalid: 400,
@@ -60,7 +61,7 @@ const STATUS: Record<DomainError['code'], 400 | 403 | 404 | 409> = {
 };
 
 export function createApp(opts: HttpOptions) {
-  const app = new Hono<Env>();
+  const app = new Router<Vars>();
 
   app.onError((err, c) => {
     if (err instanceof DomainError) return c.json({ error: err.code, message: err.message }, STATUS[err.code]);
@@ -69,15 +70,15 @@ export function createApp(opts: HttpOptions) {
     return c.json({ error: 'internal', message: 'internal error' }, 500);
   });
 
-  app.use('*', async (c, next) => {
+  app.use(async (c, next) => {
     c.set('service', await opts.service(c));
     await next();
   });
 
   // ---- スタンド向け API（ゲートウェイ経由。ゲートウェイが署名したユーザー識別を必須にする） ----
 
-  const api = new Hono<Env>();
-  api.use('*', async (c, next) => {
+  const api = new Router<Vars>();
+  api.use(async (c, next) => {
     const token = bearerToken(c.req.header('authorization'));
     const userId = token ? await opts.authenticate(token) : null;
     if (!userId) return c.json({ error: 'unauthenticated' }, 401);
