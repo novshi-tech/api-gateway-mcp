@@ -70,7 +70,7 @@
       "views": [
         { "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$prThread", "$docThread"] },
         { "as": "u_nose", "thread": "$issueThread", "access": "full", "candidates": [] },
-        { "as": "u_kato", "thread": "$issueThread", "access": "full", "candidates": [], "mustContain": ["$clientThread"], "mustNotContain": ["500 エラーが出ます"] }
+        { "as": "u_kato", "thread": "$issueThread", "access": "full", "candidates": [], "mustContain": [], "mustNotContain": ["$clientThread", "500 エラーが出ます"] }
       ]
     },
     {

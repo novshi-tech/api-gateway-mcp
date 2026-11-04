@@ -85,9 +85,21 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
   };
 }
 
+/**
+ * Viewer に見えるリンク。両端のスレッドを読めるもの（相手のデータソースのリストの読者であること）だけ（0033 の 3）。
+ * 見えない辺は、あることも含めて出さない
+ */
+export function visibleLinks(viewer: Viewer, p: Projections, t: Thread): ThreadLink[] {
+  return t.links.filter((l) => {
+    const u = p.threads[l.threadId];
+    return u !== undefined && canReadDataSource(viewer, u.dataSourceId);
+  });
+}
+
 export function threadItem(dir: Directory, viewer: Viewer, p: Projections, t: Thread): ThreadItem {
   return {
     ...summarizeThread(dir, p, t),
+    links: visibleLinks(viewer, p, t),
     lastActivityAt: lastActivityAt(viewer, p, t),
     turn: turnOf(dir, p, t),
     derivedBall: derivedBall(dir, viewer, p, t),
@@ -186,13 +198,13 @@ export interface TimelineEntry {
   replyExpectedBy?: string | null;
 }
 
-/** 結んだ先の見え方。見えない先は id と経路だけ（中身はその先の可視性に従う） */
+/** 結んだ先。両端を読めるものだけ返す（0033 の 3）。visible は互換のために残し、いつも true */
 export interface LinkView extends ThreadLink {
-  visible: boolean;
-  title?: string;
-  dataSourceId?: string;
-  turn?: Turn;
-  dismissed?: boolean;
+  visible: true;
+  title: string;
+  dataSourceId: string;
+  turn: Turn;
+  dismissed: boolean;
 }
 
 export interface ThreadView {
@@ -216,14 +228,19 @@ export function getThreadView(
   const t = p.threads[threadId];
   if (!t || !canReadDataSource(viewer, t.dataSourceId)) return null;
   const ds = dir.dataSource(t.dataSourceId);
-  const linked: LinkView[] = t.links.map((l) => {
-    const u = p.threads[l.threadId];
-    if (!u || !canReadDataSource(viewer, u.dataSourceId)) return { ...l, visible: false };
+  const linked: LinkView[] = visibleLinks(viewer, p, t).map((l) => {
+    const u = p.threads[l.threadId]!;
     return { ...l, visible: true, title: u.title, dataSourceId: u.dataSourceId, turn: turnOf(dir, p, u), dismissed: u.dismissed };
   });
-  const entries: (ThreadLogEntry & { threadId: string })[] = t.log.map((l) => ({ ...l, threadId: t.id }));
+  // 見えないスレッドとの「結んだ・外した」は出さない（0033 の 3）
+  const readable = (id: string) => {
+    const u = p.threads[id];
+    return u !== undefined && canReadDataSource(viewer, u.dataSourceId);
+  };
+  const entries: (ThreadLogEntry & { threadId: string })[] = t.log
+    .filter((l) => (l.kind !== 'linked' && l.kind !== 'unlinked') || l.otherThreadId === undefined || readable(l.otherThreadId))
+    .map((l) => ({ ...l, threadId: t.id }));
   for (const l of linked) {
-    if (!l.visible) continue;
     for (const e of p.threads[l.threadId]!.log) if (e.kind === 'signal' || e.kind === 'note') entries.push({ ...e, threadId: l.threadId });
   }
   const timeline = sortLog(entries)

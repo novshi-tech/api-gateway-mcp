@@ -168,7 +168,7 @@ describe('持ち主（claim_thread）', () => {
 });
 
 describe('リンク（link_threads / unlink_threads）', () => {
-  it('H3 両端が見えていれば結べる。自分自身・見えない先は不可。結び済みなら何もしない。外すのは見えている側から', () => {
+  it('H3 両端が見えていれば結べる。自分自身・見えない先は不可。結び済みなら何もしない。外すのも両端が見える人だけ（0033）', () => {
     const { log, ctx, threadId, privateThread } = world();
     const n = addNote(log.state(), alice, ctx, { body: '件' });
     log.push(n.events, '2026-10-16T10:00:00.000Z');
@@ -179,11 +179,12 @@ describe('リンク（link_threads / unlink_threads）', () => {
     expect(() => linkThreads(log.state(), alice, { threadId, otherThreadId: threadId })).toThrow(/itself/);
     expect(() => linkThreads(log.state(), bob, { threadId, otherThreadId: privateThread })).toThrow(/not found/);
 
-    // Bob はメモのスレッドの中身は見えないが、support@ のスレッドに載った辺は外せる
-    const off = unlinkThreads(log.state(), bob, { threadId, otherThreadId: n.threadId });
-    expect(off[0]!.type === 'ThreadLinked' && off[0]!.payload).toMatchObject({ op: 'unlink', route: 'manual', actorUserId: 'u_bob' });
-    log.push(off, '2026-10-16T10:02:00.000Z');
+    // Bob にはメモのスレッドが読めないので、辺も見えず外せない（結んでいないのと同じ。0033 の 3）
     expect(unlinkThreads(log.state(), bob, { threadId, otherThreadId: n.threadId })).toEqual([]);
+    const off = unlinkThreads(log.state(), alice, { threadId, otherThreadId: n.threadId });
+    expect(off[0]!.type === 'ThreadLinked' && off[0]!.payload).toMatchObject({ op: 'unlink', route: 'manual', actorUserId: 'u_alice' });
+    log.push(off, '2026-10-16T10:02:00.000Z');
+    expect(unlinkThreads(log.state(), alice, { threadId, otherThreadId: n.threadId })).toEqual([]);
   });
 
   it('H8 結び候補（アンカーの一致）から張ると経路は anchor', () => {

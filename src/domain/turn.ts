@@ -74,7 +74,7 @@ export function isMyTurn(turn: Turn, viewer: Viewer): boolean {
  * - my_turn: どれかが Viewer の番
  * - waiting: 全部が相手待ち
  * - none: それ以外
- * リンクがなければ null
+ * 見えるリンクがなければ null（見えないリンクは、あることも出さない。0033 の 3）
  */
 export type DerivedBall =
   | { kind: 'my_turn'; threadIds: string[] }
@@ -82,8 +82,11 @@ export type DerivedBall =
   | { kind: 'none' };
 
 export function derivedBall(dir: Directory, viewer: Viewer, p: Projections, t: Thread): DerivedBall | null {
-  const linked = visibleLinked(viewer, p, t).filter((x) => !x.dismissed);
-  if (linked.length === 0) return t.links.length === 0 ? null : { kind: 'none' };
+  // 見えないリンクは「リンクなし」と同じ（0033 の 3）
+  const visible = visibleLinked(viewer, p, t);
+  if (visible.length === 0) return null;
+  const linked = visible.filter((x) => !x.dismissed);
+  if (linked.length === 0) return { kind: 'none' };
   const turns = linked.map((x) => ({ id: x.id, turn: turnOf(dir, p, x) }));
   const mine = turns.filter((x) => isMyTurn(x.turn, viewer)).map((x) => x.id);
   if (mine.length > 0) return { kind: 'my_turn', threadIds: mine };
