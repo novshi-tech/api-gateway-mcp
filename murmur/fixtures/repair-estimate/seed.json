@@ -1,0 +1,43 @@
+{
+  "users": [
+    { "id": "u_sato", "name": "佐藤（窓口）" },
+    { "id": "u_suzuki", "name": "鈴木（工事部）" },
+    { "id": "u_outsider", "name": "チームの外の人（このデプロイに Contact がない）" }
+  ],
+  "contacts": [
+    { "id": "p_sato", "name": "佐藤", "userId": "u_sato" },
+    { "id": "p_suzuki", "name": "鈴木", "userId": "u_suzuki" },
+    { "id": "p_takahashi", "name": "グランメゾン管理組合 高橋理事長", "externalRefs": { "bm-next": "customer-1203" } },
+    { "id": "p_yamada", "name": "山田工務店", "externalRefs": { "board": "vendor-88" } }
+  ],
+  "addresses": [
+    { "id": "a_sato", "channel": "email", "value": "sato@ubs.example", "contactId": "p_sato" },
+    { "id": "a_suzuki", "channel": "email", "value": "suzuki@ubs.example", "contactId": "p_suzuki" },
+    { "id": "a_takahashi", "channel": "email", "value": "takahashi@grandmaison.example", "contactId": "p_takahashi" },
+    { "id": "a_yamada", "channel": "email", "value": "mitsumori@yamada-koumuten.example", "contactId": "p_yamada" }
+  ],
+  "credentialRefs": [
+    { "id": "c_support", "principal": { "kind": "team" }, "address": { "channel": "email", "value": "support@ubs.example" } },
+    { "id": "c_suzuki", "principal": { "kind": "user", "userId": "u_suzuki" }, "address": { "channel": "email", "value": "suzuki@ubs.example" } }
+  ],
+  "dataSources": [
+    { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客からの問い合わせの窓口", "credentialRefId": "c_support", "selfAddresses": [{ "channel": "email", "value": "support@ubs.example" }] },
+    { "kind": "service", "id": "ds_suzuki_mail", "channel": "email", "name": "鈴木のメールボックス", "description": "鈴木の個人のメールボックス", "credentialRefId": "c_suzuki", "selfAddresses": [] },
+    { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerUserId": "u_sato" },
+    { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerUserId": "u_suzuki" }
+  ],
+  "lists": [
+    { "id": "l_support", "dataSourceId": "ds_support" },
+    { "id": "l_suzuki_mail", "dataSourceId": "ds_suzuki_mail" },
+    { "id": "l_notes_sato", "dataSourceId": "ds_notes_sato" },
+    { "id": "l_notes_suzuki", "dataSourceId": "ds_notes_suzuki" }
+  ],
+  "listMembers": [
+    { "listId": "l_support", "userId": "u_sato" },
+    { "listId": "l_support", "userId": "u_suzuki" },
+    { "listId": "l_suzuki_mail", "userId": "u_suzuki" },
+    { "listId": "l_notes_sato", "userId": "u_sato" },
+    { "listId": "l_notes_suzuki", "userId": "u_suzuki" }
+  ],
+  "attributeDefs": []
+}

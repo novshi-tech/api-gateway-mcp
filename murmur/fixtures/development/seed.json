@@ -1,0 +1,52 @@
+{
+  "users": [
+    { "id": "u_nose", "name": "能勢" },
+    { "id": "u_kato", "name": "加藤" },
+    { "id": "u_ubs_only", "name": "チームの外の人（このデプロイに Contact がない）" }
+  ],
+  "contacts": [
+    { "id": "p_nose", "name": "能勢", "userId": "u_nose" },
+    { "id": "p_kato", "name": "加藤", "userId": "u_kato" },
+    { "id": "p_mori", "name": "森（クライアント PM）" },
+    { "id": "p_jira", "name": "Jira" },
+    { "id": "p_bitbucket", "name": "Bitbucket" }
+  ],
+  "addresses": [
+    { "id": "a_nose_slack", "channel": "slack", "value": "T_NVT/U_NOSE", "contactId": "p_nose" },
+    { "id": "a_kato_slack", "channel": "slack", "value": "T_NVT/U_KATO", "contactId": "p_kato" },
+    { "id": "a_mori_slack", "channel": "slack", "value": "T_CLIENT/U_MORI", "contactId": "p_mori" },
+    { "id": "a_jira_bot", "channel": "jira", "value": "jira-automation@nvt.atlassian.net", "contactId": "p_jira" },
+    { "id": "a_nose_jira", "channel": "jira", "value": "acct-nose", "contactId": "p_nose" },
+    { "id": "a_kato_jira", "channel": "jira", "value": "acct-kato", "contactId": "p_kato" },
+    { "id": "a_bb_bot", "channel": "bitbucket", "value": "bitbucket-notifications@bitbucket.org", "contactId": "p_bitbucket" }
+  ],
+  "credentialRefs": [
+    { "id": "c_nose_slack", "principal": { "kind": "user", "userId": "u_nose" }, "address": { "channel": "slack", "value": "T_NVT/U_NOSE" } },
+    { "id": "c_jira", "principal": { "kind": "team" }, "address": { "channel": "jira", "value": "nvt.atlassian.net" } },
+    { "id": "c_bb", "principal": { "kind": "team" }, "address": { "channel": "bitbucket", "value": "bitbucket.org/nvt" } }
+  ],
+  "dataSources": [
+    { "kind": "service", "id": "ds_slack_client", "channel": "slack", "name": "Slack 共有チャンネル #client-mori", "description": "クライアント PM（森さん）との共有チャンネル。能勢の資格情報で取り込む", "credentialRefId": "c_nose_slack", "selfAddresses": [], "group": true },
+    { "kind": "service", "id": "ds_jira", "channel": "jira", "name": "Jira プロジェクト NVT", "description": "開発の課題。1 課題 1 スレッド", "credentialRefId": "c_jira", "selfAddresses": [{ "channel": "jira", "value": "nvt.atlassian.net" }] },
+    { "kind": "service", "id": "ds_bitbucket", "channel": "bitbucket", "name": "Bitbucket nvt/web", "description": "プルリクエストとパイプラインの通知", "credentialRefId": "c_bb", "selfAddresses": [{ "channel": "bitbucket", "value": "bitbucket.org/nvt" }] },
+    { "kind": "notes", "id": "ds_notes_nose", "name": "能勢のメモ", "ownerUserId": "u_nose" },
+    { "kind": "notes", "id": "ds_notes_kato", "name": "加藤のメモ", "ownerUserId": "u_kato" }
+  ],
+  "lists": [
+    { "id": "l_slack_client", "dataSourceId": "ds_slack_client" },
+    { "id": "l_jira", "dataSourceId": "ds_jira" },
+    { "id": "l_bitbucket", "dataSourceId": "ds_bitbucket" },
+    { "id": "l_notes_nose", "dataSourceId": "ds_notes_nose" },
+    { "id": "l_notes_kato", "dataSourceId": "ds_notes_kato" }
+  ],
+  "listMembers": [
+    { "listId": "l_slack_client", "userId": "u_nose" },
+    { "listId": "l_jira", "userId": "u_nose" },
+    { "listId": "l_jira", "userId": "u_kato" },
+    { "listId": "l_bitbucket", "userId": "u_nose" },
+    { "listId": "l_bitbucket", "userId": "u_kato" },
+    { "listId": "l_notes_nose", "userId": "u_nose" },
+    { "listId": "l_notes_kato", "userId": "u_kato" }
+  ],
+  "attributeDefs": []
+}

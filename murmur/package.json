@@ -1,0 +1,37 @@
+{
+  "name": "murmur",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI ネイティブ タスク管理ツールのプロトタイプ（データモデルとアーキテクチャの検証用）",
+  "scripts": {
+    "dev": "wrangler dev -c wrangler.example.jsonc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "scenario": "tsx scripts/scenario.ts",
+    "seed": "tsx scripts/seed.ts",
+    "send": "tsx scripts/send.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node tools/wrangler.mjs d1-migrate",
+    "deploy": "node tools/wrangler.mjs deploy",
+    "secret": "node tools/wrangler.mjs secret",
+    "tail": "node tools/wrangler.mjs tail"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261016.1",
+    "@types/node": "^26.6.5",
+    "drizzle-kit": "^0.31.11",
+    "miniflare": "5.20261012.0-beta",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

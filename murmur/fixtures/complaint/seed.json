@@ -1,0 +1,39 @@
+{
+  "users": [
+    { "id": "u_sato", "name": "佐藤（窓口）" },
+    { "id": "u_suzuki", "name": "鈴木（清掃管理）" },
+    { "id": "u_nvt", "name": "チームの外の人（このデプロイに Contact がない）" }
+  ],
+  "contacts": [
+    { "id": "p_sato", "name": "佐藤", "userId": "u_sato" },
+    { "id": "p_suzuki", "name": "鈴木", "userId": "u_suzuki" },
+    { "id": "p_tanaka", "name": "田中ビル オーナー 田中様" },
+    { "id": "p_cleanco", "name": "クリーンサービス東都" }
+  ],
+  "addresses": [
+    { "id": "a_tanaka", "channel": "email", "value": "owner@tanaka-bldg.example", "contactId": "p_tanaka" },
+    { "id": "a_cleanco", "channel": "email", "value": "ops@clean-toto.example", "contactId": "p_cleanco" }
+  ],
+  "credentialRefs": [
+    { "id": "c_support", "principal": { "kind": "team" }, "address": { "channel": "email", "value": "support@ubs.example" } }
+  ],
+  "dataSources": [
+    { "kind": "service", "id": "ds_support", "channel": "email", "name": "support@（組織のメールボックス）", "description": "顧客と協力会社とのやりとりの窓口", "credentialRefId": "c_support", "selfAddresses": [{ "channel": "email", "value": "support@ubs.example" }] },
+    { "kind": "notes", "id": "ds_notes_sato", "name": "佐藤のメモ", "ownerUserId": "u_sato" },
+    { "kind": "notes", "id": "ds_notes_suzuki", "name": "鈴木のメモ", "ownerUserId": "u_suzuki" }
+  ],
+  "lists": [
+    { "id": "l_support", "dataSourceId": "ds_support" },
+    { "id": "l_notes_sato", "dataSourceId": "ds_notes_sato" },
+    { "id": "l_notes_suzuki", "dataSourceId": "ds_notes_suzuki" }
+  ],
+  "listMembers": [
+    { "listId": "l_support", "userId": "u_sato" },
+    { "listId": "l_support", "userId": "u_suzuki" },
+    { "listId": "l_notes_sato", "userId": "u_sato" },
+    { "listId": "l_notes_suzuki", "userId": "u_suzuki" }
+  ],
+  "attributeDefs": [
+    { "dataSourceId": "ds_notes_sato", "name": "priority", "type": "enum", "options": ["高", "中", "低"], "description": "件の優先度。本人が付ける" }
+  ]
+}
