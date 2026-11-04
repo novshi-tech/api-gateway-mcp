@@ -32,7 +32,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 初めてつないだユーザーは名無しで、Contact(連絡先の自分)もリストもない(`GET /me` が `contact: null`・`lists: []`)。次の順に案内する。
 
 1. 呼び方を聞いて `PATCH /me` で付ける
-2. 自分の Outlook をリストにするなら、`POST /connections/outlook` を呼ぶ(下の「Outlook をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
+2. 自分の Outlook・Jira をリストにするなら、`POST /connections/outlook`・`POST /connections/jira` を呼ぶ(下の「Outlook をつなぐ」「Jira をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
 3. ほかの自分の箱(Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
    - `created`: 自分の Contact を新しく作った / `bound`: チームが先に作っていたゴーストが自分に結ばれた / `attached`・`already`: 自分の Contact に付いた
    - `merge_candidate`: そのアドレスは別のゴースト(`ghostContactId`)に付いている。同じ人なら、ユーザーに確かめてから `POST /contacts/{自分の contactId}/merge` で `from` にゴーストを渡してまとめる
@@ -51,6 +51,17 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
    - `connected`: つながった(`data_source`)。何度呼んでもよい
 3. メールボックスのアドレスとエイリアスは自分の Contact に付く。別の人のアドレスが混じっていると `conflict` になるので、そのまま伝える
 4. 取り込むのはつないだあとに届くメールだけ(過去のメールは取らない)。止めるときは `POST /connections/{data_source}/disconnect`(スレッドとデータソースは残る)。`GET /connections` の `status` が `broken` なら、理由(`reason`)を伝えて、もう一度つないでもらう
+
+### Jira をつなぐ
+
+Jira は課題の状態(担当者・ステータス・期日)を自分で持つので、自分のリスト(読者は自分だけ)として取り込む。同意は Outlook と同じもの(Outlook をつないでいれば、許可の画面は出ない)。
+
+1. ゲートウェイで Jira がつながっているか(`list_credentials` の `jira`)を確かめる。なければ先にゲートウェイでつないでもらう
+2. どの課題を追いたいかをユーザーに聞き、JQL にする(`jql`)。省けば「担当・起票・ウォッチ」(`assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()`)。並び(`ORDER BY`)は書かなくてよい
+3. `POST /connections/jira` を呼び、`status` で分ける。`authorize`・`choose`・`no_credential` は Outlook と同じ。`choose_site` なら `sites` からユーザーに選んでもらい、`site`(その `id`)を付けてもう一度呼ぶ
+4. 取り込むのは、つないだあとに更新された課題。課題ごとにスレッドが 1 つでき、状態は写し(`source`)、起票とコメントはシグナルになる。誰の番は Jira の担当者で決まる
+5. 追う範囲を変えるときは `PATCH /connections/{data_source}` に `jql`。外れた課題のスレッドは消えない(片付けるかはユーザーに聞く)
+6. 起票・コメント・状態の変更は、これまでどおり Jira のスキルで行い、そのあと `record_sent` で記録する(起票は `sent_ref` に課題キー、コメントは `<課題キー>#c<コメント ID>`)
 
 ### 名寄せ(Contact)
 
@@ -119,7 +130,9 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | record_sent | `POST /sent` | 下の「送信の記録」 | 送ったシグナルの入ったスレッド(`get_thread` と同じ) |
 | rename_me | `PATCH /me` | `{"name"}` | `me` と同じ |
 | connect_outlook | `POST /connections/outlook` | `{"credential_id"?}`(ゲートウェイの Graph の接続。複数あるときだけ) | `status`: `authorize`(`authorize_url`)・`choose`(`credentials`)・`no_credential`(`register_url`)・`connected`(`data_source`、`created`)。上の「Outlook をつなぐ」 |
-| list_connections | `GET /connections` | | 自分がつないだメールボックスと取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
+| connect_jira | `POST /connections/jira` | `{"credential_id"?, "site"?, "jql"?}`(`site` は `choose_site` の `sites[].id`) | `connect_outlook` と同じ + `choose_site`(`sites`)。上の「Jira をつなぐ」 |
+| list_connections | `GET /connections` | | 自分がつないだもの(`kind`: `outlook` / `jira`、Jira は `site`・`jql`)と取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
+| set_connection | `PATCH /connections/{data_source}` | `{"jql"}`(Jira の範囲) | `list_connections` と同じ |
 | disconnect | `POST /connections/{data_source}/disconnect` | | 取り込みを止める。スレッドとデータソースは残る |
 | create_data_source | `POST /data-sources` | `{"channel", "name", "identity", "gateway_credential_id", "description"?, "group"?}`。個人のリスト(読者は自分だけ) | `get_list` と同じ + `identity`(上の「初めてつないだとき」) |
 | set_identity | `POST /lists/{list_id}/identity` | `{"identity"}`(そのリストでの自分のアカウント) | `identity` の結果(`kind`・`contactId`) |
