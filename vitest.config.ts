@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { experimental_readRawConfig } from "wrangler";
 
 const CONFIG = "./wrangler.example.jsonc";
@@ -184,6 +184,8 @@ async function upstream(request: Request): Promise<Response> {
 }
 
 export default defineConfig({
+  // murmur/ is its own package with its own tests (npm test in murmur/). See murmur/docs/adr/0023.
+  test: { exclude: [...configDefaults.exclude, "murmur/**"] },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: CONFIG },

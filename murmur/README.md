@@ -6,11 +6,11 @@ AI ネイティブ タスク管理ツールのプロトタイプ。イベント�
 - 計画: [docs/PLAN.md](docs/PLAN.md)（実装の順序と仮説 H1〜H7）
 - 開発の約束事と構成: [CLAUDE.md](CLAUDE.md)
 - 決定の記録: [docs/adr/](docs/adr/)
-- 接続手順: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは api-gateway-mcp のプラグイン `api-gateway-murmur`）
+- 接続手順: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは同じリポジトリのプラグイン `api-gateway-murmur`、`../plugins/api-gateway-murmur`）
 - シナリオ: [fixtures/](fixtures/)
 
 ```sh
-pnpm install
-pnpm test
-pnpm scenario verify all
+npm install
+npm test
+npm run scenario verify all
 ```

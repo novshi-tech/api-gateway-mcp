@@ -6,7 +6,7 @@ fixtures/<scenario>/
   seed.json        # User / Contact / Address / CredentialRef / DataSource（個人のメモを含む） / List / ListMember / AttributeDef
   signals.jsonl    # 時刻順のステップ（観測されたシグナル・スタンドの操作・Cron）。// で始まる行はコメント
   expected.json    # シグナルごとの区切りと「返事や対応を求めているか」の正解ラベル、各時点のスレッドの状態、可視性
-  recordings/      # Claude 呼び出しの入出力（再生モード用）。pnpm scenario verify <name> --ai record で作る
+  recordings/      # Claude 呼び出しの入出力（再生モード用）。npm run scenario verify <name> -- --ai record で作る
 ```
 
 seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で整合性を確かめる。データソース 1 つにリスト 1 つ、
@@ -58,6 +58,6 @@ seed.json は読み込み時に `seedProblems`（`src/domain/directory.ts`）で
 | absence（欠勤連絡） | draft | LINE。返事待ちの規則で打診への返事を取り違えない。木村が持ち、打診を送って記録して欠勤のスレッドと結ぶ（メモなし）。スタンド主導で回して置き換える（H7） |
 | complaint（クレーム） | draft | 佐藤が持ち、協力会社への依頼を記録（期限超過 → 解消）、お詫びは観測が先で記録があと。メモのスレッドで結んで優先度を付け、閉じる。片付けたスレッドへの返信で別件が届き（閉じた件に結ばれた先が動く）、シグナルを移し替える。同上 |
 
-`recordings/` は v2 のプロンプトで 2026-10-21 に取った（claude-sonnet-5-5）。`pnpm test` で H6 の一致率が測られる。
-プロンプトかモデルを変えたら `ANTHROPIC_API_KEY` を設定して `pnpm scenario verify all --ai rerecord` で取り直す。
+`recordings/` は v2 のプロンプトで 2026-10-21 に取った（claude-sonnet-5-5）。`npm test` で H6 の一致率が測られる。
+プロンプトかモデルを変えたら `ANTHROPIC_API_KEY` を設定して `npm run scenario verify all -- --ai rerecord` で取り直す。
 添付の `files/` は参照（パスとハッシュ）だけで、実体は置いていない。

@@ -1,5 +1,5 @@
 {
-  // デプロイの設定のひな形（docs/adr/0029）。pnpm dev・CI のドライランはこれを使う。
+  // デプロイの設定のひな形（docs/adr/0029）。npm run dev・CI のドライランはこれを使う。
   // デプロイは deployments/<名前>.jsonc で行う（deployments/ は git の管理外。デプロイする人の private リポジトリを clone する）。
   // ひな形からデプロイの設定を作るときは、$schema・main・migrations_dir のパスの先頭に ../ を付ける。
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -24,11 +24,11 @@
     "GATEWAY_JWKS": "{\"keys\":[]}"
   },
   // D1（0021）: wrangler d1 create murmur --location apac の出力の database_id を書く。
-  // マイグレーションは pnpm db:migrate <名前>（drizzle/ を当てる）
+  // マイグレーションは npm run db:migrate <名前>（drizzle/ を当てる）
   "d1_databases": [
     { "binding": "DB", "database_name": "murmur", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }
   ]
-  // secrets（pnpm secret <名前> put <KEY>）: ANTHROPIC_API_KEY, WEBHOOK_SECRET, TIMELINE_TOKEN
+  // secrets（npm run secret <名前> put <KEY>）: ANTHROPIC_API_KEY, WEBHOOK_SECRET, TIMELINE_TOKEN
   //
   // 外部コネクタ（個人の箱の Outlook、docs/adr/0024）。使わないデプロイは何も書かなくてよい。
   // vars の PUBLIC_URL（本体の公開 URL。workers_dev か routes で公開する）と、secret の TOKEN_KEY

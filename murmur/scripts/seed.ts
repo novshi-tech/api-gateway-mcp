@@ -5,15 +5,15 @@ import { join } from 'node:path';
 import { loadScenario } from './lib/scenario';
 import { parseUserMap, renameUsers, seedSql } from './lib/seed';
 
-// pnpm seed <scenario> --deployment <名前> [--user <seed の User ID>=<ゲートウェイの User ID>]...
-// pnpm seed <scenario> --local [--user ...]   （wrangler dev のローカルの D1。ひな形の設定を使う）
+// npm run seed <scenario> -- --deployment <名前> [--user <seed の User ID>=<ゲートウェイの User ID>]...
+// npm run seed <scenario> -- --local [--user ...]   （wrangler dev のローカルの D1。ひな形の設定を使う）
 // 実環境の D1 を空にして（イベント・投影・ダミーのキューも）、fixtures/<scenario>/seed.json を入れる。
 // SQL を作って wrangler d1 execute で流す（Cloudflare の認証は wrangler のもの）。シナリオは 1 つずつ回す（H7）
 
 function main() {
   const [name, ...rest] = process.argv.slice(2);
   if (!name || name.startsWith('--')) {
-    throw new Error('usage: pnpm seed <scenario> (--deployment <名前> | --local) [--user <seed の User ID>=<ゲートウェイの User ID>]...');
+    throw new Error('usage: npm run seed <scenario> (--deployment <名前> | --local) [--user <seed の User ID>=<ゲートウェイの User ID>]...');
   }
   const local = rest.includes('--local');
   const deploymentAt = rest.indexOf('--deployment');
@@ -27,7 +27,7 @@ function main() {
   try {
     const file = join(dir, 'seed.sql');
     writeFileSync(file, seedSql(seed));
-    execFileSync('pnpm', ['exec', 'wrangler', 'd1', 'execute', 'DB', '--config', config, local ? '--local' : '--remote', `--file=${file}`], {
+    execFileSync('npx', ['wrangler', 'd1', 'execute', 'DB', '--config', config, local ? '--local' : '--remote', `--file=${file}`], {
       stdio: 'inherit',
     });
     console.log(`${name}: users=${seed.users.map((u) => u.id).join(',')}`);

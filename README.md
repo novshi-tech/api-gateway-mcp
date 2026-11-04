@@ -19,6 +19,10 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
 
 Claude の Cowork で動作を確認しています。MCP の OAuth に従っているので、ほかの Claude のクライアントや ChatGPT のコネクタにも対応する設計ですが、まだ確認していません。設計の詳細は [docs/concept.md](docs/concept.md) と [docs/auth-design.md](docs/auth-design.md) にあります。
 
+## Murmur
+
+[`murmur/`](murmur/) は、ゲートウェイと組み合わせて使う「チームの仕事の記憶」(Murmur)です。メールや Jira などの連絡から対応の要る件を拾い、誰の番かを追います。利用者は意識せず、Claude が裏で読んで「いまやるべきこと」に答えるための記憶です。いまは別の Worker としてデプロイしますが、ゲートウェイの機能として 1 つのデプロイにまとめていきます([docs/adr/0005](docs/adr/0005-murmur-as-a-feature.md))。ゲートウェイだけを使うなら、`murmur/` は無視してかまいません。
+
 ## 前提
 
 - Cloudflare のアカウント(Workers、Durable Objects、KV を使います)
@@ -320,6 +324,8 @@ npm run dev       # wrangler.example.jsonc で動かす
 npm run typecheck
 npm test          # Worker のテストと、スキルのスクリプトのテスト
 ```
+
+Murmur は `murmur/` の中で別のパッケージになっています(`cd murmur && npm install && npm test`。詳しくは [murmur/CLAUDE.md](murmur/CLAUDE.md))。
 
 ## License
 

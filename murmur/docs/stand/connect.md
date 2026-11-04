@@ -40,23 +40,23 @@ Murmur の本体はゲートウェイの上流サービス `murmur` として登
 受信の Webhook と管理画面を使うなら `workers_dev` を `true` にする。
 
 ```sh
-pnpm install
+npm install
 git clone <デプロイの設定のリポジトリ> deployments
 # D1 を作り（日本のチームなら apac）、出力の database_id を deployments/<名前>.jsonc に書く（初回だけ）
-pnpm exec wrangler d1 create murmur --location apac
+npx wrangler d1 create murmur --location apac
 # マイグレーション（drizzle/ を当てる。スキーマを変えたらデプロイの前に手で当てる）
-pnpm db:migrate <名前>
-pnpm run deploy <名前>
+npm run db:migrate <名前>
+npm run deploy <名前>
 # secrets
-pnpm secret <名前> put ANTHROPIC_API_KEY
-pnpm secret <名前> put WEBHOOK_SECRET
-pnpm secret <名前> put TIMELINE_TOKEN   # 管理画面（/admin・timeline.html）を見る人だけに渡す
+npm run secret <名前> put ANTHROPIC_API_KEY
+npm run secret <名前> put WEBHOOK_SECRET
+npm run secret <名前> put TIMELINE_TOKEN   # 管理画面（/admin・timeline.html）を見る人だけに渡す
 ```
 
 設定を変えたら、設定のリポジトリにコミットしてプッシュする。CI はデプロイしない。
 
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
-マスタ（seed）の投入は `pnpm seed <scenario> --deployment <名前> --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で流す）。
+マスタ（seed）の投入は `npm run seed <scenario> -- --deployment <名前> --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で流す）。
 DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
 WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
 

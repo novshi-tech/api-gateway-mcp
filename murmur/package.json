@@ -33,14 +33,7 @@
     "vitest": "^3.2.7",
     "wrangler": "^4.151.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "workerd"
-    ]
-  },
   "engines": {
     "node": ">=22"
-  },
-  "packageManager": "pnpm@10.28.0"
+  }
 }

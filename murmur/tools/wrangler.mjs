@@ -2,10 +2,10 @@
 // デプロイの設定 deployments/<名前>.jsonc を渡して wrangler を呼ぶ（docs/adr/0029）。
 // deployments/ はこのリポジトリの git の管理外。デプロイする人の private リポジトリを clone する。
 //
-//   pnpm run deploy <名前> [wrangler deploy のオプション]（pnpm deploy は pnpm の組み込みなので run を付ける）
-//   pnpm secret <名前> put <KEY>          （list・delete も）
-//   pnpm tail <名前> [--format json]
-//   pnpm db:migrate <名前>                 （wrangler d1 migrations apply DB --remote）
+//   npm run deploy <名前> [-- wrangler deploy のオプション]
+//   npm run secret <名前> put <KEY>          （list・delete も）
+//   npm run tail <名前> [-- --format json]
+//   npm run db:migrate <名前>                 （wrangler d1 migrations apply DB --remote）
 //   node tools/wrangler.mjs <wrangler のコマンド> <名前> [オプション]
 //
 // 直下に wrangler.jsonc を置かないので、名前のない wrangler deploy はどこにもデプロイしない。
@@ -26,7 +26,7 @@ const names = existsSync(dir)
   : [];
 
 if (!command || !name) {
-  console.error(`usage: pnpm ${command ?? '<deploy|secret|tail|db:migrate>'} <deployment> [options]`);
+  console.error(`usage: npm run ${command ?? '<deploy|secret|tail|db:migrate>'} <deployment> [options]`);
   console.error(
     names.length
       ? `deployments: ${names.join(', ')}`
@@ -42,5 +42,5 @@ if (!existsSync(config)) {
 }
 
 const args = [...(ALIASES[command] ?? [command]), ...rest, '--config', relative(root, config)];
-const result = spawnSync('pnpm', ['exec', 'wrangler', ...args], { cwd: root, stdio: 'inherit' });
+const result = spawnSync('npx', ['wrangler', ...args], { cwd: root, stdio: 'inherit' });
 process.exit(result.status ?? 1);

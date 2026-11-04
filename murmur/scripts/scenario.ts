@@ -4,10 +4,10 @@ import { d1Repo } from '../src/store/d1';
 import { localD1 } from './lib/d1';
 import { listScenarios, loadScenario, runScenario, verifyScenario, type DeciderMode } from './lib/scenario';
 
-// pnpm scenario run <name|all> [--ai replay|record|rerecord] [--db memory|d1]
-// pnpm scenario verify <name|all> [...]   expected.json と比較し、H1 のリプレイ比較も行う
+// npm run scenario run <name|all> [--ai replay|record|rerecord] [--db memory|d1]
+// npm run scenario verify <name|all> [...]   expected.json と比較し、H1 のリプレイ比較も行う
 
-const USAGE = 'usage: pnpm scenario <run|verify> <name|all> [--ai replay|record|rerecord] [--db memory|d1] [--model <id>]';
+const USAGE = 'usage: npm run scenario <run|verify> <name|all> [--ai replay|record|rerecord] [--db memory|d1] [--model <id>]';
 
 async function main() {
   const [cmd, target, ...rest] = process.argv.slice(2);
