@@ -21,7 +21,19 @@
 - 0030 の今の実装でも、Contact に解決できない保持者はボールが `{ kind: 'contact', contactIds: [] }` になっていた（決定の「解決できなければアドレスのまま」が入っていなかった）。同じブランチで直した: `Ball`・`Turn` の `contact` に `addresses`、スレッドに `counterpartAddresses`（クエリ層だけ。0030 の末尾の追記）。0029 の問題意識はこれで片付く
 - スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.3（0.1.2 で「Outlook をつなぐ」の手順と connections の API の表、0.1.3 で解決できなかった相手のアドレス）
 - テスト: 283 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
-- 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は、main に入ったら消してよい
+- **同じ日に main に入れてデプロイした**: api-gateway-mcp#36（`api-gateway-murmur` 0.1.3）を nvt・ubs・kujira に出し直し、murmur#18（main の 15c36f7）を UBS に出した。UBS の D1 に `0002_connectors` を当ててから Worker を出した（バージョン `9aa1d19d-5cb0-466d-b45b-3c3332381377`）。ゲートウェイ経由の `GET /me`・`GET /threads` は 200、`GET /connections` は「connectors are not configured」の 404（UBS には外部コネクタの設定を入れていないので想定どおり）
+- 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は main に入ったので消してよい
+- **同じ日に UBS で Outlook を有効にして、直樹の箱をつないだ。** 設定（murmur-deployments のブランチ `claude/gifted-mccarthy-3ab6w1`、main には未反映）: `PUBLIC_URL` は開いていた workers.dev（`https://murmur.urban-b.workers.dev`）、ゲートウェイへは Service Binding `GATEWAY_WEB`、キュー `murmur-sync`（作成済み）、secret の `TOKEN_KEY`。Worker のバージョン `7c07f59d-99a7-4d04-8f48-f15924fc98bd`
+  - ゲートウェイが workers.dev の CIMD（`/oauth/client.json`）を読めた。同意 → コールバック → データソース「野瀬直樹 の Outlook」（読者は直樹だけ、Contact は自動で作られ名前はアドレスのまま）
+  - 実物で確かめた: 受信（返事の要らない文面）→ 新しいスレッド・`needsResponse: false`・ボールなし。返事の要る文面 → `true`・こちらの番。**Outlook から返信 → 送信済みの取り込みで同じスレッドに入り（区切りは AI。送信済みにはヘッダーがない）、ボールは相手へ。相手はマスタにないので `addresses` に出る**（10-30 に残っていた「送信済みの取り込みを実物で見る」は済み）
+  - 既知: `last_sync_at` が通知の同期では進まない（10-30 の申し送りのまま）
+- murmur-deployments の設定は main に入れた（murmur-deployments#1）。直樹の User と Contact に名前を付けた（`PATCH /me` は User だけで Contact の名前は変わらないので、`PATCH /contacts/{id}` も呼んだ）
+- **Jira のコネクタの ADR `docs/adr/0034`（案）を書いた。** 個人リストとして本人の権限（ゲートウェイの `jira`、本体の同意は Outlook と共有）、範囲は本人の JQL（既定は担当・起票・ウォッチ）＋開いているスレッドの課題キー、差分は相対時刻の JQL、通知はヒント（動的 Webhook は S0 で確かめてから）、写像は 0031 の形（状態の変更は写しだけ、シグナルは起票とコメント）。直樹のレビュー待ち
+  - 直樹の指示で、動的 Webhook を最初の版から入れる形に直した（Outlook と同じ）。受け口は URL に入れたデータソースごとの秘密で守る（Graph の clientState と同じ強さ。Jira の署名の JWT はゲートウェイの Atlassian のアプリの鍵なので本体だけでは検証できない）
+  - S0 は UBS で回す（直樹）。UBS のゲートウェイに組み込みの `jira` を有効にする: Atlassian の developer console で OAuth 2.0 のアプリを作り（Callback は `https://gateway.urban-b.com/connect/callback`、スコープは api-gateway-mcp の README の Jira の節）、`OAUTH_ATLASSIAN_CLIENT_ID` / `_SECRET` を ubs のゲートウェイに入れる
+- **UBS のゲートウェイに組み込みの `jira` を有効にし（Atlassian のアプリ。User identity API の `read:me` を足し忘れて一度失敗）、0034 の S0 を回した**（`docs/research/2026-11-04-jira-s0.md`）。読み取りは全部通る（GET の search/jql・相対時刻・`nextPageToken`・コメントは課題ごと）。動的 Webhook は登録・到達とも通った。わかった制約: URL は本人ごとに 1 つ、jqlFilter に `watcher` は使えない。0034 に反映した。テストの Webhook とコメントは消した
+- **0034 を採用し、S1・S2 を実装した**（0034 の「実装の記録」）。`POST /connections/jira`・`PATCH /connections/{id}`・`/webhooks/jira/<秘密>`。307 件緑、4 シナリオは `--ai replay`・`--db d1` も一致。スキルは api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.4
+- 次: 2 本の PR（スキルを先に）→ UBS に出す（マイグレーションなし。ゲートウェイの `jira` は有効化済み）→ 直樹が Jira をつなぎ、届いた Webhook の本文の形（ログの `jira_webhook`）を確かめる。そのあと 2 週間の試用（0016 の段階 5）の数え方
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。

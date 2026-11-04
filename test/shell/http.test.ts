@@ -326,6 +326,8 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     const ctx = await makeService(seed);
     const notified: unknown[] = [];
     const connectOutlook = async (userId: string, credentialId?: string) => ({ status: 'authorize', authorize_url: `https://gw/authorize?u=${userId}&c=${credentialId ?? ''}` });
+    const connectJira = async (userId: string, input: unknown) => ({ status: 'connected', userId, input });
+    const setJiraScope = async (userId: string, id: string, jql: string) => [{ data_source: id, userId, jql }];
     const http = createApp({
       service: () => ctx.service,
       authenticate: async (token) => {
@@ -335,11 +337,15 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
       webhookVerify: async () => false,
       connectors: withConnectors
         ? () => ({
-            connections: { connectOutlook, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
+            connections: { connectOutlook, connectJira, setJiraScope, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
             clientMetadata: { client_id: 'https://murmur.test/oauth/client.json' },
             notifications: async (body) => {
               notified.push(body);
               return 1;
+            },
+            jiraNotified: async (secret: string, body: unknown) => {
+              notified.push({ secret, body });
+              return secret === 'good' ? 1 : null;
             },
           })
         : undefined,
@@ -372,6 +378,25 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
       body: JSON.stringify({ credential_id: 'gw_1' }),
     });
     expect(await res.json()).toEqual({ status: 'authorize', authorize_url: 'https://gw/authorize?u=u_bob&c=gw_1' });
+  });
+
+  it('H9 Jira の受け口（0034）: URL の秘密が合えば 202（中身は使わない）、合わなければ 404', async () => {
+    const { http, notified } = await app();
+    const ok = await http.request('/webhooks/jira/good', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ webhookEvent: 'comment_created' }) });
+    expect(ok.status).toBe(202);
+    expect((await http.request('/webhooks/jira/bad', { method: 'POST', body: 'not json' })).status).toBe(404);
+    expect(notified).toEqual([{ secret: 'good', body: { webhookEvent: 'comment_created' } }, { secret: 'bad', body: null }]);
+  });
+
+  it('H9 /api/connections/jira と範囲の変更（本人の JWT が要る）', async () => {
+    const { http } = await app();
+    const auth = { authorization: `Bearer ${await sign(claims('u_bob'))}`, 'content-type': 'application/json' };
+    expect((await http.request('/api/connections/jira', { method: 'POST' })).status).toBe(401);
+    const res = await http.request('/api/connections/jira', { method: 'POST', headers: auth, body: JSON.stringify({ site: 'cloud-1', jql: 'project = SPW' }) });
+    expect(await res.json()).toEqual({ status: 'connected', userId: 'u_bob', input: { credentialId: undefined, cloudId: 'cloud-1', jql: 'project = SPW' } });
+    const patch = await http.request('/api/connections/ds_1', { method: 'PATCH', headers: auth, body: JSON.stringify({ jql: 'assignee = currentUser()' }) });
+    expect(await patch.json()).toEqual([{ data_source: 'ds_1', userId: 'u_bob', jql: 'assignee = currentUser()' }]);
+    expect((await http.request('/api/connections/ds_1', { method: 'PATCH', headers: auth, body: JSON.stringify({ jql: '' }) })).status).toBe(400);
   });
 
   it('設定がなければ 404', async () => {

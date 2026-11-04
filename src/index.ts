@@ -18,6 +18,8 @@ import { GatewayGraphApi } from './connectors/graph/api';
 import { SyncJob, type SyncQueue } from './connectors/graph/jobs';
 import { jobsFromNotifications } from './connectors/graph/notifications';
 import { GraphMailSync } from './connectors/graph/sync';
+import { GatewayJiraApi } from './connectors/jira/api';
+import { JiraSync } from './connectors/jira/sync';
 import { randomHex, SecretBox, sha256Hex } from './connectors/secrets';
 import { D1ConnectorState } from './store/connector-state';
 
@@ -45,6 +47,8 @@ export interface Env {
   TOKEN_KEY?: string;
   /** ゲートウェイの Microsoft Graph の接続先の名前（既定 graph） */
   GRAPH_SERVICE?: string;
+  /** ゲートウェイの Jira の接続先の名前（省けば jira。0034） */
+  JIRA_SERVICE?: string;
   /** 取り込みのキュー（同時実行 1）。なければその場で処理する（ローカルの確認用） */
   SYNC_QUEUE?: Queue<SyncJob>;
   /** ゲートウェイのデフォルトの入口への Service Binding。あれば公開 URL への fetch の代わりに使う */
@@ -74,7 +78,8 @@ function build(env: Env): MurmurService {
 }
 
 interface ConnectorShell extends ConnectorHttp {
-  sync: GraphMailSync;
+  /** キューの仕事を Outlook と Jira の両方に渡す（それぞれ自分の経路のデータソースだけ扱う） */
+  sync: { handle(job: SyncJob): Promise<void> };
 }
 
 /** 外部コネクタの配線。ゲートウェイを呼ぶ仕事は全部 queue を通す（Queues がなければ waitUntil でその場で） */
@@ -92,22 +97,44 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
   const gatewayDeps = { fetcher, gatewayUrl, oauth, state, box, now };
   const graphFor = (t: { token: string; baseUrl: string }) => new GatewayGraphApi(fetcher, t.baseUrl, t.token, graphService);
 
-  let sync: GraphMailSync;
+  const jiraService = env.JIRA_SERVICE || 'jira';
+  const jiraFor = (t: { token: string; baseUrl: string }) => new GatewayJiraApi(fetcher, t.baseUrl, t.token, jiraService);
+  // Jira の Webhook の受け口の秘密（本人ごと。S0: REST の Webhook の URL は本人ごとに 1 つ）。TOKEN_KEY から導くので保管しない
+  const jiraSecret = (userId: string) => sha256Hex(`${env.TOKEN_KEY}:jira-webhook:${userId}`);
+
+  let sync: ConnectorShell['sync'];
   const queue: SyncQueue = env.SYNC_QUEUE
     ? { send: async (job) => void (await env.SYNC_QUEUE!.send(job)) }
-    : { send: async (job) => waitUntil(sync.handle(job).catch((err) => console.error(err))) };
-  sync = new GraphMailSync({
+    : { send: async (job) => waitUntil(sync.handle(job).catch((err) => console.error(JSON.stringify({ msg: 'sync_failed', job, error: String(err) })))) };
+  const log = (entry: Record<string, unknown>) => console.log(JSON.stringify(entry));
+  const issuedFor = (source: { userId: string; gatewayCredentialId: string }) => new GatewayUser(gatewayDeps, source.userId).issueToken([source.gatewayCredentialId]);
+  const jira = new JiraSync({
     service,
     state,
     queue,
-    graphFor: async (source) => graphFor(await new GatewayUser(gatewayDeps, source.userId).issueToken([source.gatewayCredentialId])),
+    jiraFor: async (source) => jiraFor(await issuedFor(source)),
+    now,
+    webhookUrlFor: async (userId) => `${publicUrl}/webhooks/jira/${await jiraSecret(userId)}`,
+    log,
+  });
+  const graph = new GraphMailSync({
+    service,
+    state,
+    queue,
+    graphFor: async (source) => graphFor(await issuedFor(source)),
     now,
     notificationUrl: `${publicUrl}/webhooks/graph`,
     newClientState: () => randomHex(32),
     hash: sha256Hex,
-    log: (entry) => console.log(JSON.stringify(entry)),
+    log,
   });
-  const connections = new Connections({ ...gatewayDeps, service, oauthConfig, queue, newId: randomIds, graphService, graphFor });
+  sync = {
+    async handle(job) {
+      await graph.handle(job);
+      await jira.handle(job);
+    },
+  };
+  const connections = new Connections({ ...gatewayDeps, service, oauthConfig, queue, newId: randomIds, graphService, graphFor, jiraService, jiraFor });
   return {
     sync,
     connections,
@@ -117,6 +144,18 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
       if (rejected > 0) console.warn(JSON.stringify({ msg: 'graph_notification_rejected', rejected }));
       for (const job of jobs) await queue.send(job);
       return jobs.length;
+    },
+    jiraNotified: async (secret, body) => {
+      const users = [...new Set((await state.sources()).filter((s) => s.kind === 'jira').map((s) => s.userId))];
+      for (const userId of users) {
+        if ((await jiraSecret(userId)) !== secret) continue;
+        // 本文の形を確かめるため、キーと種類だけ残す（0034 の S0 の残り。中身は使わない）
+        const b = (body ?? {}) as Record<string, unknown>;
+        log({ msg: 'jira_webhook', keys: Object.keys(b).sort(), webhookEvent: b.webhookEvent, matchedWebhookIds: b.matchedWebhookIds });
+        return jira.notified(userId);
+      }
+      console.warn(JSON.stringify({ msg: 'jira_webhook_rejected' }));
+      return null;
     },
   };
 }

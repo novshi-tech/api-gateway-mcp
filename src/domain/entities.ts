@@ -63,6 +63,7 @@ export type CredentialRef = z.infer<typeof CredentialRef>;
 /**
  * 取り込みの経路（0024）。なければダミーコネクタ（チャネルで選ぶ）。
  * - graph-mail: Outlook のメールボックス。本人の委任（ゲートウェイの OAuth）で読む個人の箱。
+ * - jira: Jira のサイトの、本人の JQL の範囲の課題（0034）。
  *   folders は delta とサブスクリプションの単位（Graph のよく知られたフォルダ名）
  */
 export const SourceConnector = z.discriminatedUnion('kind', [
@@ -70,6 +71,16 @@ export const SourceConnector = z.discriminatedUnion('kind', [
     kind: z.literal('graph-mail'),
     mailbox: z.literal('me'),
     folders: z.array(z.string()).min(1).default(['inbox', 'sentitems']),
+  }),
+  /**
+   * Jira（0034）。本人の 3LO の接続で、本人の JQL の範囲を取り込む個人リスト。
+   * cloudId は Atlassian のサイトの ID（API は /ex/jira/<cloudId>/...）、site はサイトの URL（表示用）
+   */
+  z.object({
+    kind: z.literal('jira'),
+    cloudId: z.string().min(1),
+    site: z.string().min(1),
+    jql: z.string().min(1),
   }),
 ]);
 export type SourceConnector = z.infer<typeof SourceConnector>;
