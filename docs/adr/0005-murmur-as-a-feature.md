@@ -1,6 +1,6 @@
 # 0005 Murmur をゲートウェイの機能として持つ
 
-- 状態: 採用(2026-11-04、直樹とのディスカッション)。段取り 1(リポジトリをまとめる)と 2(口と依存の削減)を実装した
+- 状態: 採用(2026-11-04、直樹とのディスカッション)。段取り 1(リポジトリをまとめる)・2(口と依存の削減)・3(1 つの Worker)を実装した
 - 関連: Murmur の [`murmur/docs/adr/0023`](../../murmur/docs/adr/0023-murmur-as-gateway-feature.md)(本体の決定。理由・脅威の整理・段取りはそちら)、[0004](0004-one-deployment-per-organization.md)(1 つのデプロイ = 1 つの組織)、[background-access.md](../background-access.md)
 
 ## 決定
@@ -17,5 +17,18 @@ Murmur(チームの仕事の記憶)を、ゲートウェイの機能にする。
 
 1. **リポジトリをまとめる**(済み、2026-11-04): Murmur を `murmur/` に `git subtree` で取り込んだ(履歴つき)。`murmur/` は別のパッケージ(npm。pnpm から移した)で、ルートのテストからは外し、CI では別のジョブで回す。Worker はまだ 2 つで、動きは変えていない。ADR の番号は、ゲートウェイは `docs/adr/`、Murmur は `murmur/docs/adr/` で別々に振る
 2. **中核の口を作る**(済み、2026-11-04): Murmur の側で、ゲートウェイを呼ぶところを口(`murmur/src/ports/gateway.ts`)の後ろにまとめた。読める口の許可リストは口の実装が強制する。実行時の依存は `zod` と `drizzle-orm` だけにした(`@anthropic-ai/sdk`・`hono` を外した)。段取り 3 では、ゲートウェイの中核がこの口を実装する
-3. **1 つの Worker にする**: 入口で Murmur をつなぎ、口の実装を中核の直接呼び出しに差し替える。Murmur の有効化と本人の同意の画面を作る。このとき、`identity` の Murmur 向けの使い道・Service Binding・Murmur の CIMD がなくなる(`identity` は boid の逆接続のため残る。[0003](0003-reverse-connection.md))
+3. **1 つの Worker にする**(済み、2026-11-04): 下の「段取り 3 の形」
+
 4. **既存のデプロイを移す**: Murmur のデプロイの設定(murmur-deployments)を、ゲートウェイの設定(`deployments/<名前>.jsonc`)にまとめる
+
+## 段取り 3 の形(2026-11-04)
+
+- **機能(feature)の口**: 中核にあるのは汎用の `src/features.ts` だけ(名前・同意の文言・`fetch`・`scheduled`・`queue`)。Murmur を組み立てて登録するのは入口(`src/index.ts` が読み込む `src/murmur-feature.ts`)だけで、中核のほかのファイルは Murmur を import しない。Murmur から中核が読むのは口の取り決め(`murmur/src/ports/gateway.ts`)だけ。境界は `murmur/test/architecture.test.ts` が検査する
+- **Murmur の口の実装**: `src/feature-port.ts`。本人の接続で上流を読む関数を渡し、トークンは中核の中だけで使う。読める口は入口が種類ごとに固定し(Graph・Jira)、外れた呼び出しは送る前に断る。本人が有効にしていなければ何も読めない
+- **スタンドから見た API は変えない**: 今までどおり `issue_token` の `identity:murmur` と `/api/murmur/...`。中継(`proxy.ts`)が、別の Worker に送る代わりに同じ Worker の Murmur に渡す。Murmur はトークンを口でもう一度確かめる。同じ名前の `SERVICES` の定義(別の Worker の Murmur)より機能が優先する。スキルは文言だけ直した(`api-gateway-murmur` 0.1.7)
+- **公開の経路**は `/murmur/...`(Graph と Jira の Webhook、Murmur の参照専用の画面)。`/murmur/api/` は経路にしない(API は中継の後ろだけ)
+- **同意**: Murmur に接続をつなぐよう頼むと、`/features/murmur/consent` に案内される。本人がサインインして「有効にする」を押すと、保管庫(`UserVault`)に印が残り、Murmur の画面に戻る(サインインの戻り先 `next` を足した)。ホームの「このゲートウェイの機能」から無効にできる
+- **cron とキュー**: 毎日の `0 18 * * *` は今までどおり期限切れの許可の掃除、ほかの cron は機能に渡す(Murmur の見回り)。キューは機能に渡す
+- **有効にする条件**: `MURMUR_DB` と `ANTHROPIC_API_KEY`。Webhook(Graph・Jira)は `MURMUR_WEBHOOK_SECRET` も要る。Murmur に渡すのはこれらと口だけで、ゲートウェイの鍵は渡さない
+- **ルートの `npm install`** が `murmur/` の依存も入れる(`postinstall`)。CI は Worker のドライランのビルドも行う
+- **別の Worker の Murmur**(Service Binding・identity・CIMD の形)は、既存のデプロイを移す(段取り 4)まで残す。移し終えたら、Murmur の `index.ts`・`connectors/gateway/` と、ゲートウェイの `identity` の Murmur 向けの使い道を消す(`identity` は boid の逆接続のため残る。[0003](0003-reverse-connection.md))

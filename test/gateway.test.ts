@@ -299,6 +299,7 @@ describe("identity upstreams", () => {
     const res = await handleProxy(
       new Request(`${BASE}/api/murmur/me`, { headers: { authorization: `Bearer ${await apiToken(bob, { murmur: "identity" })}` } }),
       bound,
+      {} as ExecutionContext,
     );
     expect(res.status).toBe(200);
     expect(seen).toHaveLength(1);

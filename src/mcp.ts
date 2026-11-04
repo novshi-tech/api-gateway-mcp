@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { organizationName, publicUrl } from "./config";
+import { feature, features } from "./features";
 import { IDENTITY_CREDENTIAL, identityCredentialId, serviceOfIdentityCredential } from "./identity";
 import { getDirectory, getServices } from "./services";
 import { GATEWAY_TOKEN_TTL_SECONDS, signToken } from "./tokens";
@@ -60,10 +61,16 @@ export function buildServer(env: Env, props: McpProps): McpServer {
     async () => {
       const directory = await getDirectory(env);
       const config = directory.services;
-      const identity = Object.entries(config)
-        .filter(([, c]) => c.auth.type === "identity")
-        .map(([service, c]) => ({ id: identityCredentialId(service), service, label: `${c.display_name}(サインイン中のユーザー)` }));
-      const services = Object.keys(config).filter((name) => directory.available(name));
+      // Features of this Worker (src/features.ts) are reached like identity services; one takes
+      // its name over a configured service of the same name.
+      const own = features(env);
+      const identity = [
+        ...own.map((f) => ({ id: identityCredentialId(f.name), service: f.name, label: `${f.displayName}(サインイン中のユーザー)` })),
+        ...Object.entries(config)
+          .filter(([service, c]) => c.auth.type === "identity" && !own.some((f) => f.name === service))
+          .map(([service, c]) => ({ id: identityCredentialId(service), service, label: `${c.display_name}(サインイン中のユーザー)` })),
+      ];
+      const services = [...new Set([...own.map((f) => f.name), ...Object.keys(config).filter((name) => directory.available(name))])];
       return json({ gateway, services, credentials: [...(await vault.list()), ...identity], register_url: `${base}/` });
     },
   );
@@ -91,7 +98,8 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       for (const id of new Set(credential_ids)) {
         const identityService = serviceOfIdentityCredential(id);
         if (identityService !== null) {
-          if (!Object.hasOwn(services, identityService) || services[identityService].auth.type !== "identity") return error(`unknown credential: ${id}`);
+          const known = feature(env, identityService) || (Object.hasOwn(services, identityService) && services[identityService].auth.type === "identity");
+          if (!known) return error(`unknown credential: ${id}`);
           if (creds[identityService]) return error(`more than one credential for service: ${identityService}`);
           creds[identityService] = IDENTITY_CREDENTIAL;
           continue;

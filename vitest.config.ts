@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { configDefaults, defineConfig } from "vitest/config";
 import { experimental_readRawConfig } from "wrangler";
@@ -43,6 +43,10 @@ const SERVICES = {
     auth: { type: "identity", audience: "murmur" },
   },
 };
+
+// Murmur's tables, for the tests that turn the Murmur feature on (test/murmur-feature.test.ts).
+// The database is bound under another name, so the other tests run with Murmur off.
+const MURMUR_MIGRATIONS = await readD1Migrations("murmur/drizzle");
 
 const IDP = "https://idp.test";
 const OIDC_ISSUER = `${IDP}/tenant/v2.0`;
@@ -190,7 +194,9 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: CONFIG },
       miniflare: {
+        d1Databases: ["TEST_MURMUR_DB"],
         bindings: {
+          TEST_MURMUR_MIGRATIONS: MURMUR_MIGRATIONS,
           SERVICES,
           ORGANIZATION_NAME: "Acme",
           SIGNING_KEY: "test-signing-key-test-signing-key-0123456789",

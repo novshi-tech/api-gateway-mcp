@@ -42,8 +42,8 @@ export interface HttpOptions {
 
 export interface ConnectorHttp {
   connections: Connections;
-  /** CIMD のクライアントのメタデータ */
-  clientMetadata: Record<string, unknown>;
+  /** CIMD のクライアントのメタデータ（別の Worker のゲートウェイを使うときだけ） */
+  clientMetadata?: Record<string, unknown>;
   /** Graph の通知を照合してキューに積む。積んだ数を返す */
   notifications(body: unknown): Promise<number>;
   /** Jira の Webhook（0034）。URL の本人ごとの秘密を照合し、その本人の Jira を取り直すよう積む。照合できなければ null */
@@ -310,7 +310,10 @@ export function createApp(opts: HttpOptions) {
   });
 
   // 本体はゲートウェイの OAuth クライアント（CIMD）。ゲートウェイがこのメタデータを読みに来る
-  app.get(CLIENT_METADATA_PATH, async (c) => c.json((await connectors(c)).clientMetadata));
+  app.get(CLIENT_METADATA_PATH, async (c) => {
+    const metadata = (await connectors(c)).clientMetadata;
+    return metadata ? c.json(metadata) : c.text('not found', 404);
+  });
 
   app.get(CALLBACK_PATH, async (c) => {
     const k = await connectors(c);

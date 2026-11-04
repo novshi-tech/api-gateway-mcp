@@ -129,6 +129,16 @@ export class UserVault extends DurableObject<Env> {
     return record;
   }
 
+  // Whether the user turned a feature on (src/features.ts). Off until they do.
+  async consented(feature: string): Promise<boolean> {
+    return (await this.ctx.storage.get<boolean>(`consent:${feature}`)) === true;
+  }
+
+  async setConsent(feature: string, on: boolean): Promise<void> {
+    if (on) await this.ctx.storage.put(`consent:${feature}`, true);
+    else await this.ctx.storage.delete(`consent:${feature}`);
+  }
+
   async remove(id: string): Promise<boolean> {
     return this.ctx.storage.delete(`cred:${id}`);
   }

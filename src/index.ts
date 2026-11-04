@@ -1,6 +1,7 @@
 import { OAuthProvider, type OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { authorizeCallback, authorizeGet, authorizePost, MCP_CALLBACK_PATH, MCP_SCOPE } from "./authorize";
 import { publicUrl } from "./config";
+import { features, withPath } from "./features";
 import { jwks, JWKS_PATH } from "./identity";
 import { mcpHandler } from "./mcp";
 import { API_PREFIX, handleProxy } from "./proxy";
@@ -18,15 +19,20 @@ import {
   home,
 } from "./web/connections";
 import { confirmDeletePlugin, deletePlugin, listPluginsPage, uploadPlugin } from "./web/admin-plugins";
+import { consentPage, consentSubmit, disableFeature } from "./web/features";
 import { confirmRevoke, revoke } from "./web/grants";
 import { login, LOGIN_CALLBACK_PATH, loginCallback, logout } from "./web/session";
 import { downloadPlugin, setup, SETUP_PATH } from "./web/setup";
+
+import "./murmur-feature";
 
 export { Background } from "./background";
 export { Registry } from "./registry";
 export { UserVault } from "./vault";
 
 const DAY = 24 * 60 * 60;
+// Must match the daily cron in the deployment's config (wrangler.example.jsonc).
+const PURGE_CRON = "0 18 * * *";
 
 type RouteEnv = Env & { OAUTH_PROVIDER: OAuthHelpers };
 type Route = [
@@ -68,6 +74,9 @@ const ROUTES: Route[] = [
   ["GET", /^\/admin\/plugins\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => confirmDeletePlugin(request, env, name)],
   ["POST", /^\/admin\/plugins\/([a-z0-9][a-z0-9-]*)\/delete$/, (request, env, [name]) => deletePlugin(request, env, name)],
   ["GET", CONNECT_CALLBACK_PATH, connectCallback],
+  ["GET", /^\/features\/([a-z0-9][a-z0-9-]*)\/consent$/, (request, env, [name]) => consentPage(request, env, name)],
+  ["POST", /^\/features\/([a-z0-9][a-z0-9-]*)\/consent$/, (request, env, [name]) => consentSubmit(request, env, name)],
+  ["POST", /^\/features\/([a-z0-9][a-z0-9-]*)\/disable$/, (request, env, [name]) => disableFeature(request, env, name)],
 ];
 
 function route(method: string, pathname: string): { route: Route; params: string[] } | null {
@@ -83,10 +92,24 @@ function route(method: string, pathname: string): { route: Route; params: string
   return null;
 }
 
+// A feature's public routes (webhooks, its own pages) live under `/<name>/`; its API only
+// behind the token proxy (`/api/<name>/...`), so `/<name>/api/` is not routed.
+function featureRoute(env: Env, pathname: string) {
+  for (const f of features(env)) {
+    const prefix = `/${f.name}`;
+    if (!pathname.startsWith(`${prefix}/`)) continue;
+    const rest = pathname.slice(prefix.length);
+    return rest === "/api" || rest.startsWith("/api/") ? null : { feature: f, path: rest };
+  }
+  return null;
+}
+
 const defaultHandler: ExportedHandler<Env> = {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname.startsWith(API_PREFIX)) return handleProxy(request, env);
+    if (pathname.startsWith(API_PREFIX)) return handleProxy(request, env, ctx);
+    const own = featureRoute(env, pathname);
+    if (own) return own.feature.fetch(withPath(request, own.path), ctx);
     const found = route(request.method, pathname);
     if (!found) return new Response("not found", { status: 404 });
     return found.route[2](request, env as RouteEnv, found.params);
@@ -128,7 +151,21 @@ export default {
   fetch(request, env, ctx) {
     return provider(env).fetch(request, env, ctx);
   },
-  async scheduled(_event, env) {
-    await provider(env).purgeExpiredData(env);
+  // The daily cron purges expired grants; any other cron is for the features (Murmur's tick).
+  async scheduled(controller, env, ctx) {
+    if (controller.cron === PURGE_CRON) {
+      await provider(env).purgeExpiredData(env);
+      return;
+    }
+    for (const f of features(env)) await f.scheduled?.(controller, ctx);
+  },
+  // Queues belong to the features (Murmur's sync queue).
+  async queue(batch, env, ctx) {
+    const own = features(env).filter((f) => f.queue);
+    if (own.length === 0) {
+      batch.ackAll();
+      return;
+    }
+    for (const f of own) await f.queue!(batch, ctx);
   },
 } satisfies ExportedHandler<Env>;

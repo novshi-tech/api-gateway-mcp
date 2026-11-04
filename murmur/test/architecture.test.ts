@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // FC-IS の境界をテストで縛る: src/domain（関数型コア）は IO に依存しない。
@@ -74,6 +74,42 @@ describe('vertical slice（0023 の決定 7）', () => {
     const offenders = sources
       .filter((s) => /globalThis\s*(\.\w+|\[[^\]]+\])\s*=[^=]|(^|[^.\w])(fetch|crypto)\s*=[^=]|Object\.defineProperty\(\s*globalThis/m.test(s.code))
       .map((s) => s.rel);
+    expect(offenders).toEqual([]);
+  });
+});
+
+// ゲートウェイの側（0023 の段取り 3）: ゲートウェイの中核は Murmur の実装を import しない。
+// Murmur を組み立てるのはゲートウェイの入口（index.ts と murmur-feature.ts）だけで、
+// 中核が Murmur から読んでよいのは口の取り決め（ports/gateway.ts）だけ。Murmur はゲートウェイを import しない。
+
+const GATEWAY_SRC = join(import.meta.dirname, '../../src');
+const gatewaySources = walk(GATEWAY_SRC).map((path) => ({ rel: path.slice(GATEWAY_SRC.length + 1), code: readFileSync(path, 'utf8') }));
+const gatewayImports = (code: string) => [...code.matchAll(/(?:from|import)\s+"([^"]+)"/g)].map((m) => m[1]!);
+const GATEWAY_ENTRY = ['index.ts', 'murmur-feature.ts'];
+
+describe('vertical slice: ゲートウェイの側（0023 の段取り 3）', () => {
+  it('Murmur の実装を import してよいのはゲートウェイの入口だけ。中核は口の取り決めだけ', () => {
+    const offenders = gatewaySources
+      .filter((s) => !GATEWAY_ENTRY.includes(s.rel))
+      .flatMap((s) => gatewayImports(s.code).filter((spec) => spec.includes('murmur/') && !spec.endsWith('murmur/src/ports/gateway')).map((spec) => `${s.rel}: ${spec}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it('ゲートウェイの入口が Murmur から読むのは、組み立て（feature.ts）と、入口で固定する読める口と取り決めだけ', () => {
+    const allowed = /murmur\/src\/(feature|ports\/gateway|connectors\/graph\/scope|connectors\/jira\/api|connectors\/graph\/jobs)$/;
+    const offenders = gatewaySources
+      .filter((s) => GATEWAY_ENTRY.includes(s.rel))
+      .flatMap((s) => gatewayImports(s.code).filter((spec) => spec.includes('murmur/') && !allowed.test(spec)).map((spec) => `${s.rel}: ${spec}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it('Murmur はゲートウェイを import しない（相対の import は murmur/ の外へ出ない）', () => {
+    const root = join(import.meta.dirname, '..');
+    const offenders = sources.flatMap((s) =>
+      importsOf(s.code)
+        .filter((spec) => spec.startsWith('.') && !resolve(dirname(s.path), spec).startsWith(root + sep))
+        .map((spec) => `${s.rel}: ${spec}`),
+    );
     expect(offenders).toEqual([]);
   });
 });
