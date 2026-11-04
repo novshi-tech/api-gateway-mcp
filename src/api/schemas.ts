@@ -137,3 +137,6 @@ export const InboundMirrorBody = z.object({
 
 /** Webhook・ダミー上流に積む 1 件（シグナルか状態の写し） */
 export const InboundItemBody = z.union([InboundMirrorBody, InboundSignalBody]);
+
+/** POST /api/connections/outlook。credential_id はゲートウェイの Graph の接続（複数あるときに選ぶ） */
+export const ConnectOutlookBody = z.object({ credential_id: z.string().min(1).optional() });

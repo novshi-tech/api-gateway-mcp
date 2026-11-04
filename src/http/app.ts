@@ -13,6 +13,7 @@ import {
   MergeContactBody,
   RenameBody,
   ClaimBody,
+  ConnectOutlookBody,
   DismissBody,
   GetThreadQuery,
   InboundItemBody,
@@ -24,6 +25,8 @@ import {
   SetAttributeBody,
 } from '../api/schemas';
 import { bearerToken } from '../auth/claims';
+import type { Connections } from '../app/connections';
+import { CALLBACK_PATH, CLIENT_METADATA_PATH } from '../connectors/gateway/oauth';
 import { adminHref, renderAdminIndex, renderAdminList, renderAdminThread, renderTimeline } from './admin';
 
 export interface HttpOptions {
@@ -33,6 +36,16 @@ export interface HttpOptions {
   authenticate: (token: string) => Promise<string | null>;
   webhookVerify: (body: string, signature: string) => Promise<boolean>;
   timelineToken?: string;
+  /** 外部コネクタ（0024）。設定がなければ /api/connections と Graph の口は 404 */
+  connectors?: (c: Context) => Promise<ConnectorHttp | null> | ConnectorHttp | null;
+}
+
+export interface ConnectorHttp {
+  connections: Connections;
+  /** CIMD のクライアントのメタデータ */
+  clientMetadata: Record<string, unknown>;
+  /** Graph の通知を照合してキューに積む。積んだ数を返す */
+  notifications(body: unknown): Promise<number>;
 }
 
 type Env = { Variables: { userId: string; service: MurmurService } };
@@ -225,6 +238,23 @@ export function createApp(opts: HttpOptions) {
     );
   });
 
+  const connectors = async (c: Context) => {
+    const k = opts.connectors ? await opts.connectors(c) : null;
+    if (!k) throw new DomainError('not_found', 'connectors are not configured');
+    return k;
+  };
+
+  api.get('/connections', async (c) => c.json(await (await connectors(c)).connections.list(c.var.userId)));
+
+  api.post('/connections/outlook', async (c) => {
+    const b = ConnectOutlookBody.parse(await json(c));
+    return c.json(await (await connectors(c)).connections.connectOutlook(c.var.userId, b.credential_id));
+  });
+
+  api.post('/connections/:id/disconnect', async (c) =>
+    c.json(await (await connectors(c)).connections.disconnect(c.var.userId, c.req.param('id'))),
+  );
+
   api.get('/lists', async (c) => c.json(await c.var.service.listLists(c.var.userId)));
 
   api.get('/lists/:id', async (c) => c.json(await c.var.service.getList(c.var.userId, c.req.param('id'))));
@@ -241,6 +271,36 @@ export function createApp(opts: HttpOptions) {
     const results = [];
     for (const item of parsed) results.push(await c.var.service.ingestItem(item));
     return c.json(results);
+  });
+
+  // Graph の変更通知とライフサイクルの通知（0024）。3 秒以内に返すため、照合してキューに積むだけ
+  app.post('/webhooks/graph', async (c) => {
+    const validationToken = c.req.query('validationToken');
+    if (validationToken !== undefined) return c.text(validationToken, 200, { 'content-type': 'text/plain' });
+    const k = await connectors(c);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid' }, 400);
+    }
+    await k.notifications(body);
+    return c.body(null, 202);
+  });
+
+  // 本体はゲートウェイの OAuth クライアント（CIMD）。ゲートウェイがこのメタデータを読みに来る
+  app.get(CLIENT_METADATA_PATH, async (c) => c.json((await connectors(c)).clientMetadata));
+
+  app.get(CALLBACK_PATH, async (c) => {
+    const k = await connectors(c);
+    let result;
+    try {
+      result = await k.connections.callback({ state: c.req.query('state') ?? null, code: c.req.query('code') ?? null, error: c.req.query('error') ?? null });
+    } catch (err) {
+      console.error(err);
+      result = { ok: false, message: 'つなぐ途中で失敗しました。しばらくしてから、スタンドからもう一度頼んでください。' };
+    }
+    return c.html(renderCallback(result), result.ok ? 200 : 400);
   });
 
   // 参照専用の画面。全データソースが見えるので TIMELINE_TOKEN を知っている人だけ（知らなければ 404）
@@ -277,4 +337,9 @@ export function createApp(opts: HttpOptions) {
   });
 
   return app;
+}
+
+function renderCallback(r: { ok: boolean; message: string }): string {
+  const esc = r.message.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Murmur</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem"><h1>${r.ok ? 'つなぎました' : 'つなげませんでした'}</h1><p>${esc}</p><p>このタブは閉じてかまいません。</p></body></html>`;
 }

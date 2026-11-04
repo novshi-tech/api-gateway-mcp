@@ -17,10 +17,10 @@
     },
     {
       "after": "o01",
-      "threads": { "$subThread": { "ball": { "kind": "contact", "contactIds": ["p_ito"] }, "replyExpectedBy": "2026-10-16T21:30:00.000Z", "links": { "$absA": "sent" } } }
+      "threads": { "$subThread": { "ball": { "kind": "contact", "contactIds": ["p_ito"], "addresses": [] }, "replyExpectedBy": "2026-10-16T21:30:00.000Z", "links": { "$absA": "sent" } } }
     },
     { "after": "c_o01", "threads": { "$subThread": { "signalCount": 1 } } },
-    { "after": "o02", "threads": { "$absA": { "ball": { "kind": "contact", "contactIds": ["p_yamamoto"] }, "unansweredSince": null } } },
+    { "after": "o02", "threads": { "$absA": { "ball": { "kind": "contact", "contactIds": ["p_yamamoto"], "addresses": [] }, "unansweredSince": null } } },
     { "after": "s02", "threads": { "$subThread": { "ball": { "kind": "none" }, "signalCount": 2 }, "$absA": { "signalCount": 2 } } },
     {
       "after": "s02",

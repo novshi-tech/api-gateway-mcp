@@ -30,12 +30,33 @@ export function directionOf(dir: Directory, s: Pick<SignalRecord, 'dataSourceId'
 
 /** アドレスの Contact（at 時点。解決できないものは落とす。重複なしで並べる） */
 export function contactsOf(dir: Directory, refs: readonly AddressRef[], at?: string): string[] {
+  return resolveAddresses(dir, refs, at).contactIds;
+}
+
+/**
+ * アドレスを Contact に解決する（at 時点）。解決できなかったものはアドレスのまま返す（0030。名寄せすると contactIds に移る）。
+ * どちらも重複なしで並べる（アドレスは大文字小文字の違いを 1 つにまとめ、最初に出てきた表記を残す）
+ */
+export function resolveAddresses(
+  dir: Directory,
+  refs: readonly AddressRef[],
+  at?: string,
+  /** 解決できなくてもアドレスとして返さないもの（窓口のアドレスなど、こちらのアドレス） */
+  skip: (r: AddressRef) => boolean = () => false,
+): { contactIds: string[]; addresses: AddressRef[] } {
   const ids = new Set<string>();
+  const addresses: AddressRef[] = [];
   for (const r of refs) {
     const id = dir.contactIdOfAddress(r, at);
     if (id !== null) ids.add(id);
+    else if (!skip(r) && !addresses.some((a) => sameAddress(a, r))) addresses.push({ channel: r.channel, value: r.value });
   }
-  return [...ids].sort();
+  return { contactIds: [...ids].sort(), addresses: sortAddresses(addresses) };
+}
+
+function sortAddresses(refs: AddressRef[]): AddressRef[] {
+  const key = (r: AddressRef) => `${r.channel}\n${r.value.toLowerCase()}`;
+  return [...refs].sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : 0));
 }
 
 /** スレッドの最後に求めたシグナルが、こちらからのものか */
@@ -58,7 +79,8 @@ export function resolveBall(dir: Directory, p: Projections, t: Thread): Ball {
   if (b.kind === 'claimed') return b.userId ? { kind: 'user', userId: b.userId } : { kind: 'us' };
   if (requestIsOurs(dir, p, t)) {
     const at = p.signals[b.request.signalId]?.at;
-    return { kind: 'contact', contactIds: contactsOf(dir, b.request.holders, at) };
+    const ds = dir.dataSource(t.dataSourceId);
+    return { kind: 'contact', ...resolveAddresses(dir, b.request.holders, at, (r) => isOurs(dir, ds, r, at)) };
   }
   return t.ownerUserId ? { kind: 'user', userId: t.ownerUserId } : { kind: 'us' };
 }
@@ -67,6 +89,8 @@ export interface CommView {
   ball: Ball;
   /** 相手の Contact（相手からのシグナルの送り主と、こちらからのシグナルの宛先） */
   counterpartContactIds: string[];
+  /** 相手のうち、Contact に解決できなかったアドレス（0030。名寄せすると counterpartContactIds に移る） */
+  counterpartAddresses: AddressRef[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
   /** こちらの返事を待たせている最初の時刻（相手が求め続けているあいだ） */
@@ -79,21 +103,27 @@ export function commView(dir: Directory, p: Projections, t: Thread): CommView {
   let lastInboundAt: string | null = null;
   let lastOutboundAt: string | null = null;
   const counterparts = new Set<string>();
+  const unresolved: AddressRef[] = [];
+  const add = (refs: readonly AddressRef[], at: string) => {
+    const r = resolveAddresses(dir, refs, at, (x) => isOurs(dir, ds, x, at));
+    for (const id of r.contactIds) counterparts.add(id);
+    for (const a of r.addresses) if (!unresolved.some((x) => sameAddress(x, a))) unresolved.push(a);
+  };
   for (const e of t.log) {
     if (e.kind !== 'signal' || !e.from) continue;
     if (isOurs(dir, ds, e.from, e.at)) {
       lastOutboundAt = e.at;
-      for (const id of contactsOf(dir, e.to ?? [], e.at)) counterparts.add(id);
+      add(e.to ?? [], e.at);
     } else {
       lastInboundAt = e.at;
-      const id = dir.contactIdOfAddress(e.from, e.at);
-      if (id !== null) counterparts.add(id);
+      add([e.from], e.at);
     }
   }
   const ours = requestIsOurs(dir, p, t);
   return {
     ball: resolveBall(dir, p, t),
     counterpartContactIds: [...counterparts].sort(),
+    counterpartAddresses: sortAddresses(unresolved),
     lastInboundAt,
     lastOutboundAt,
     unansweredSince: ours === false ? t.request!.since : null,

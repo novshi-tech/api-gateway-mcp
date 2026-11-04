@@ -61,6 +61,20 @@ export const CredentialRef = z.object({
 export type CredentialRef = z.infer<typeof CredentialRef>;
 
 /**
+ * 取り込みの経路（0024）。なければダミーコネクタ（チャネルで選ぶ）。
+ * - graph-mail: Outlook のメールボックス。本人の委任（ゲートウェイの OAuth）で読む個人の箱。
+ *   folders は delta とサブスクリプションの単位（Graph のよく知られたフォルダ名）
+ */
+export const SourceConnector = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('graph-mail'),
+    mailbox: z.literal('me'),
+    folders: z.array(z.string()).min(1).default(['inbox', 'sentitems']),
+  }),
+]);
+export type SourceConnector = z.infer<typeof SourceConnector>;
+
+/**
  * データソース（0014）。リスト 1 つに対応する。
  * - service: 外のサービス（メールボックス、Slack のチャネルや DM、LINE 公式アカウント、Jira のプロジェクト）。
  *   資格情報で取り込み、selfAddresses（窓口のアドレス）と読者の Contact のアドレスが「こちら」（0030。クエリ層の sides.ts）
@@ -78,6 +92,8 @@ export const DataSource = z.discriminatedUnion('kind', [
     selfAddresses: z.array(AddressRef).default([]),
     /** グループのチャネル。区切りの「同じ相手」がチャネルになる */
     group: z.boolean().default(false),
+    /** 取り込みの経路。実行時に作ったデータソースが持つ（0024） */
+    connector: SourceConnector.optional(),
   }),
   z.object({
     kind: z.literal('notes'),
@@ -124,4 +140,5 @@ export const Seed = z.object({
   attributeDefs: z.array(AttributeDef).default([]),
 });
 export type Seed = z.infer<typeof Seed>;
+
 export type SeedInput = z.input<typeof Seed>;

@@ -124,7 +124,8 @@ describe('区切り（H6）', () => {
     const abs = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l1' }), () => answer({ title: '欠勤' }));
     const ask = ingestPure(log, ctx, line({ from: '@ubs', to: 'U_dave', sourceRef: 'l2', body: '代わりに入れますか？' }));
     expect(ask.outcome).toMatchObject({ newThread: true, by: 'no_match', needsResponse: null });
-    expect(view(log.state(), ask.outcome!.threadId).ball).toEqual({ kind: 'contact', contactIds: [] });
+    // U_dave は Contact に解決できないので、アドレスのまま相手に載る（0030）
+    expect(view(log.state(), ask.outcome!.threadId).ball).toEqual({ kind: 'contact', contactIds: [], addresses: [{ channel: 'line', value: 'U_dave' }] });
 
     // Dave（未知のアドレス）の返事は、Dave を待っている打診のスレッドに入る
     const yes = ingestPure(log, ctx, line({ from: 'U_dave', sourceRef: 'l3', body: '入れます' }), (req) => {

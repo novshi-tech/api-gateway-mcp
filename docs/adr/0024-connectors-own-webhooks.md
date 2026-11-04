@@ -88,3 +88,24 @@
 - delta で `uniqueBody` と In-Reply-To（`internetMessageHeaders`）が取れるか
 - 下書き → 送信で `internetMessageId` が変わらないか（`sendMail` は Message-ID を返さないので、スタンドは下書き → 送信で送る。H5）
 - Cloudflare の名前付きエントリポイントがインターネットに出ないこと
+
+## 実装の記録（2026-10-30、個人の箱）
+
+設計の段取り（Artifact「Murmur 外部コネクタ設計」）の S1（同期とサブスクリプションの部品）と S2（個人の箱をつなぐ）を実装した。共有の箱（S6）はまだ。S0（実物で確かめる）のうち delta の分は `docs/research/2026-10-30-graph-delta.md`（サブスクリプションと CIMD は dev にデプロイしてから）。ゲートウェイの変更はない。
+
+- 経路: スタンドが `POST /api/connections/outlook` → 本体が PKCE と state を付けたゲートウェイの認可の URL を返す → 本人がゲートウェイで本体（CIMD の `client_name` は Murmur）を許可 → `/oauth/callback` でコードをトークンに換える → `list_credentials` で本人の `graph` の接続を選ぶ（複数なら `choose` を返し、スタンドが `credential_id` を付けて呼び直す）→ `issue_token` の短命トークンの `sub` が頼んだ本人と同じことを確かめてから同意を保管する → Graph の `/me` のアドレスでデータソースを作る → キューに `setup`
+- データソースの実行時の作成は `connectMailbox`（`src/domain/connection.ts`、純関数）。2026-11-04 に main に載せ直したとき、0030 の個人のリスト（`createPersonalDataSource`）の上に作り直した: 主のアドレスをリストでのアイデンティティにし、エイリアスも本人の Contact に付け、読者は本人だけ。窓口のアドレスは持たない。別の人のアドレスが混じれば断る（`conflict`）。同じ本人・同じゲートウェイの接続なら作り直さない。`DataSource`（service）に `connector: { kind: 'graph-mail', mailbox: 'me', folders }` を足した（マスタの形の変更で、イベント型は変えていない）。マスタの書き換えは 0030 の `changeMaster`（差分を当てて変更の記録に残す）で、最初の実装の `MasterStore.append` はなくした
+- 運用の状態（イベントにしない）: `gateway_grants`（リフレッシュトークンとアクセストークンを `TOKEN_KEY` の AES-GCM で包む。版の比較で書く）、`oauth_pending`（15 分、1 回きり）、`connector_sources`（フォルダごとの delta の位置・最後に取り込んだ受信時刻・`setup` / `ok` / `broken` / `disconnected`）、`graph_subscriptions`（clientState は SHA-256 だけ）。マイグレーションは `drizzle/0001_connectors.sql`
+- 直列: ゲートウェイを呼ぶ仕事（`setup` / `sync` / `lifecycle` / `maintain` / `disconnect`）は全部 Cloudflare Queues（同時実行 1）に積む。Cron は 5 分ごとに `maintain` を積むだけで、サブスクリプションの手入れ（なければ作る、残り 48 時間で延ばす、延長が 404 なら作り直して取り直す）と 30 分ごとの保険の delta と broken の 1 時間ごとの試し直しは、計画の純関数（`planMaintenance`・`planLifecycle`）が決める。キューを通らないのは、`POST /api/connections/outlook` で同意が既にあるときの `list_credentials` / `issue_token` だけで、リフレッシュが重なれば負けた方は版が進むのを待って勝った方のトークンを使う（同じ isolate の中では 1 回にまとめる）
+- delta: 初回は `$filter=receivedDateTime ge <つないだ時刻>` で過去分を取らない。1 回の仕事で 20 ページまで読み、超えたら続きを積む。cursor はページを取り込み終えてから進める。410 なら最後に取り込んだ受信時刻から取り直す。In-Reply-To は delta の `$select` に `internetMessageHeaders` を入れて取る（受信トレイ。送信済みにはヘッダーがない。`docs/research/2026-10-30-graph-delta.md`）。本文は `uniqueBody`、なければ引用の見出しから先を落とす
+- 同意の問題（ゲートウェイの 403、トークンの `invalid_grant`、Graph の 401/403）は `broken`（理由つき）。それ以外の失敗はキューが試し直す（5 回まで）。`GET /api/connections` で本人に状態を出す
+- 読み取りしかしないこと: Graph の呼び出しは `src/connectors/graph/api.ts` の `GraphApi` に集め、そこにあるのは読み取り（`/me`・delta）と購読の管理（サブスクリプションの作成・延長・削除）だけ
+- Worker の設定（dev）: vars に `PUBLIC_URL`、secrets に `TOKEN_KEY`、キュー `murmur-dev-sync`（producer `SYNC_QUEUE` と consumer）。任意で `GATEWAY_URL`（なければ `IDENTITY_ISSUER`）、`GRAPH_SERVICE`（既定 `graph`）、`GATEWAY_WEB`（ゲートウェイのデフォルトの入口への Service Binding。workers.dev の Worker 同士の fetch が通らないときに使う）
+- テスト: 偽の Graph（`test/helpers/fake-graph.ts`）と偽のゲートウェイで、つなぐ・本人の取り違え・state の期限・選ぶ・つなぎ直し・外す、通知 → delta、記録した送信との統合（H5）、ページの続き、410、サブスクリプションの消失、broken と戻り、リフレッシュの重なり。D1 の運用の状態とマスタの追記はメモリと Miniflare に同じ契約テスト
+
+### 実装で決めた細部（直樹に見てもらう）
+
+1. 外したデータソースはマスタから消さない（読者はそのまま過去のスレッドを読める）。つなぎ直すとその時点から取る（間の分は取らない）
+2. broken からの戻りは、止まっていた間の分も取る（最後に取り込んだ受信時刻から）
+3. 本人の確かめに、`issue_token` の短命トークンの `sub` を（署名を確かめずに）読む。ゲートウェイから TLS で直接受け取ったものなので
+4. 未決 3（Claude に送る本文の範囲）は決めていない。いまの実装は、つないだ箱の受信の本文（`uniqueBody`）を区切りと「求めているか」の判断のために Claude に送る

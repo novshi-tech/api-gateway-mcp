@@ -20,8 +20,43 @@ describe('どちら側か（sides）', () => {
       answer({ thread: 'existing', thread_id: id }),
     );
     const t = log.state().threads[id]!;
-    expect(resolveBall(dir, log.state(), t)).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(resolveBall(dir, log.state(), t)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
     expect(commView(dir, log.state(), t)).toMatchObject({ unansweredSince: null, lastOutboundAt: T(10) });
+  });
+
+  it('H8 Contact に解決できない相手はアドレスのまま載る。こちらのアドレスは載らない。名寄せすると Contact に移る（0030）', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    // 知らない相手から受信 → 返信（CC に窓口と、知らない人を大文字で 2 回）
+    const r = ingestPure(log, ctx, email({ from: 'stranger@nowhere.example', sourceRef: 'r1' }), () => answer({ title: '問い合わせ' }));
+    const id = r.outcome!.threadId;
+    ctx.setNow(T(10));
+    ingestPure(
+      log,
+      ctx,
+      email({ from: 'support@ubs.example', to: ['stranger@nowhere.example', 'support@ubs.example', 'Other@Nowhere.example', 'other@nowhere.example', 'carol@example.com'], sourceRef: 'o1' }),
+      () => answer({ thread: 'existing', thread_id: id }),
+    );
+    const p = log.state();
+    const t = p.threads[id]!;
+    const unresolved = [
+      { channel: 'email', value: 'Other@Nowhere.example' },
+      { channel: 'email', value: 'stranger@nowhere.example' },
+    ];
+    expect(resolveBall(dir, p, t)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: unresolved });
+    expect(turnOf(dir, p, t)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: unresolved });
+    expect(commView(dir, p, t)).toMatchObject({ counterpartContactIds: ['p_carol'], counterpartAddresses: unresolved });
+
+    // 名寄せ（マスタだけ直す。イベントはそのまま）
+    const named = new Directory(
+      Seed.parse({
+        ...seed,
+        contacts: [...seed.contacts, { id: 'p_stranger', name: '問い合わせの人' }],
+        addresses: [...seed.addresses, { id: 'a_stranger', channel: 'email', value: 'stranger@nowhere.example', contactId: 'p_stranger' }],
+      }),
+    );
+    expect(resolveBall(named, p, t)).toEqual({ kind: 'contact', contactIds: ['p_carol', 'p_stranger'], addresses: [unresolved[0]] });
+    expect(commView(named, p, t)).toMatchObject({ counterpartContactIds: ['p_carol', 'p_stranger'], counterpartAddresses: [unresolved[0]] });
   });
 
   it('H8 宛先による「自分の番」は、相手が求めたシグナルの保持者に読者のアドレスが入っているか（受信の CC）', () => {

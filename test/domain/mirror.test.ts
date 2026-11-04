@@ -149,7 +149,7 @@ describe('ソースでボールを持つ人で決まる誰の番（turnOf）', (
     expect(turn()).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'owner' });
     log.push([draft('ThreadClaimed', { threadId: id, userId: null, actorUserId: 'u_bob' })], '2026-10-16T09:30:00.000Z');
     apply({ holders: ['jira:carol'] }, 'u2', '2026-10-16T09:40:00.000Z');
-    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
     // だれも持っていなければシグナルのボールのまま（手放したのでこちら → 仕分け待ち）
     apply({ holders: [] }, 'u3', '2026-10-16T09:45:00.000Z');
     expect(turn()).toEqual({ kind: 'triage' });
@@ -157,7 +157,7 @@ describe('ソースでボールを持つ人で決まる誰の番（turnOf）', (
     expect(turn()).toEqual({ kind: 'none' });
   });
 
-  it('H9 holders が複数（PR のレビュアーなど）なら、読者のユーザー全員の番。読者がいなければ相手全員。解決できないアカウントは数えない（0031）', () => {
+  it('H9 holders が複数（PR のレビュアーなど）なら、読者のユーザー全員の番。読者がいなければ相手全員。解決できないアカウントはアドレスのまま並べる（0030・0031）', () => {
     const log = new EventLog();
     const ctx = ctxAt();
     const { outcome } = ingestPure(log, ctx, issueEvent('UBS-2'), answer(false));
@@ -170,7 +170,7 @@ describe('ソースでボールを持つ人で決まる誰の番（turnOf）', (
     apply({ holders: ['jira:bob', 'jira:carol', 'jira:alice'] }, 'u1', '2026-10-16T09:10:00.000Z');
     expect(turn()).toEqual({ kind: 'user', userIds: ['u_alice', 'u_bob'], by: 'holder' });
     apply({ holders: ['jira:carol', 'jira:unknown'] }, 'u2', '2026-10-16T09:20:00.000Z');
-    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'] });
+    expect(turn()).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [{ channel: 'jira', value: 'jira:unknown' }] });
     // だれにも解決できなければ、シグナルのボールのまま
     apply({ holders: ['jira:unknown'] }, 'u3', '2026-10-16T09:30:00.000Z');
     expect(turn()).toEqual({ kind: 'none' });

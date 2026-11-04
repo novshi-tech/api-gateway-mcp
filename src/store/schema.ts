@@ -82,3 +82,37 @@ export const dummyQueue = sqliteTable('dummy_queue', {
   message: text('message', { mode: 'json' }).notNull(),
   consumed: integer('consumed', { mode: 'boolean' }).notNull().default(false),
 });
+
+// ---- 取り込みの運用の状態（0024）。台帳ではないのでイベントにしない。リプレイの対象外 ----
+
+/** 本人が本体に出した同意（ゲートウェイの OAuth のトークン。暗号化して置く）。version で入れ替わりを直列にする */
+export const gatewayGrants = sqliteTable('gateway_grants', {
+  userId: text('user_id').primaryKey(),
+  version: integer('version').notNull(),
+  data: text('data', { mode: 'json' }).notNull(),
+});
+
+/** 認可の途中（state → 本人と PKCE の verifier）。コールバックで取り出して消す */
+export const oauthPending = sqliteTable('oauth_pending', {
+  state: text('state').primaryKey(),
+  createdAt: text('created_at').notNull(),
+  data: text('data', { mode: 'json' }).notNull(),
+});
+
+/** 実行時に作ったデータソースの取り込みの状態（delta の cursor・健康状態） */
+export const connectorSources = sqliteTable('connector_sources', {
+  dataSourceId: text('data_source_id').primaryKey(),
+  userId: text('user_id').notNull(),
+  data: text('data', { mode: 'json' }).notNull(),
+});
+
+/** Graph のサブスクリプションの台帳（通知の照合に使う） */
+export const graphSubscriptions = sqliteTable(
+  'graph_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    dataSourceId: text('data_source_id').notNull(),
+    data: text('data', { mode: 'json' }).notNull(),
+  },
+  (t) => [index('graph_subscriptions_data_source_idx').on(t.dataSourceId)],
+);
