@@ -32,11 +32,25 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 初めてつないだユーザーは名無しで、Contact(連絡先の自分)もリストもない(`GET /me` が `contact: null`・`lists: []`)。次の順に案内する。
 
 1. 呼び方を聞いて `PATCH /me` で付ける
-2. 自分の箱(メール・Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
+2. 自分の Outlook をリストにするなら、`POST /connections/outlook` を呼ぶ(下の「Outlook をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
+3. ほかの自分の箱(Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
    - `created`: 自分の Contact を新しく作った / `bound`: チームが先に作っていたゴーストが自分に結ばれた / `attached`・`already`: 自分の Contact に付いた
    - `merge_candidate`: そのアドレスは別のゴースト(`ghostContactId`)に付いている。同じ人なら、ユーザーに確かめてから `POST /contacts/{自分の contactId}/merge` で `from` にゴーストを渡してまとめる
-3. 共有のリスト(共有メールボックス・LINE 公式アカウント・Jira のプロジェクト)の読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
-4. メモ(`add_note`)はリストがなくても使える(最初に書いたときに作られる)
+4. 共有のリスト(共有メールボックス・LINE 公式アカウント・Jira のプロジェクト)の読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
+5. メモ(`add_note`)はリストがなくても使える(最初に書いたときに作られる)
+
+### Outlook をつなぐ
+
+本人の Outlook のメールボックスを、本人だけが読む個人のリストとして取り込む。Murmur がゲートウェイの OAuth クライアントになり、本人がゲートウェイで Murmur を許可する。
+
+1. ゲートウェイで Microsoft Graph がつながっているか(`list_credentials`)を確かめる。なければ先にゲートウェイでつないでもらう
+2. `POST /connections/outlook` を呼び、`status` で分ける:
+   - `authorize`: `authorize_url` をユーザーに開いてもらい、ゲートウェイの画面で Murmur を許可してもらう。許可すると Murmur の画面に結果が出る。終わったら `GET /connections` で確かめる
+   - `choose`: Graph の接続が複数ある。`credentials` からユーザーに選んでもらい、`credential_id` を付けてもう一度呼ぶ
+   - `no_credential`: ゲートウェイで Microsoft Graph をつないでから、もう一度呼ぶ
+   - `connected`: つながった(`data_source`)。何度呼んでもよい
+3. メールボックスのアドレスとエイリアスは自分の Contact に付く。別の人のアドレスが混じっていると `conflict` になるので、そのまま伝える
+4. 取り込むのはつないだあとに届くメールだけ(過去のメールは取らない)。止めるときは `POST /connections/{data_source}/disconnect`(スレッドとデータソースは残る)。`GET /connections` の `status` が `broken` なら、理由(`reason`)を伝えて、もう一度つないでもらう
 
 ### 名寄せ(Contact)
 
@@ -103,6 +117,9 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | move_signal | `POST /signals/{signal_id}/move` | `{"thread_id"}` か `{"new_thread_title"}` のどちらか、`"needs_response"?`(受信だけ)、`"reason"`(必須) | 移した先のスレッド(`get_thread` と同じ) |
 | record_sent | `POST /sent` | 下の「送信の記録」 | 送ったシグナルの入ったスレッド(`get_thread` と同じ) |
 | rename_me | `PATCH /me` | `{"name"}` | `me` と同じ |
+| connect_outlook | `POST /connections/outlook` | `{"credential_id"?}`(ゲートウェイの Graph の接続。複数あるときだけ) | `status`: `authorize`(`authorize_url`)・`choose`(`credentials`)・`no_credential`(`register_url`)・`connected`(`data_source`、`created`)。上の「Outlook をつなぐ」 |
+| list_connections | `GET /connections` | | 自分がつないだメールボックスと取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
+| disconnect | `POST /connections/{data_source}/disconnect` | | 取り込みを止める。スレッドとデータソースは残る |
 | create_data_source | `POST /data-sources` | `{"channel", "name", "identity", "gateway_credential_id", "description"?, "group"?}`。個人のリスト(読者は自分だけ) | `get_list` と同じ + `identity`(上の「初めてつないだとき」) |
 | set_identity | `POST /lists/{list_id}/identity` | `{"identity"}`(そのリストでの自分のアカウント) | `identity` の結果(`kind`・`contactId`) |
 | list_unresolved | `GET /addresses/unresolved` | | `[{channel, value, count, lastSeenAt, threadIds}]`(最後に見た順) |
