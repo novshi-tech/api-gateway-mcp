@@ -21,7 +21,9 @@
 - 0030 の今の実装でも、Contact に解決できない保持者はボールが `{ kind: 'contact', contactIds: [] }` になっていた（決定の「解決できなければアドレスのまま」が入っていなかった）。同じブランチで直した: `Ball`・`Turn` の `contact` に `addresses`、スレッドに `counterpartAddresses`（クエリ層だけ。0030 の末尾の追記）。0029 の問題意識はこれで片付く
 - スキル: api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.3（0.1.2 で「Outlook をつなぐ」の手順と connections の API の表、0.1.3 で解決できなかった相手のアドレス）
 - テスト: 283 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
-- 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は、main に入ったら消してよい
+- **同じ日に main に入れてデプロイした**: api-gateway-mcp#36（`api-gateway-murmur` 0.1.3）を nvt・ubs・kujira に出し直し、murmur#18（main の 15c36f7）を UBS に出した。UBS の D1 に `0002_connectors` を当ててから Worker を出した（バージョン `9aa1d19d-5cb0-466d-b45b-3c3332381377`）。ゲートウェイ経由の `GET /me`・`GET /threads` は 200、`GET /connections` は「connectors are not configured」の 404（UBS には外部コネクタの設定を入れていないので想定どおり）
+- 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は main に入ったので消してよい
+- 次: UBS で Outlook を有効にするか決める（`PUBLIC_URL`・`workers_dev` か routes での公開・キュー・`TOKEN_KEY`。ゲートウェイは同じアカウントの独自ドメインなので `GATEWAY_WEB` は要らない見込み）。そのあと Jira のコネクタの ADR（0034）
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
