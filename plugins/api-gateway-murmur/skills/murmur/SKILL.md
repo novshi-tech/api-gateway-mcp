@@ -60,6 +60,9 @@ Jira は課題の状態(担当者・ステータス・期日)を自分で持つ�
 2. どの課題を追いたいかをユーザーに聞き、JQL にする(`jql`)。省けば「担当・起票・ウォッチ」(`assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()`)。並び(`ORDER BY`)は書かなくてよい
 3. `POST /connections/jira` を呼び、`status` で分ける。`authorize`・`choose`・`no_credential` は Outlook と同じ。`choose_site` なら `sites` からユーザーに選んでもらい、`site`(その `id`)を付けてもう一度呼ぶ
 4. 取り込むのは、つないだあとに更新された課題。課題ごとにスレッドが 1 つでき、状態は写し(`source`)、起票とコメントはシグナルになる。誰の番は Jira の担当者で決まる
+   - **アクションが要るのは担当している課題だけ**。起票・ウォッチしている課題は文脈として入り、自分の番にはならない。担当から外れても、片付けるか Jira で完了するまでは追い続ける(相手の番になる)
+   - 担当が別の人の課題で自分にメンションされても、誰の番は担当者のまま(Jira は担当者が 1 人だけ)。ユーザーが自分のタスクとして追いたければ、メモのスレッドを作って結ぶ(下の「タスクとして追う」)
+   - 範囲の外の課題でのメンションは取り込まない。Jira のメール通知が Outlook に届けば、そちらのリストに入る。経緯を Murmur に残したい課題は、ユーザーに確かめてから Jira のスキルでウォッチを足す(次の差分から範囲に入る)
 5. 追う範囲を変えるときは `PATCH /connections/{data_source}` に `jql`。外れた課題のスレッドは消えない(片付けるかはユーザーに聞く)
 6. 起票・コメント・状態の変更は、これまでどおり Jira のスキルで行い、そのあと `record_sent` で記録する(起票は `sent_ref` に課題キー、コメントは `<課題キー>#c<コメント ID>`)
 
@@ -69,6 +72,7 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 
 - `GET /addresses/unresolved` で、見えるスレッドに出てきたのに Contact のないアドレスを探す
 - `GET /contacts?q=` で候補を出し、**同じ相手かをユーザーに確かめてから** `POST /contacts`(新しく作る)か `POST /contacts/{id}/addresses`(付ける)を呼ぶ。推測で付けない
+- **Jira の accountId**(`channel: "jira"`)が未解決なら、ゲートウェイの Jira で表示名を引き(`GET /ex/jira/<cloudid>/rest/api/3/user?accountId=<id>`)、その名前で **新しい Contact を作る**(`POST /contacts`)。新しく作るだけなら取り違えがないので、ユーザーに確かめなくてよい。作ると、担当者の写しがその人の番として効く。同じ人の Contact が既にありそうなら(名前が一致するなど)、作らずに、付けるかどうかをユーザーに確かめる
 - 付け替えるときは、今の付け先を `POST /contacts/{id}/addresses/{address_id}/end` で終わらせてから付ける。過去のシグナルは元の付け先のまま
 - 名寄せを直すと、過去のスレッドの相手と「誰の番」も直る(イベントはそのまま)
 - 相手の番(`ball`・`turn` の `kind: "contact"`)とスレッドの相手は、Contact に解決できた相手(`contactIds`・`counterpartContactIds`)と、解決できなかった相手のアドレス(`addresses`・`counterpartAddresses`)に分かれて出る。アドレスで出ている相手は、ユーザーに見せるときはアドレスのまま見せ、名寄せの候補として扱う。名寄せすると `contactIds` に移る
