@@ -23,7 +23,11 @@
 - テスト: 283 件緑。4 シナリオは `--ai replay`・`--db d1` も一致
 - **同じ日に main に入れてデプロイした**: api-gateway-mcp#36（`api-gateway-murmur` 0.1.3）を nvt・ubs・kujira に出し直し、murmur#18（main の 15c36f7）を UBS に出した。UBS の D1 に `0002_connectors` を当ててから Worker を出した（バージョン `9aa1d19d-5cb0-466d-b45b-3c3332381377`）。ゲートウェイ経由の `GET /me`・`GET /threads` は 200、`GET /connections` は「connectors are not configured」の 404（UBS には外部コネクタの設定を入れていないので想定どおり）
 - 10-30 のブランチ（`claude/determined-goldberg-yuf8v3`）は main に入ったので消してよい
-- 次: UBS で Outlook を有効にするか決める（`PUBLIC_URL`・`workers_dev` か routes での公開・キュー・`TOKEN_KEY`。ゲートウェイは同じアカウントの独自ドメインなので `GATEWAY_WEB` は要らない見込み）。そのあと Jira のコネクタの ADR（0034）
+- **同じ日に UBS で Outlook を有効にして、直樹の箱をつないだ。** 設定（murmur-deployments のブランチ `claude/gifted-mccarthy-3ab6w1`、main には未反映）: `PUBLIC_URL` は開いていた workers.dev（`https://murmur.urban-b.workers.dev`）、ゲートウェイへは Service Binding `GATEWAY_WEB`、キュー `murmur-sync`（作成済み）、secret の `TOKEN_KEY`。Worker のバージョン `7c07f59d-99a7-4d04-8f48-f15924fc98bd`
+  - ゲートウェイが workers.dev の CIMD（`/oauth/client.json`）を読めた。同意 → コールバック → データソース「野瀬直樹 の Outlook」（読者は直樹だけ、Contact は自動で作られ名前はアドレスのまま）
+  - 実物で確かめた: 受信（返事の要らない文面）→ 新しいスレッド・`needsResponse: false`・ボールなし。返事の要る文面 → `true`・こちらの番。**Outlook から返信 → 送信済みの取り込みで同じスレッドに入り（区切りは AI。送信済みにはヘッダーがない）、ボールは相手へ。相手はマスタにないので `addresses` に出る**（10-30 に残っていた「送信済みの取り込みを実物で見る」は済み）
+  - 既知: `last_sync_at` が通知の同期では進まない（10-30 の申し送りのまま）
+- 次: murmur-deployments の設定を main に入れる。直樹の名前（`PATCH /me`）。2 週間の試用（0016 の段階 5）の数え方。そのあと Jira のコネクタの ADR（0034）
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
