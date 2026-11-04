@@ -33,7 +33,9 @@
   - S0 は UBS で回す（直樹）。UBS のゲートウェイに組み込みの `jira` を有効にする: Atlassian の developer console で OAuth 2.0 のアプリを作り（Callback は `https://gateway.urban-b.com/connect/callback`、スコープは api-gateway-mcp の README の Jira の節）、`OAUTH_ATLASSIAN_CLIENT_ID` / `_SECRET` を ubs のゲートウェイに入れる
 - **UBS のゲートウェイに組み込みの `jira` を有効にし（Atlassian のアプリ。User identity API の `read:me` を足し忘れて一度失敗）、0034 の S0 を回した**（`docs/research/2026-11-04-jira-s0.md`）。読み取りは全部通る（GET の search/jql・相対時刻・`nextPageToken`・コメントは課題ごと）。動的 Webhook は登録・到達とも通った。わかった制約: URL は本人ごとに 1 つ、jqlFilter に `watcher` は使えない。0034 に反映した。テストの Webhook とコメントは消した
 - **0034 を採用し、S1・S2 を実装した**（0034 の「実装の記録」）。`POST /connections/jira`・`PATCH /connections/{id}`・`/webhooks/jira/<秘密>`。307 件緑、4 シナリオは `--ai replay`・`--db d1` も一致。スキルは api-gateway-mcp の同名ブランチで `api-gateway-murmur` 0.1.4
-- 次: 2 本の PR（スキルを先に）→ UBS に出す（マイグレーションなし。ゲートウェイの `jira` は有効化済み）→ 直樹が Jira をつなぎ、届いた Webhook の本文の形（ログの `jira_webhook`）を確かめる。そのあと 2 週間の試用（0016 の段階 5）の数え方
+- **同じ日に main に入れて出した**: api-gateway-mcp#37（スキル 0.1.4）→ ゲートウェイ 3 つ、murmur#19 → UBS（Worker `2796120e-59a5-4be7-bad4-819192208ab9`、マイグレーションなし）。直樹の Jira をつないで（「野瀬 直樹 の Jira（urban-b）」、既定の範囲）、コメントの通知から 8 秒でスレッドになるのを確かめた。届いた本文の形は `docs/research/2026-11-04-jira-s0.md`
+  - まだ実物で見ていないもの: 起票がシグナルになるところ、担当者で本人の番になるところ（テスト用の課題を起票して見る）
+- 次: 2 週間の試用（0016 の段階 5）の数え方
 - 残り（10-30 のまま）: 0024 の未決 3（Claude に送る本文の範囲）、送信済みの取り込みを実物で見る、コールバック・キューの `console.error(err)` のメッセージ落ち、`last_sync_at` の見せ方
 
 **2026-11-03（後半）: スタンド用スキルをゲートウェイに同梱した（3 つのリポジトリのブランチ `ccr-59689cfd-kswup8`、main には未反映）。** 直樹の方向: スキルはゲートウェイに同梱すべき（ゲートウェイは `plugins/` を Worker に組み込んで `/setup` で配り、共通スクリプトも `lib/plugin/` から同期している）。
