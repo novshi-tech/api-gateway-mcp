@@ -1,7 +1,7 @@
 import type { MurmurService } from '../../app/service';
 import type { ServiceDataSource } from '../../domain';
 import type { ConnectorStateStore } from '../../store/connector-state';
-import { GatewayAuthError } from '../gateway/http';
+import { GatewayAuthError } from '../../ports/gateway';
 import type { SyncJob, SyncQueue } from '../graph/jobs';
 import type { JiraCursor, SourceState } from '../graph/state';
 import type { JiraApi } from './api';

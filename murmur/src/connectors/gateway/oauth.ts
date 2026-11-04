@@ -3,8 +3,9 @@ import { GatewayAuthError, GatewayError, trimSlash, USER_AGENT, type Fetcher } f
 // 本体はゲートウェイの OAuth クライアント（0024 の決定 3）。Claude と同じく CIMD で、client_id は本体が公開するメタデータの URL。
 // 公開クライアント（シークレットなし）で、PKCE を使う。
 
-export const CLIENT_METADATA_PATH = '/oauth/client.json';
-export const CALLBACK_PATH = '/oauth/callback';
+import { CALLBACK_PATH, CLIENT_METADATA_PATH } from '../../ports/gateway';
+
+export { CALLBACK_PATH, CLIENT_METADATA_PATH };
 export const GATEWAY_SCOPE = 'gateway';
 
 export interface GatewayOAuthConfig {

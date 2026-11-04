@@ -1,4 +1,4 @@
-import { GatewayAuthError, GatewayError, trimSlash, USER_AGENT, type Fetcher } from '../gateway/http';
+import { GatewayAuthError, GatewayError, inScope, type ReadScope, type UpstreamCall } from '../../ports/gateway';
 import { CommentPage, SEARCH_FIELDS, SearchPage } from './issue';
 
 // Jira の呼び出し（ゲートウェイの REST 経由。0034 の決定 5）。本体が Jira に対してするのは、読み取りと Webhook の管理だけ。
@@ -49,9 +49,9 @@ type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 /**
  * 本体が呼べる口（メソッドとパス）。読み取りと、購読の管理（Webhook の登録・延長・削除。0024 の決定 1）だけ。
- * ここにない呼び出しは送る前に断る
+ * 組み立て時にゲートウェイの口の実装に渡し（0023 の決定 4）、ここにない呼び出しは送る前に断る
  */
-export const ALLOWED: ReadonlyArray<readonly [Method, RegExp]> = [
+export const JIRA_SCOPE: ReadScope = Object.freeze([
   ['GET', /^\/oauth\/token\/accessible-resources$/],
   ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/myself$/],
   ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/search\/jql$/],
@@ -59,21 +59,15 @@ export const ALLOWED: ReadonlyArray<readonly [Method, RegExp]> = [
   ['POST', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/webhook$/],
   ['PUT', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/webhook\/refresh$/],
   ['DELETE', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/webhook$/],
-];
+] as const);
 
 export function isAllowed(method: Method, path: string): boolean {
-  return ALLOWED.some(([m, re]) => m === method && re.test(path));
+  return inScope(JIRA_SCOPE, method, path);
 }
 
-/** ゲートウェイの REST で Jira を呼ぶ。token はその場で issue_token した 15 分のもの */
+/** ゲートウェイの口（本人の接続）で Jira を呼ぶ。呼べる口は JIRA_SCOPE で、口の実装も強制する */
 export class GatewayJiraApi implements JiraApi {
-  constructor(
-    private readonly fetcher: Fetcher,
-    /** issue_token の base_url（<gateway>/api） */
-    private readonly baseUrl: string,
-    private readonly token: string,
-    private readonly service = 'jira',
-  ) {}
+  constructor(private readonly upstream: UpstreamCall) {}
 
   async sites(): Promise<JiraSite[]> {
     const r = (await this.call('GET', '/oauth/token/accessible-resources')) as Array<{ id: string; url: string; name: string }>;
@@ -115,16 +109,7 @@ export class GatewayJiraApi implements JiraApi {
 
   private async call(method: Method, path: string, body?: unknown, query?: URLSearchParams): Promise<unknown> {
     if (!isAllowed(method, path)) throw new JiraError(400, `not allowed: ${method} ${path}`);
-    const res = await this.fetcher(`${trimSlash(this.baseUrl)}/${this.service}${path}${query ? `?${query}` : ''}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        'user-agent': USER_AGENT,
-        accept: 'application/json',
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    const res = await this.upstream(method, `${path}${query ? `?${query}` : ''}`, { body, headers: { accept: 'application/json' } });
     if (res.status === 202 || res.status === 204) return {};
     const json = (await res.json().catch(() => ({}))) as { error?: unknown; errorMessages?: string[]; message?: string };
     if (res.ok) return json;

@@ -26,7 +26,7 @@ import {
 } from '../api/schemas';
 import { bearerToken } from '../auth/claims';
 import type { Connections } from '../app/connections';
-import { CALLBACK_PATH, CLIENT_METADATA_PATH } from '../connectors/gateway/oauth';
+import { CALLBACK_PATH, CLIENT_METADATA_PATH } from '../ports/gateway';
 import { adminHref, renderAdminIndex, renderAdminList, renderAdminThread, renderTimeline } from './admin';
 
 export interface HttpOptions {

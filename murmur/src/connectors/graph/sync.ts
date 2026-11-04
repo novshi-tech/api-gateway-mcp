@@ -1,7 +1,7 @@
 import type { MurmurService } from '../../app/service';
 import type { ServiceDataSource } from '../../domain';
 import type { ConnectorStateStore } from '../../store/connector-state';
-import { GatewayAuthError } from '../gateway/http';
+import { GatewayAuthError } from '../../ports/gateway';
 import { GraphError, type GraphApi } from './api';
 import type { SyncJob, SyncQueue } from './jobs';
 import { GraphMessage } from './message';

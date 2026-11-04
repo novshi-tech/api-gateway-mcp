@@ -3,6 +3,10 @@ import { Connections } from '../../src/app/connections';
 import { GatewayUser } from '../../src/connectors/gateway/client';
 import type { Fetcher } from '../../src/connectors/gateway/http';
 import { clientMetadata, GatewayOAuth } from '../../src/connectors/gateway/oauth';
+import { RemoteGateway } from '../../src/connectors/gateway/remote';
+import { UpstreamRefused } from '../../src/ports/gateway';
+import { GRAPH_SCOPE } from '../../src/connectors/graph/scope';
+import { JIRA_SCOPE } from '../../src/connectors/jira/api';
 import type { SyncJob } from '../../src/connectors/graph/jobs';
 import { base64Url, SecretBox } from '../../src/connectors/secrets';
 import { connectorOwner, deriveViewer } from '../../src/domain';
@@ -30,6 +34,8 @@ class FakeGateway {
   readonly accessTokens = new Map<string, string>();
   readonly credentials = new Map<string, { id: string; service: string; label: string }[]>();
   refreshes = 0;
+  /** ゲートウェイでつなぎ直しが要る接続（issue_token がエラーになる） */
+  readonly reconnect = new Set<string>();
   private n = 0;
 
   private tokens(user: string) {
@@ -61,6 +67,9 @@ class FakeGateway {
       const user = this.accessTokens.get(String((init?.headers as Record<string, string>).authorization).replace('Bearer ', ''));
       if (!user) return new Response('unauthorized', { status: 401 });
       const { params } = JSON.parse(String(init?.body)) as { params: { name: string; arguments: { credential_ids?: string[] } } };
+      if (params.name === 'issue_token' && params.arguments.credential_ids?.some((id) => this.reconnect.has(id))) {
+        return Response.json({ jsonrpc: '2.0', id: 1, result: { isError: true, content: [{ type: 'text', text: 'credential needs reconnect' }] } });
+      }
       const text =
         params.name === 'list_credentials'
           ? JSON.stringify({ credentials: this.credentials.get(user) ?? [] })
@@ -104,18 +113,22 @@ describe('H3 個人の箱をつなぐ', () => {
     const oauthConfig = { gatewayUrl: GATEWAY, publicUrl: MURMUR };
     const oauth = new GatewayOAuth(oauthConfig, gw.fetch, clock);
     const deps = { fetcher: gw.fetch, gatewayUrl: GATEWAY, oauth, state, box, now: clock };
-    const connections = new Connections({
+    const gateway = new RemoteGateway({
       ...deps,
-      service: made.service,
       oauthConfig,
+      kinds: { graph: { service: 'graph', scope: GRAPH_SCOPE }, jira: { service: 'jira', scope: JIRA_SCOPE } },
+    });
+    const connections = new Connections({
+      gateway,
+      state,
+      now: clock,
+      service: made.service,
       queue: { send: async (j) => void queued.push(j) },
       newId: counterIds(),
-      graphService: 'graph',
       graphFor: () => new FakeGraph({ id: 'oid', displayName: 'Bob', addresses: ['bob@ubs.example', 'bob.alias@ubs.example'] }),
-      jiraService: 'jira',
       jiraFor: () => jira,
     });
-    return { ...made, connections, deps };
+    return { ...made, connections, deps, gateway };
   }
 
   /** つなぐを頼み、本人が許可して戻ってくる */
@@ -196,6 +209,25 @@ describe('H3 個人の箱をつなぐ', () => {
     expect(gw.refreshes).toBe(1);
     expect((await state.grant('u_bob'))!.version).toBe(2);
     expect(await new GatewayUser(ctx.deps, 'u_bob').listCredentials()).toHaveLength(2);
+  });
+
+  it('H3 ゲートウェイの口は読める口だけを通す（メールの送信は送る前に断る。0023 の決定 4）', async () => {
+    await consent('u_bob');
+    const graph = await ctx.gateway.upstream('u_bob', 'gw_bob', 'graph');
+    await expect(graph('POST', '/v1.0/me/sendMail', { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+    await expect(graph('PATCH', '/v1.0/me/messages/m1', { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+    await expect(graph('DELETE', '/v1.0/me/messages/m1')).rejects.toBeInstanceOf(UpstreamRefused);
+    expect((await graph('GET', '/v1.0/me?$select=id')).status).toBe(404); // 偽物のゲートウェイは REST を持たないが、送れてはいる
+    const jira = await ctx.gateway.upstream('u_bob', 'gw_bob', 'jira');
+    await expect(jira('POST', '/ex/jira/c1/rest/api/3/issue', { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+    await expect(jira('POST', '/ex/jira/c1/rest/api/3/issue/A-1/comment', { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+  });
+
+  it('同意は有効で、選んだ接続がゲートウェイでつなぎ直しを要るときは 409（同意は捨てない。0023 の段取り 2）', async () => {
+    await consent('u_bob');
+    gw.reconnect.add('gw_bob');
+    await expect(ctx.connections.connectOutlook('u_bob')).rejects.toMatchObject({ code: 'conflict' });
+    expect(state.grants.size).toBe(1);
   });
 
   it('同意が取り消されていたら、もう一度認可の URL を返す', async () => {

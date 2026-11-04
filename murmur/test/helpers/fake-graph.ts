@@ -1,5 +1,5 @@
 import { GraphError, GRAPH_ORIGIN, type CreatedSubscription, type GraphApi, type GraphMe } from '../../src/connectors/graph/api';
-import { GatewayAuthError } from '../../src/connectors/gateway/http';
+import { GatewayAuthError } from '../../src/ports/gateway';
 import type { DeltaPage } from '../../src/connectors/graph/message';
 
 /** Graph の偽物（本人の箱）。フォルダごとのメールと、delta の位置（何通目まで渡したか）とサブスクリプションを持つ */

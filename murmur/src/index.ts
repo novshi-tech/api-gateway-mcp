@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { MurmurService, randomIds, systemClock } from './app/service';
 import { DEFAULT_POLICY } from './domain';
-import { verifyIdentity, verifyWebhookSignature } from './auth/identity';
+import { verifyWebhookSignature } from './auth/identity';
 import { DummyConnector } from './connectors/dummy/connector';
 import { D1DummyBackend } from './connectors/dummy/d1-backend';
 import type { Connectors } from './connectors/types';
@@ -10,14 +10,16 @@ import { AnthropicLlm } from './ingest/llm';
 import { createApp, type ConnectorHttp } from './http/app';
 import { d1Repo, type Db } from './store/d1';
 import { Connections } from './app/connections';
-import { GatewayUser } from './connectors/gateway/client';
 import type { Fetcher } from './connectors/gateway/http';
 import { clientMetadata, GatewayOAuth } from './connectors/gateway/oauth';
+import { identityAuthenticator, RemoteGateway } from './connectors/gateway/remote';
+import type { UpstreamCall } from './ports/gateway';
 import { GatewayGraphApi } from './connectors/graph/api';
+import { GRAPH_SCOPE } from './connectors/graph/scope';
 import { SyncJob, type SyncQueue } from './connectors/graph/jobs';
 import { jobsFromNotifications } from './connectors/graph/notifications';
 import { GraphMailSync } from './connectors/graph/sync';
-import { GatewayJiraApi } from './connectors/jira/api';
+import { GatewayJiraApi, JIRA_SCOPE } from './connectors/jira/api';
 import { JiraSync } from './connectors/jira/sync';
 import { randomHex, SecretBox, sha256Hex } from './connectors/secrets';
 import { D1ConnectorState } from './store/connector-state';
@@ -52,6 +54,11 @@ export interface Env {
   SYNC_QUEUE?: Queue<SyncJob>;
   /** ゲートウェイのデフォルトの入口への Service Binding。あれば公開 URL への fetch の代わりに使う */
   GATEWAY_WEB?: { fetch: typeof fetch };
+}
+
+/** 本体の API のトークンの確かめ方（ゲートウェイの identity の JWT） */
+function identityOf(env: Env) {
+  return env.GATEWAY_JWKS ? { jwks: JSON.parse(env.GATEWAY_JWKS) as unknown, audience: env.IDENTITY_AUDIENCE, issuer: env.IDENTITY_ISSUER || undefined } : undefined;
 }
 
 const CHANNELS = ['email', 'slack', 'line', 'jira', 'bitbucket'] as const;
@@ -92,12 +99,22 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
   const box = await SecretBox.fromBase64(env.TOKEN_KEY);
   const oauthConfig = { gatewayUrl, publicUrl };
   const oauth = new GatewayOAuth(oauthConfig, fetcher, now);
-  const graphService = env.GRAPH_SERVICE || 'graph';
-  const gatewayDeps = { fetcher, gatewayUrl, oauth, state, box, now };
-  const graphFor = (t: { token: string; baseUrl: string }) => new GatewayGraphApi(fetcher, t.baseUrl, t.token, graphService);
-
-  const jiraService = env.JIRA_SERVICE || 'jira';
-  const jiraFor = (t: { token: string; baseUrl: string }) => new GatewayJiraApi(fetcher, t.baseUrl, t.token, jiraService);
+  // ゲートウェイの口（0023）。読める口は種類ごとにここで固定する
+  const gateway = new RemoteGateway({
+    fetcher,
+    oauth,
+    oauthConfig,
+    state,
+    box,
+    now,
+    identity: identityOf(env),
+    kinds: {
+      graph: { service: env.GRAPH_SERVICE || 'graph', scope: GRAPH_SCOPE },
+      jira: { service: env.JIRA_SERVICE || 'jira', scope: JIRA_SCOPE },
+    },
+  });
+  const graphFor = (call: UpstreamCall) => new GatewayGraphApi(call);
+  const jiraFor = (call: UpstreamCall) => new GatewayJiraApi(call);
   // Jira の Webhook の受け口の秘密（本人ごと。S0: REST の Webhook の URL は本人ごとに 1 つ）。TOKEN_KEY から導くので保管しない
   const jiraSecret = (userId: string) => sha256Hex(`${env.TOKEN_KEY}:jira-webhook:${userId}`);
 
@@ -106,12 +123,11 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
     ? { send: async (job) => void (await env.SYNC_QUEUE!.send(job)) }
     : { send: async (job) => waitUntil(sync.handle(job).catch((err) => console.error(JSON.stringify({ msg: 'sync_failed', job, error: String(err) })))) };
   const log = (entry: Record<string, unknown>) => console.log(JSON.stringify(entry));
-  const issuedFor = (source: { userId: string; gatewayCredentialId: string }) => new GatewayUser(gatewayDeps, source.userId).issueToken([source.gatewayCredentialId]);
   const jira = new JiraSync({
     service,
     state,
     queue,
-    jiraFor: async (source) => jiraFor(await issuedFor(source)),
+    jiraFor: async (source) => jiraFor(await gateway.upstream(source.userId, source.gatewayCredentialId, 'jira')),
     now,
     webhookUrlFor: async (userId) => `${publicUrl}/webhooks/jira/${await jiraSecret(userId)}`,
     log,
@@ -120,7 +136,7 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
     service,
     state,
     queue,
-    graphFor: async (source) => graphFor(await issuedFor(source)),
+    graphFor: async (source) => graphFor(await gateway.upstream(source.userId, source.gatewayCredentialId, 'graph')),
     now,
     notificationUrl: `${publicUrl}/webhooks/graph`,
     newClientState: () => randomHex(32),
@@ -133,7 +149,7 @@ async function buildConnectors(env: Env, service: MurmurService, waitUntil: (p: 
       await jira.handle(job);
     },
   };
-  const connections = new Connections({ ...gatewayDeps, service, oauthConfig, queue, newId: randomIds, graphService, graphFor, jiraService, jiraFor });
+  const connections = new Connections({ gateway, service, queue, newId: randomIds, graphFor, jiraFor, state, now });
   return {
     sync,
     connections,
@@ -165,16 +181,7 @@ export default {
     let shell: Promise<ConnectorShell | null> | undefined;
     const app = createApp({
       service: () => service,
-      authenticate: async (token) => {
-        if (!env.GATEWAY_JWKS) return null;
-        const r = await verifyIdentity(
-          token,
-          JSON.parse(env.GATEWAY_JWKS),
-          { audience: env.IDENTITY_AUDIENCE, issuer: env.IDENTITY_ISSUER || undefined },
-          Math.floor(Date.now() / 1000),
-        );
-        return r.ok ? r.sub : null;
-      },
+      authenticate: identityAuthenticator(identityOf(env), () => new Date().toISOString()),
       webhookVerify: (body, sig) => (env.WEBHOOK_SECRET ? verifyWebhookSignature(body, sig, env.WEBHOOK_SECRET) : Promise.resolve(false)),
       timelineToken: env.TIMELINE_TOKEN,
       connectors: () => (shell ??= buildConnectors(env, service, (p) => ctx.waitUntil(p))),

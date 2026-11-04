@@ -1,4 +1,4 @@
-import { GatewayAuthError } from '../../src/connectors/gateway/http';
+import { GatewayAuthError } from '../../src/ports/gateway';
 import { JiraError, type JiraApi, type JiraMe, type JiraSite, type JiraWebhookSpec, type WebhookRegistration } from '../../src/connectors/jira/api';
 import { CommentPage, JiraComment, JiraIssue, SearchPage } from '../../src/connectors/jira/issue';
 

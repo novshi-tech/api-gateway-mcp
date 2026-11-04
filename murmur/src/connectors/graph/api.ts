@@ -1,4 +1,4 @@
-import { GatewayAuthError, GatewayError, trimSlash, USER_AGENT, type Fetcher } from '../gateway/http';
+import { GatewayAuthError, GatewayError, type UpstreamCall } from '../../ports/gateway';
 import { DeltaPage, GRAPH_PREFER, MESSAGE_SELECT } from './message';
 
 // Graph の呼び出し（ゲートウェイの REST 経由）。本体が Graph に対してするのは、読み取りと購読の管理だけ（0024 の決定 1）。
@@ -40,15 +40,9 @@ export class GraphError extends Error {
 
 export const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 
-/** ゲートウェイの REST で Graph を呼ぶ。token はその場で issue_token した 15 分のもの */
+/** ゲートウェイの口（本人の接続）で Graph を呼ぶ。呼べる口は GRAPH_SCOPE（scope.ts）で、口の実装が強制する */
 export class GatewayGraphApi implements GraphApi {
-  constructor(
-    private readonly fetcher: Fetcher,
-    /** issue_token の base_url（<gateway>/api） */
-    private readonly baseUrl: string,
-    private readonly token: string,
-    private readonly service = 'graph',
-  ) {}
+  constructor(private readonly upstream: UpstreamCall) {}
 
   async me(): Promise<GraphMe> {
     const r = (await this.call('GET', '/v1.0/me?$select=id,displayName,mail,userPrincipalName,proxyAddresses')) as {
@@ -105,16 +99,7 @@ export class GatewayGraphApi implements GraphApi {
   }
 
   private async call(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<unknown> {
-    const res = await this.fetcher(`${trimSlash(this.baseUrl)}/${this.service}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        'user-agent': USER_AGENT,
-        prefer: GRAPH_PREFER,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    const res = await this.upstream(method, path, { body, headers: { prefer: GRAPH_PREFER } });
     if (res.status === 204) return {};
     const json = (await res.json().catch(() => ({}))) as { error?: unknown };
     if (res.ok) return json;

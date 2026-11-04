@@ -1,35 +1,29 @@
 import { connectJiraSource, connectorOwner, DomainError, connectMailbox, setJiraScope, type ServiceDataSource } from '../domain';
-import { GatewayUser, issueToken, listCredentials, type GatewayCredential, type GatewayUserDeps } from '../connectors/gateway/client';
-import { GatewayAuthError } from '../connectors/gateway/http';
-import { authorizeUrl, type GatewayOAuth, type GatewayOAuthConfig } from '../connectors/gateway/oauth';
+import { ConsentRequired, GatewayAuthError, type GatewayCredential, type GatewayPort, type UpstreamCall, type UpstreamKind } from '../ports/gateway';
 import type { GraphApi } from '../connectors/graph/api';
 import type { JiraApi, JiraSite } from '../connectors/jira/api';
 import type { SyncQueue } from '../connectors/graph/jobs';
 import type { SourceState } from '../connectors/graph/state';
-import { randomHex, s256 } from '../connectors/secrets';
 import type { ConnectorStateStore, PendingAuthorization } from '../store/connector-state';
 import type { MurmurService } from './service';
 
-// 個人の箱をつなぐ（0024 の決定 3）。本人がスタンドから頼み、ゲートウェイの同意の画面で本体を許可すると、
+// 個人の箱をつなぐ（0024 の決定 3）。ゲートウェイとのやりとりは全部ゲートウェイの口（ports/gateway.ts。0023）を通す。
+// 本人がスタンドから頼み、ゲートウェイの同意の画面で本体を許可すると、
 // 本体はデータソースを実行時に作り（読者は本人 1 人）、キューにサブスクリプションと初回の delta を頼む。
 // Jira（0034）も同じ同意で、ゲートウェイの jira の接続からサイトを選び、本人の JQL の範囲を個人リストにする。
 
 /** 認可の途中の state の寿命 */
 const PENDING_MINUTES = 15;
 
-export interface ConnectionsDeps extends GatewayUserDeps {
+export interface ConnectionsDeps {
+  gateway: GatewayPort;
   service: MurmurService;
-  oauthConfig: GatewayOAuthConfig;
-  oauth: GatewayOAuth;
   queue: SyncQueue;
   newId: (prefix: string) => string;
-  /** ゲートウェイの Microsoft Graph の接続先の名前 */
-  graphService: string;
-  graphFor(token: { token: string; baseUrl: string }): GraphApi;
-  /** ゲートウェイの Jira の接続先の名前 */
-  jiraService: string;
-  jiraFor(token: { token: string; baseUrl: string }): JiraApi;
+  graphFor(call: UpstreamCall): GraphApi;
+  jiraFor(call: UpstreamCall): JiraApi;
   state: ConnectorStateStore;
+  now: () => string;
 }
 
 export type ConnectResult =
@@ -67,10 +61,6 @@ export interface ConnectionView {
 export class Connections {
   constructor(private readonly deps: ConnectionsDeps) {}
 
-  private user(userId: string) {
-    return new GatewayUser(this.deps, userId);
-  }
-
   /** つなぐ。同意がまだなら認可の URL を返し、あればゲートウェイの接続を選んでデータソースを作る（何度呼んでもよい） */
   async connectOutlook(userId: string, credentialId?: string): Promise<ConnectResult> {
     return this.connect(userId, credentialId ?? null, { kind: 'outlook' });
@@ -84,27 +74,25 @@ export class Connections {
   private async connect(userId: string, credentialId: string | null, request: NonNullable<PendingAuthorization['request']>): Promise<ConnectResult> {
     const dir = await this.deps.service.directory();
     if (!dir.seed.users.some((u) => u.id === userId)) throw new DomainError('forbidden', `user ${userId} はまだサインインしていない`);
-    if (await this.deps.state.grant(userId)) {
-      try {
-        return await this.connectWithGrant(userId, await this.user(userId).listCredentials(), credentialId ?? undefined, request);
-      } catch (err) {
-        // 同意が取り消された・失効した: もう一度許可してもらう
-        if (!(err instanceof GatewayAuthError)) throw err;
-        await this.deps.state.deleteGrant(userId);
-      }
+    try {
+      return await this.connectWithGrant(userId, await this.deps.gateway.credentials(userId, request.kind === 'jira' ? 'jira' : 'graph'), credentialId ?? undefined, request);
+    } catch (err) {
+      // 同意がない・取り消された・失効した: もう一度許可してもらう
+      if (err instanceof ConsentRequired) return this.authorize(userId, credentialId, request);
+      // 同意は有効で、選んだ接続そのものがゲートウェイでつなぎ直しを要る。Murmur の同意を取り直しても直らない
+      if (err instanceof GatewayAuthError) throw new DomainError('conflict', `ゲートウェイでこの接続をつなぎ直してから、もう一度頼んでください（${err.message}）`);
+      throw err;
     }
-    return this.authorize(userId, credentialId, request);
   }
 
   private async authorize(userId: string, credentialId: string | null, request: NonNullable<PendingAuthorization['request']>): Promise<ConnectResult> {
-    const state = randomHex(24);
-    const verifier = randomHex(32);
-    await this.deps.state.putPending({ state, userId, verifier, credentialId, createdAt: this.deps.now(), request });
-    return { status: 'authorize', authorize_url: authorizeUrl(this.deps.oauthConfig, { state, codeChallenge: await s256(verifier) }) };
+    const { url, state, secret } = await this.deps.gateway.consent.begin(userId);
+    await this.deps.state.putPending({ state, userId, verifier: secret, credentialId, createdAt: this.deps.now(), request });
+    return { status: 'authorize', authorize_url: url };
   }
 
   /**
-   * ゲートウェイの同意の画面から戻ってきた。コードをトークンに換え、許可したのが頼んだ本人かを確かめてから保管する
+   * ゲートウェイの同意の画面から戻ってきた。許可したのが頼んだ本人かを口が確かめてから保管する
    * （別の人がこの URL を開いて許可しても、その人の箱を頼んだ本人のデータソースにはしない）
    */
   async callback(input: { state: string | null; code: string | null; error: string | null }): Promise<CallbackResult> {
@@ -115,18 +103,14 @@ export class Connections {
     if (input.error || !input.code) return { ok: false, message: `ゲートウェイで許可されませんでした（${input.error ?? 'no code'}）。` };
 
     const request = pending.request ?? { kind: 'outlook' };
-    const label = request.kind === 'jira' ? `Jira（${this.deps.jiraService}）` : `Microsoft Graph（${this.deps.graphService}）`;
-    const tokens = await this.deps.oauth.exchange(input.code, pending.verifier);
-    const all = await listCredentials(this.deps.fetcher, this.deps.gatewayUrl, tokens.accessToken);
-    // 本人の確かめ: ゲートウェイの短命トークンの sub がゲートウェイの User。つなぐサービスの接続で確かめる
-    const probe = all.find((c) => c.service === this.serviceOf(request))?.id;
-    if (!probe) return { ok: false, message: `ゲートウェイに ${label} の接続がありません。ゲートウェイでつないでから、もう一度頼んでください。` };
-    const issued = await issueToken(this.deps.fetcher, this.deps.gatewayUrl, tokens.accessToken, [probe]);
-    if (issued.userId !== pending.userId) {
+    const kind = this.kindOf(request);
+    const label = kind === 'jira' ? 'Jira' : 'Microsoft Graph';
+    const done = await this.deps.gateway.consent.complete({ userId: pending.userId, code: input.code, secret: pending.verifier, kind });
+    if (done === 'no_credential') return { ok: false, message: `ゲートウェイに ${label} の接続がありません。ゲートウェイでつないでから、もう一度頼んでください。` };
+    if (done === 'wrong_user') {
       return { ok: false, message: '許可したアカウントが、つなぐように頼んだ人と違います。本人のアカウントでもう一度許可してください。' };
     }
-    await GatewayUser.save(this.deps, pending.userId, tokens);
-    const result = await this.connectWithGrant(pending.userId, all, pending.credentialId ?? undefined, request);
+    const result = await this.connectWithGrant(pending.userId, await this.deps.gateway.credentials(pending.userId, kind), pending.credentialId ?? undefined, request);
     switch (result.status) {
       case 'connected':
         return {
@@ -145,26 +129,25 @@ export class Connections {
     }
   }
 
-  private serviceOf(request: NonNullable<PendingAuthorization['request']>): string {
-    return request.kind === 'jira' ? this.deps.jiraService : this.deps.graphService;
+  private kindOf(request: NonNullable<PendingAuthorization['request']>): UpstreamKind {
+    return request.kind === 'jira' ? 'jira' : 'graph';
   }
 
   private async connectWithGrant(
     userId: string,
-    all: GatewayCredential[],
+    /** 本人のゲートウェイの接続のうち、つなぐ種類のもの */
+    creds: GatewayCredential[],
     credentialId: string | undefined,
     request: NonNullable<PendingAuthorization['request']>,
   ): Promise<ConnectResult> {
-    const service = this.serviceOf(request);
-    const creds = all.filter((c) => c.service === service);
+    const kind = this.kindOf(request);
     const chosen = credentialId ? creds.find((c) => c.id === credentialId) : creds.length === 1 ? creds[0] : undefined;
-    if (credentialId && !chosen) throw new DomainError('not_found', `credential ${credentialId} はゲートウェイの ${service} の接続にない`);
-    if (creds.length === 0) return { status: 'no_credential', register_url: `${this.deps.gatewayUrl.replace(/\/+$/, '')}/` };
+    if (credentialId && !chosen) throw new DomainError('not_found', `credential ${credentialId} はゲートウェイの ${kind} の接続にない`);
+    if (creds.length === 0) return { status: 'no_credential', register_url: this.deps.gateway.homeUrl };
     if (!chosen) return { status: 'choose', credentials: creds };
     if (request.kind === 'jira') return this.connectJiraWith(userId, chosen.id, request);
 
-    const issued = await this.user(userId).issueToken([chosen.id]);
-    const me = await this.deps.graphFor(issued).me();
+    const me = await this.deps.graphFor(await this.deps.gateway.upstream(userId, chosen.id, 'graph')).me();
     const { result: plan } = await this.deps.service.changeMaster(userId, 'Outlook をつなぐ', (d, ctx) =>
       connectMailbox(d, ctx, { userId, gatewayCredentialId: chosen.id, displayName: me.displayName, addresses: me.addresses }),
     );
@@ -191,8 +174,7 @@ export class Connections {
   }
 
   private async connectJiraWith(userId: string, credentialId: string, request: { kind: 'jira'; cloudId?: string; jql?: string }): Promise<ConnectResult> {
-    const issued = await this.user(userId).issueToken([credentialId]);
-    const api = this.deps.jiraFor(issued);
+    const api = this.deps.jiraFor(await this.deps.gateway.upstream(userId, credentialId, 'jira'));
     const sites = await api.sites();
     const site = request.cloudId ? sites.find((s) => s.id === request.cloudId) : sites.length === 1 ? sites[0] : undefined;
     if (request.cloudId && !site) throw new DomainError('not_found', `site ${request.cloudId} はこの Jira の接続から届かない`);
