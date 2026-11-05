@@ -63,19 +63,19 @@ npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_ID
 npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_SECRET
 ```
 
-書いたら `npm run typecheck` と `npm test` を通して、ユーザーに確認してからデプロイする。デプロイのあと、ユーザーに Web 画面で認証情報を登録(OAuth なら接続)してもらい、`api-gateway` スキルの `gw_request.py` で 1 回呼んで確かめる。
+書いたら `npm run typecheck` と `npm test` を通して、ユーザーに確認してからデプロイする。デプロイのあと、ユーザーに Web 画面で認証情報を登録(OAuth なら接続)してもらい、`heddleway` スキルの `gw_request.py` で 1 回呼んで確かめる。
 
 ## 3. サービス別のスキルを作る
 
 スキルの置き場所をユーザーと決める。
 
 - 自分だけ・自社だけで使うサービス: ユーザー自身のプラグイン(別リポジトリ)に置く。このリポジトリには入れない。
-- 誰でも使えそうな汎用のサービスで、このリポジトリに取り込んでほしい場合: 定義は `SERVICES` ではなく `src/catalog.ts` に足し、スキルは、小さいものは共通の `plugins/api-gateway/skills/<skill>/` に、大きい提供元のものは提供元のプラグイン(`plugins/api-gateway-<提供元>/`。なければ作り、`marketplace.json` に `dependencies: ["api-gateway"]` つきで足す)に置く。テストと README も足して PR にする。
+- 誰でも使えそうな汎用のサービスで、このリポジトリに取り込んでほしい場合: 定義は `SERVICES` ではなく `src/catalog.ts` に足し、スキルは、小さいものは共通の `plugins/heddleway/skills/<skill>/` に、大きい提供元のものは提供元のプラグイン(`plugins/heddleway-<提供元>/`。なければ作り、`marketplace.json` に `dependencies: ["heddleway"]` つきで足す)に置く。テストと README も足して PR にする。
 
-スキルは、既存の `plugins/api-gateway/skills/gbizinfo`(小さい例)や `plugins/api-gateway-freee/skills/freee`(ページングのスクリプトつき)をまねる。
+スキルは、既存の `plugins/heddleway/skills/gbizinfo`(小さい例)や `plugins/heddleway-freee/skills/freee`(ページングのスクリプトつき)をまねる。
 
 - `SKILL.md` のフロントマターの `name` はディレクトリ名と同じにする。`description` には、何ができるかと、どんな依頼で使うかを具体的に書く(Claude はこれを見てスキルを選ぶ)。
-- 本文は「`api-gateway` スキルの手順でトークンを発行する」から始めて、サービス名、API の要点(パス、ページング、レート制限、よくあるエラー)、呼び出しの例を書く。
+- 本文は「`heddleway` スキルの手順でトークンを発行する」から始めて、サービス名、API の要点(パス、ページング、レート制限、よくあるエラー)、呼び出しの例を書く。
 - エンドポイントが多い API は、`references/` に一覧を分けて、`grep` で必要な節だけ読ませる。公開の OpenAPI や GraphQL のスキーマがあれば、生成スクリプトを `tools/` に置く。
 - スキルは自分の `scripts/` に `gw_request.py` と `gwlib.py` のコピーを持ち、手順では `GW="${CLAUDE_SKILL_DIR}/scripts/gw_request.py"` で呼ぶ。ほかのスキルのディレクトリは探さない(Claude Code はプラグインごとに別の場所にインストールし、Cowork はディレクトリを `<plugin>:<skill>` と名付ける)。
   - このリポジトリでは、`scripts/` を作って `npm run plugin:sync` を実行すれば、`lib/plugin/` の原本がコピーされる。

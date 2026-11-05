@@ -3,7 +3,7 @@
 Every skill that calls the gateway carries its own copy next to its scripts,
 so `import gwlib` finds it in the script's directory however Claude Code or
 Cowork installs the plugin. The original is lib/plugin/gwlib.py in the
-api-gateway-mcp repository; `npm run plugin:sync` copies it into the skills.
+heddleway repository; `npm run plugin:sync` copies it into the skills.
 """
 import argparse
 import csv
@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 
 # Cloudflare rejects Python's default User-Agent with error 1010.
-USER_AGENT = "api-gateway-client/1"
+USER_AGENT = "heddleway-client/1"
 # Left as they are when percent-encoding a path or query; "%" is included so
 # encoded input is not encoded twice.
 URL_SAFE = "/%:@!$&'()*+,;=-._~"

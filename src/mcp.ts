@@ -42,7 +42,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
   const idp = IDP_NAMES[env.IDP_TYPE as string] ?? (env.IDP_TYPE as string);
   const gateway = { organization, idp, url: base };
   const server = new McpServer(
-    { name: "api-gateway-mcp", title: `Heddleway (${organization})`, version: "0.0.0" },
+    { name: "heddleway", title: `Heddleway (${organization})`, version: "0.0.0" },
     { instructions: instructions(organization, idp, base) },
   );
   const vault = vaultFor(env, props.userId);
@@ -84,7 +84,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
         "Pass at most one credential per service. Send requests to `<base_url>/<service>/<upstream path>` " +
         "with `Authorization: Bearer <token>`; the gateway replaces that header with the upstream credentials. " +
         "Request a new token when it expires. " +
-        "Always set an explicit User-Agent header (for example `api-gateway-client`): Cloudflare rejects some default client user agents such as Python-urllib with error 1010.",
+        "Always set an explicit User-Agent header (for example `heddleway-client`): Cloudflare rejects some default client user agents such as Python-urllib with error 1010.",
       inputSchema: {
         credential_ids: z.array(z.string()).min(1).describe("Credential IDs from list_credentials"),
       },

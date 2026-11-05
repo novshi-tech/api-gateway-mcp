@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: api-gateway-mcp を自分の Cloudflare アカウントにセルフホストする手順。IdP(Entra ID / Google)へのアプリ登録、デプロイごとの設定ファイル(deployments/<名前>.jsonc。別の private リポジトリで管理して deployments/ に clone する)の作成と管理、KV とシークレットの登録、wrangler deploy、Claude へのコネクタ追加、プラグインの導入までを、ユーザーと対話しながら進める。設定を変えたあとの再デプロイ、1 つの clone での複数デプロイの管理、新しい版で増えた Durable Object などを各デプロイの設定に反映することも扱う。「ゲートウェイをデプロイしたい」「セルフホストしたい」「初期設定をして」「設定を変えたので出し直して」「デプロイ先をもう 1 つ増やしたい」「新しい版に上げて」などの依頼で使う。サービスを足すだけなら add-service スキル。
+description: heddleway を自分の Cloudflare アカウントにセルフホストする手順。IdP(Entra ID / Google)へのアプリ登録、デプロイごとの設定ファイル(deployments/<名前>.jsonc。別の private リポジトリで管理して deployments/ に clone する)の作成と管理、KV とシークレットの登録、wrangler deploy、Claude へのコネクタ追加、プラグインの導入までを、ユーザーと対話しながら進める。設定を変えたあとの再デプロイ、1 つの clone での複数デプロイの管理、新しい版で増えた Durable Object などを各デプロイの設定に反映することも扱う。「ゲートウェイをデプロイしたい」「セルフホストしたい」「初期設定をして」「設定を変えたので出し直して」「デプロイ先をもう 1 つ増やしたい」「新しい版に上げて」などの依頼で使う。サービスを足すだけなら add-service スキル。
 ---
 
 # ゲートウェイをデプロイする
@@ -30,7 +30,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - デプロイの名前(`deployments/<名前>.jsonc` のファイル名。英小文字・数字・ハイフン)と、Worker の名前(`name`。同じ Cloudflare アカウントの中で、ほかのデプロイと違うもの)。
    - Cloudflare のアカウント(`account_id`)。**必ず書く**。ログインやトークンから複数のアカウントが見えると、wrangler はどれに出すかを聞いてきて、クラウドのセッションではそこで止まる。組織ごとにアカウントを分けているなら、その組織のアカウントにする。見えるアカウントは `npx wrangler whoami` で確かめる。
    - 組織名(`ORGANIZATION_NAME`)。1 つのデプロイ = 1 つの組織(`docs/adr/0004`)。Claude のコネクタの説明と Web 画面に出て、複数の組織のゲートウェイを並べてつないだときの見分けに使う。ユーザーがすでに別の組織のデプロイを持っていて、同じ組織のつもりなら、デプロイを分けずにそちらにサービスを足す。
-   - 公開 URL(`PUBLIC_URL`)。workers.dev なら `https://api-gateway-mcp.<サブドメイン>.workers.dev`。独自ドメインなら、その設定もする。
+   - 公開 URL(`PUBLIC_URL`)。workers.dev なら `https://heddleway.<サブドメイン>.workers.dev`。独自ドメインなら、その設定もする。
    - IdP: Microsoft 365 の組織なら Entra ID、Google Workspace なら Google。
    - 最初に使うサービス。組み込み(`src/catalog.ts`)のうち OAuth のもの(freee、Google、Microsoft Graph)は、クライアントを登録したものだけが使えるようになるので、どれを使うかを決める。組み込みにないサービスは、デプロイのあとで add-service スキルで足す。
 3. IdP にアプリを登録してもらう。Claude が IdP の管理画面を操作することはできないので、README の手順を示して、ユーザーにやってもらう。
@@ -51,7 +51,7 @@ wrangler は直接呼ばず、名前を付けてラッパーから呼ぶ。中�
    - `<PUBLIC_URL>/` をユーザーに開いてもらい、サインインと認証情報の登録ができるか見てもらう。
    - コネクタとプラグインの入れ方は、Web 画面の「Claude につなぐ」(`<PUBLIC_URL>/setup`)にまとまっている。利用者にはそこを案内する。業務向けのプラグイン(別のリポジトリのもの)を配るなら、管理者が「プラグインの配布」(`<PUBLIC_URL>/admin/plugins`)に zip を追加する。
    - Claude にコネクタ `<PUBLIC_URL>/mcp` を追加してもらう(Pro / Max は個人の設定、Team / Enterprise は Owner が組織の設定)。コネクタの名前は組織が分かるものにする(ほかの組織のゲートウェイと並べてつなぐことがあるので)。組織が契約している Claude には、その組織のゲートウェイだけをつなぐよう勧める(README の「複数の組織で使う」)。
-   - プラグイン `api-gateway` を入れてもらう(README の「スキル(プラグイン)」)。Team / Enterprise では、コード実行のネットワーク設定でゲートウェイのドメインを許可する必要がある。
+   - プラグイン `heddleway` を入れてもらう(README の「スキル(プラグイン)」)。Team / Enterprise では、コード実行のネットワーク設定でゲートウェイのドメインを許可する必要がある。
    - 調べるときは `npm run tail -- <名前> --format json` をバックグラウンドで流して、ユーザーに操作を再現してもらう。
 
 ## 新しい版に上げるとき

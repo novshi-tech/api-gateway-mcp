@@ -6,7 +6,7 @@
 - 計画: [docs/PLAN.md](docs/PLAN.md)（実装の順序と仮説 H1〜H7）
 - 開発の約束事と構成: [CLAUDE.md](CLAUDE.md)
 - 決定の記録: [docs/adr/](docs/adr/)
-- 有効にする手順と接続: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは同じリポジトリのプラグイン `api-gateway-murmur`、`../plugins/api-gateway-murmur`）
+- 有効にする手順と接続: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは同じリポジトリのプラグイン `heddleway-murmur`、`../plugins/heddleway-murmur`）
 - シナリオ: [fixtures/](fixtures/)
 
 ```sh

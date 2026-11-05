@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "api-gateway-mcp",
+  "name": "heddleway",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-20",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],

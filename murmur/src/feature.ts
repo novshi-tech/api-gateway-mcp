@@ -23,7 +23,7 @@ import { randomHex, sha256Hex } from './connectors/secrets';
 import { D1ConnectorState } from './store/connector-state';
 
 // Murmur の組み立て（0023）。env を読まず、入口が渡す設定とゲートウェイの口だけで組み立てる。
-// 入口はゲートウェイの Worker（api-gateway-mcp の src/murmur-feature.ts）で、口はゲートウェイの中核が実装する。
+// 入口はゲートウェイの Worker（heddleway の src/murmur-feature.ts）で、口はゲートウェイの中核が実装する。
 
 export interface MurmurConfig {
   /** 本体の D1（0021） */

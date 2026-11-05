@@ -1,6 +1,6 @@
 // ゲートウェイの口（0023 の決定 2・4・7、段取り 2）。Murmur がゲートウェイに頼むことは、全部この口を通す。
 // ここに置くのは型と取り決め（エラーの種類・許可リストの形）だけで、実装は持たない。
-// 実装はゲートウェイの中核（api-gateway-mcp の src/feature-port.ts）。Murmur はゲートウェイの Worker の機能として動く。
+// 実装はゲートウェイの中核（heddleway の src/feature-port.ts）。Murmur はゲートウェイの Worker の機能として動く。
 
 /** 取り込みに使うサービスの種類。種類ごとに、ゲートウェイの接続先の名前と読める口が組み立て時に決まる */
 export type UpstreamKind = 'graph' | 'jira' | 'teams';
