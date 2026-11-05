@@ -1,7 +1,7 @@
 {
   "name": "heddleway-slack",
-  "displayName": "API Gateway: Slack",
-  "version": "0.2.0",
+  "displayName": "Heddleway: Slack",
+  "version": "0.2.1",
   "description": "API ゲートウェイ経由で Slack(チャンネル・DM のメッセージ、検索、投稿、リアクション)を操作するスキル。heddleway プラグインと一緒に使う。",
   "author": {
     "name": "novshi-tech"

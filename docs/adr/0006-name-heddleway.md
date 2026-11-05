@@ -48,7 +48,9 @@
 | GitHub のリポジトリ | `novshi-tech/api-gateway-mcp` | `novshi-tech/heddleway` |
 | マーケットプレイス(`.claude-plugin/marketplace.json` の `name`) | `api-gateway-mcp` | `heddleway` |
 | 共通のプラグイン | `api-gateway` | `heddleway` |
-| 提供元ごとのプラグイン | `api-gateway-<提供元>`(google・microsoft・atlassian・freee・slack・murmur) | `heddleway-<提供元>` |
+| 提供元ごとのプラグイン | `api-gateway-<提供元>`(google・microsoft・atlassian・freee・slack) | `heddleway-<提供元>` |
+| Murmur のスキル | プラグイン `api-gateway-murmur` | 共通のプラグイン `heddleway` のスキル `murmur`(下の「Murmur のスキルの置き場所」) |
+| プラグインの表示名(`displayName`) | `API Gateway`、`API Gateway: <提供元>` | `Heddleway`、`Heddleway: <提供元>` |
 | 共通のスキル | `api-gateway` | `heddleway` |
 | MCP サーバーの `name` / `title` | `api-gateway-mcp` / `API Gateway (<組織名>)` | `heddleway` / `Heddleway (<組織名>)` |
 | OAuth の保護リソースの `resource_name` | `API Gateway MCP` | `Heddleway` |
@@ -58,6 +60,13 @@
 
 - スキルの本文の「API ゲートウェイ」「ゲートウェイ」という言い方は、仕組みを説明する一般名詞として残してよい(「Heddleway のゲートウェイの機能」)。名前として指すところだけ直す
 - ほかのマーケットプレイスにある、`api-gateway` に依存するプラグイン(業務向けのスキル集など)は、それぞれの持ち主が `dependencies` と本文の「api-gateway プラグイン」を直す。この ADR の範囲は、このリポジトリが配るものだけ
+
+### 4a. Murmur のスキルは共通のプラグインに入れる(2026-11-05 に足した)
+
+最初は `api-gateway-murmur` を `heddleway-murmur` に改名した(PR #49)。しかし、Cowork では `heddleway-murmur:murmur` と出て、Murmur が Google や freee と同じ「外のサービス」に見える。Murmur は Heddleway の機能(決定 3)なので、`murmur` スキルを共通のプラグイン `heddleway`(git・board・gBizINFO・Serper のスキルと同じ場所)に移し、`heddleway-murmur` はなくした。
+
+- 誰も入れ直す前だったので、利用者の作業は増えない
+- Murmur を有効にしていないデプロイでもスキルは見えるが、ほかの小さいスキルと同じ扱い。スキルの冒頭に、デプロイによっては無効なことを書いた
 
 ### 5. 変えないもの
 

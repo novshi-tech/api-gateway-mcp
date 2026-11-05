@@ -14,8 +14,8 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway"
       },
-      "version": "0.17.0",
-      "description": "API ゲートウェイの共通手順(認証情報の確認、トークンの発行、REST の呼び出し)と、git(clone・push)・board・gBizINFO・Serper のスキル。ほかの heddleway-* プラグインの前提。コネクタ(Heddleway)はデプロイごとに別途追加する。"
+      "version": "0.18.0",
+      "description": "API ゲートウェイの共通手順(認証情報の確認、トークンの発行、REST の呼び出し)と、git(clone・push)・board・gBizINFO・Serper と Murmur(チームの仕事の記憶)のスキル。ほかの heddleway-* プラグインの前提。コネクタ(Heddleway)はデプロイごとに別途追加する。"
     },
     {
       "name": "heddleway-google",
@@ -24,7 +24,7 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-google"
       },
-      "version": "0.14.0",
+      "version": "0.14.1",
       "description": "API ゲートウェイ経由で Gmail・Google Drive・Google Calendar・Google Docs・Google Analytics を操作するスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
@@ -37,7 +37,7 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-microsoft"
       },
-      "version": "0.13.0",
+      "version": "0.13.1",
       "description": "API ゲートウェイ経由で Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)を操作するスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
@@ -50,7 +50,7 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-freee"
       },
-      "version": "0.14.0",
+      "version": "0.14.1",
       "description": "API ゲートウェイ経由で freee(会計・人事労務・請求書・販売)を操作するスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
@@ -63,7 +63,7 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-slack"
       },
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "API ゲートウェイ経由で Slack(チャンネル・DM のメッセージ、検索、投稿、リアクション)を操作するスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
@@ -76,21 +76,8 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-atlassian"
       },
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "API ゲートウェイ経由で Jira(課題の検索・作成・更新・コメント・遷移)を操作するスキル。heddleway プラグインと一緒に使う。",
-      "dependencies": [
-        "heddleway"
-      ]
-    },
-    {
-      "name": "heddleway-murmur",
-      "source": {
-        "source": "git-subdir",
-        "url": "novshi-tech/heddleway",
-        "path": "plugins/heddleway-murmur"
-      },
-      "version": "0.2.0",
-      "description": "API ゲートウェイ経由で、連絡の索引 Murmur(スレッド・誰の番・個人のメモでのタスクの追跡・送信の記録)を読み書きするスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
       ]

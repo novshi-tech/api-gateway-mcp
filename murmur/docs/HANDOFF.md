@@ -4,7 +4,7 @@
 
 ## いまの状態
 
-**2026-11-05: 0023 で保留した総称を決めた（ゲートウェイの `docs/adr/0006`。Heddleway、説明の言葉は「チームのゲートウェイ」）。** Murmur は Heddleway の機能の名前として残す（経路・`identity:murmur`・`murmur/` は変えない）。リポジトリは novshi-tech/heddleway に改名済み。プラグインは `api-gateway*` → `heddleway*`（スタンド用は `heddleway-murmur` 0.2.0）で、使っている人は入れ直す。各デプロイの Worker の名前とドメインは変えない
+**2026-11-05: 0023 で保留した総称を決めた（ゲートウェイの `docs/adr/0006`。Heddleway、説明の言葉は「チームのゲートウェイ」）。** Murmur は Heddleway の機能の名前として残す（経路・`identity:murmur`・`murmur/` は変えない）。リポジトリは novshi-tech/heddleway に改名済み。プラグインは `api-gateway*` → `heddleway*` で、使っている人は入れ直す。スタンド用の `murmur` スキルは共通のプラグイン `heddleway`（0.18.0）に移した（`heddleway-murmur:murmur` という名前が Murmur を外のサービスのように見せるため。`heddleway-murmur` は配る前になくした）。各デプロイの Worker の名前とドメインは変えない
 
 **2026-11-04（夜）: 次の段階の前の課題 2（ゲートウェイと Murmur の統合）を議論し、`docs/adr/0023` を書き直して採用した（`0023-murmur-as-gateway-feature.md`。総称の単語は保留）。** 前の構想（リポジトリだけまとめて Worker は分ける）をやめ、Murmur をゲートウェイの機能にして 1 つの Worker・1 つのデプロイにする案。実装はまだ。
 - 直樹の動機: Murmur は利用者に存在が分かりにくく、実態は「スタンドのために構造化されたタスクの記憶」。黒子の意図どおりなら、記憶のように有効・無効にできる機能の 1 つであるほうが自然。「いまやるべきことは？」にスタンドが裏で Murmur を読んで答える世界を目指す
