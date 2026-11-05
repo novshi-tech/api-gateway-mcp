@@ -51,7 +51,9 @@
   - **0037 の土台を実装した**（同じ日。0037 の「実装の記録」）: `shared`（スペースの鍵・作った人）、`src/domain/shared.ts`（作る・読者を写す・入れ替え・外せる人）、口の `isAdmin`、`MURMUR_SHARED_SERVICES`。外す操作は作った人と管理者
 - **障害と直し（2026-11-05）**: 段取り 3 で出したあと、Jira の取り込みが 00:41 から止まっていた。ゲートウェイの口が読める口の許可リストをクエリ込みで照合し、Jira の `…/search/jql?jql=…` などが断られていた（Graph は許可リストがクエリを許す書き方で無事）。照合をパスだけにした（api-gateway-mcp#44）。直樹の了承で UBS に出し直し（バージョン `9ddfd1db-08d5-443d-9569-b431c3779dd3`）、02:25 に Jira の同期が戻った（止まる前の位置から取り直し）
 - **Jira をプロジェクトの共有リストに置き換えた**（同じ日、PR。0037 の「実装の記録」）。範囲 `project = KEY AND level IS EMPTY`、Webhook はプロジェクトで絞る、つなぐときに `project`（なければ一覧）、既にあればその場で読者を写す、止まっていればその人の委任でつなぎ直す、見回りで 60 分ごとに読者を同期、つないだ人が閲覧できなくなれば broken。個人リストを作る経路と `PATCH /connections/{id}` をやめた。スキル 0.1.8
-  - 次: UBS に出す（ゲートウェイの ubs に `MURMUR_SHARED_SERVICES=jira`）→ スポット作業（SPW）をつなぐ → 直樹の Jira の個人リストを外す。そのあと Teams（ゲートウェイの `graph` に `ChannelMember.Read.All` を足すかをそこで決める）
+  - **UBS に出して、SPW をつないだ**（api-gateway-mcp#45・api-gateway-deployments#5、ゲートウェイのバージョン `7e360a4b-96da-4066-89df-f733922d69b4`、`MURMUR_SHARED_SERVICES=jira`）。直樹の権限で「スポット作業（Jira）」（`ds_423931eacf1448b08e6f`、作った人は直樹）を作り、setup で読者の同期（02:32）と Webhook の登録（ID 7、プロジェクトで絞る）が通って ok。直樹の Jira の個人リスト（`ds_0ffe435ee180420aa54d`）は外した（disconnected、Webhook も消えた。スレッドは残る）。SPW のメンバーには直樹から伝える
+  - 今の読者は直樹だけ。ほかのメンバーは、自分の Jira をゲートウェイにつなぎ、Murmur を有効にして、自分のスタンドから `POST /connections/jira`（`project: SPW`）を 1 回呼ぶと名乗りが付いて読者になる（スキルの「Jira をつなぐ」のとおり。`created: false` が返る）。同意した人のアカウントを Murmur が自分で読みに行く形（名乗りの自動化）は、困ったら考える
+  - 次: Teams（0036）。ゲートウェイの `graph` に `ChannelMember.Read.All` を足すか（全デプロイに効き、管理者の同意と利用者のつなぎ直しが要る）を直樹と決めてから
   - 本筋の外: 直樹の箱に murmur-dev 宛ての Outlook のサブスクリプションが 2 本残っている（10-30 の dev の試験。murmur-dev が延長していれば止める）
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
