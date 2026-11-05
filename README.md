@@ -25,7 +25,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 
 - ゲートウェイの Worker に入っていて、デプロイの設定に Murmur の D1 を足すと有効になります(`wrangler.example.jsonc` の末尾)。足さなければ、ゲートウェイは Murmur なしで今までどおり動きます
 - 利用者ごとに、ゲートウェイの画面で有効にします(Claude から Murmur に接続をつなぐよう頼むと、有効にする画面に案内されます)。有効にした人の接続だけを、読み取りだけで使います。「つないだサービス」の画面でいつでも無効にできます
-- Claude からは、ほかのサービスと同じく `issue_token`(`identity:murmur`)と REST(`/api/murmur/...`)で使います。使い方はプラグイン `heddleway-murmur` のスキルです
+- Claude からは、ほかのサービスと同じく `issue_token`(`identity:murmur`)と REST(`/api/murmur/...`)で使います。使い方はプラグイン `heddleway` の `murmur` スキルです
 
 ## 前提
 
@@ -77,6 +77,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | | `board` | `board` | 販売管理 SaaS「board」の案件・見積・請求・発注・支払・顧客などの検索・登録・更新 |
 | | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
 | | `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
+| | `murmur` | `murmur` | Murmur(チームの仕事の記憶。このゲートウェイの機能)のスレッド・誰の番・個人のメモでのタスクの追跡・送信の記録。有効にする手順は上の「Murmur」 |
 | `heddleway-microsoft` | `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
 | `heddleway-google` | `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
 | | `google-drive` | `drive` | ファイルの検索・ダウンロード・エクスポート・アップロード、共有ドライブ |
@@ -86,7 +87,6 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | `heddleway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
 | `heddleway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
 | `heddleway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
-| `heddleway-murmur` | `murmur` | `murmur` | [Murmur](https://github.com/novshi-tech/murmur)(連絡の索引)のスレッド・誰の番・個人のメモでのタスクの追跡・送信の記録。上流の設定は下の「3. 連携先を設定する」(`identity` と Service Binding) |
 
 インストールの方法:
 
