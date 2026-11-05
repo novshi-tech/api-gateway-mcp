@@ -86,4 +86,4 @@ npm run secret -- <名前> put OAUTH_<CLIENT>_CLIENT_SECRET
 
 - このリポジトリの例(`wrangler.example.jsonc`)にサービスを足したときは、`test/gateway.test.ts` の「sends the gBizINFO API token in its own header」にならって、認証情報が正しいヘッダーで上流に届くテストを足す。`list_credentials` のテストにあるサービス一覧も更新する。
 - スクリプトを足したときは、`test/scripts/test_skill_scripts.py` の偽のゲートウェイに応答を足して、ページングや CSV のテストを書く。`SkillDocsTest` が、フロントマターと相対リンクを検査する。
-- プラグインのスキルを変えたら、`plugin.json` と `.claude-plugin/marketplace.json` の両方で、そのプラグインの `version` を上げる(テストが一致を検査する)。
+- プラグインのスキルを変えたら、`plugin.json` の `version` を上げる。版は `plugin.json` だけに書き、`.claude-plugin/marketplace.json` の項目には書かない(両方にあると Claude Code は `plugin.json` を黙って優先するので、片方の上げ忘れに気づけない。テストが検査する)。

@@ -93,7 +93,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 - Claude Code: `/plugin marketplace add novshi-tech/api-gateway-mcp` のあと、`/plugin install api-gateway@api-gateway-mcp` と、使う提供元のもの(例: `/plugin install api-gateway-microsoft@api-gateway-mcp`)をインストールします。提供元のプラグインは `api-gateway` に依存しているので、先に入れていなくても一緒に入ります。
 - Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` と使う提供元のプラグインをインストールします。
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
-- zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` と `.claude-plugin/marketplace.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
+- zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
 
 - ゲートウェイの Web 画面: 「Claude につなぐ」(`/setup`)に、このリポジトリのプラグインの zip が並び、サインインした人がダウンロードできます。`npm run deploy` が `tools/build-plugin-zip.py --bundle` で zip を `dist/plugins.js` に書き出し、Worker 本体に同梱してデプロイするので、いつもそのゲートウェイの版のものです。静的アセットにしないのは、アセットのアップロードがアップロードごとのトークンを `Authorization` で送るためで、Cloudflare の API トークンを差し込むプロキシ(Claude Code のクラウドのセッションなど)の下ではデプロイが失敗するからです。ほかのプラグイン(自社のサービスのスキルなど)は、管理者が「プラグインの配布」(`/admin/plugins`)で zip を追加すると、同じ画面に並びます(下の「管理画面から接続先を足す」)。
 

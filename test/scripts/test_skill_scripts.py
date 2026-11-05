@@ -536,7 +536,7 @@ class SkillDocsTest(unittest.TestCase):
         result = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "sync-plugin-libs.py"), "--check"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout)
 
-    def test_marketplace_lists_every_plugin_at_its_version(self):
+    def test_marketplace_lists_every_plugin_and_leaves_the_version_to_plugin_json(self):
         with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json"), encoding="utf-8") as f:
             entries = {e["name"]: e for e in json.load(f)["plugins"]}
         plugins = sorted(os.listdir(os.path.join(ROOT, "plugins")))
@@ -545,7 +545,9 @@ class SkillDocsTest(unittest.TestCase):
             with self.subTest(plugin=name), open(os.path.join(ROOT, "plugins", name, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
                 manifest = json.load(f)
                 self.assertEqual(manifest["name"], name)
-                self.assertEqual(entries[name]["version"], manifest["version"])
+                self.assertIn("version", manifest)
+                # Claude Code takes plugin.json's version over the entry's without a warning, so the entry has none.
+                self.assertNotIn("version", entries[name])
                 self.assertEqual(entries[name]["source"], {"source": "git-subdir", "url": "novshi-tech/api-gateway-mcp", "path": f"plugins/{name}"})
 
 
