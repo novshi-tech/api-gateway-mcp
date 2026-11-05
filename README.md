@@ -263,7 +263,7 @@ freee のアプリ管理でアプリを作成し、コールバック URL を設
 
 #### Microsoft Graph(`graph`)
 
-サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`src/catalog.ts` の `GRAPH_SCOPE` にある委任のアクセス許可を付けて、管理者の同意を与えます。デプロイの設定の `MICROSOFT_TENANT_ID` にテナント ID を書きます。シークレットは `OAUTH_MICROSOFT_CLIENT_ID` / `OAUTH_MICROSOFT_CLIENT_SECRET` です。
+サインイン用とは別の Entra アプリを登録します。プラットフォームは「Web」で、`src/catalog.ts` の `GRAPH_SCOPE` にある委任のアクセス許可を付けて、管理者の同意を与えます。`GRAPH_SCOPE` に許可が増えたとき(例: Murmur の Teams のための `ChannelMember.Read.All`)は、Entra のアプリにも足して管理者の同意をやり直し、利用者は「つないだサービス」で Microsoft Graph をつなぎ直します。デプロイの設定の `MICROSOFT_TENANT_ID` にテナント ID を書きます。シークレットは `OAUTH_MICROSOFT_CLIENT_ID` / `OAUTH_MICROSOFT_CLIENT_SECRET` です。
 
 #### Google(`gmail`・`drive`・`calendar`・`docs`・`analytics`・`analytics-admin`)
 

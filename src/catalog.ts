@@ -28,6 +28,8 @@ const GRAPH_SCOPE = [
   "Chat.ReadWrite",
   "ChannelMessage.Send",
   "ChannelMessage.Read.All",
+  // Members of a channel: Murmur's Teams shared lists copy their readers from it (Murmur's 0036・0037).
+  "ChannelMember.Read.All",
   "Team.ReadBasic.All",
   "Channel.ReadBasic.All",
 ].join(" ");

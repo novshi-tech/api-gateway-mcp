@@ -44,7 +44,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/graph_all.py /v1.0/me/mailFolders/inbox/mess
 
 ## 権限
 
-ゲートウェイの `graph` には、次の委任アクセス許可が付いている: Files.ReadWrite.All、Sites.ReadWrite.All、Mail.ReadWrite、Mail.Send、Calendars.ReadWrite、Chat.ReadWrite、ChannelMessage.Send、ChannelMessage.Read.All、Team.ReadBasic.All、Channel.ReadBasic.All、User.Read。
+ゲートウェイの `graph` には、次の委任アクセス許可が付いている: Files.ReadWrite.All、Sites.ReadWrite.All、Mail.ReadWrite、Mail.Send、Calendars.ReadWrite、Chat.ReadWrite、ChannelMessage.Send、ChannelMessage.Read.All、ChannelMember.Read.All、Team.ReadBasic.All、Channel.ReadBasic.All、User.Read。
 
 - To Do(Tasks)、Planner、連絡先、ユーザーやグループの管理などは、この範囲にないので使えない。頼まれたら、使えないことを伝える。
 - 権限の範囲内でも、テナントの設定やファイル・チャネルの権限で 403(`ErrorAccessDenied`、`accessDenied` など)になることがある。

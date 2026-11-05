@@ -196,6 +196,13 @@ describe("refreshing upstream tokens", () => {
     expect(page).toContain("つなぎ直す");
   });
 
+  it("offers an in-place reconnect for a healthy OAuth connection too (e.g. after the gateway asks for more permissions)", async () => {
+    const cred = await connected(alice, { access_token: "fine", refresh_token: "rt-ok", expires_in: 21600 });
+    const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie: await sessionCookie(alice) } })).text();
+    expect(page).not.toContain("再接続が必要");
+    expect(page).toContain(`<input type="hidden" name="credential" value="${cred.id}"><button class="quiet">つなぎ直す</button>`);
+  });
+
   it("reconnects the same credential", async () => {
     const cred = await connected(alice, { access_token: "stale", refresh_token: "revoked-f", expires_in: 0 });
     expect((await callFreee(alice, cred.id)).status).toBe(403);
