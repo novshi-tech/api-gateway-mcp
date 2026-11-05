@@ -35,6 +35,10 @@
     6. 直樹がスタンドから Outlook と Jira をつなぎ直す（`POST /connections/outlook`・`/connections/jira`）→ ゲートウェイの「Murmur を有効にしますか?」→ 有効にする。データソースは setup に戻り、Graph のサブスクリプションは `https://gateway.urban-b.com/murmur/webhooks/graph` で作り直され、Jira の Webhook も登録し直される。古いサブスクリプションは見回りが消す
     7. 別の Worker の Murmur を消す（`npx wrangler delete murmur`）。そのあと murmur-deployments を archive、コードの単独の Worker（`murmur/src/index.ts`・`connectors/gateway/`・JWKS の検証）を消す
   - 同意を有効にするまで（6 の前）は、既存のデータソースは見回りで broken（「Murmur がゲートウェイで有効になっていない」）になる。取り込みはその間止まるが、つなぎ直すと setup から戻る。broken からの戻りは delta の位置（Outlook）と取り込みの位置（Jira）を引き継ぐので、止まっていた間の分も拾う（delta の位置が古すぎて 410 になれば取り直し）。間を空けないよう 4〜6 は続けてやる
+- **2026-11-05: UBS を移した（段取り 4 の 1〜7 は済み）。** 古い Worker からキューの consumer を外し、deployments#4 を入れてゲートウェイの ubs を出し直した（バージョン `0ca374e5-18dc-4f66-a809-02e5a572ded8`。D1 のマイグレーションは当て済み）。直樹がゲートウェイの画面で Murmur を有効にし、古い Worker `murmur` を消した
+  - 確かめた: スタンドの道（`identity:murmur` → `/api/murmur/...`）で `/me`・`/threads`・`/connections` が 200（前の D1 のスレッドがそのまま見える）。Graph のサブスクリプションは `https://gateway.urban-b.com/murmur/webhooks/graph` で作り直され（古いものは見回りが消した）、Jira の Webhook も登録し直された（URL のハッシュを記録）。直樹のテストメールが新しい受け口から入り、スレッド「お打ち合わせの件（明日13:00の確認）」ができて誰の番は本人
+  - シークレット: `ANTHROPIC_API_KEY`（直樹）、`MURMUR_WEBHOOK_SECRET`・`MURMUR_TIMELINE_TOKEN`（新しく作った。管理画面は `https://gateway.urban-b.com/murmur/admin?token=…`、値は直樹に渡した）
+  - 残り（片付け）: murmur-deployments を archive（直樹）、コードの単独の Worker（`murmur/src/index.ts`・`connectors/gateway/`・`auth/` の JWKS の検証・`wrangler.example.jsonc`・Murmur の deploy 系のスクリプト）を消し、`Connections` のテストを口の偽物に移す。CLAUDE.md の「注意」の配線の説明を書き直す。そのあと Teams
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:
