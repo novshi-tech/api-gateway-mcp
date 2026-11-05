@@ -53,7 +53,7 @@ export interface ConnectJiraInput {
 export interface ConnectionView {
   data_source: string;
   name: string;
-  kind: 'outlook' | 'jira';
+  kind: 'outlook' | 'jira' | 'teams';
   /** Jira: サイトとプロジェクト */
   site?: string;
   project?: string;
