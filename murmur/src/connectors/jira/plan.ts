@@ -21,11 +21,13 @@ export type JiraMaintenance =
   | { kind: 'cleanup' }
   | { kind: 'maintain'; register: boolean; refresh: boolean; sync: boolean };
 
-export function planJiraMaintenance(source: SourceState, now: string, webhooks: boolean): JiraMaintenance {
+/** webhookUrlHash を渡すと、それと違う受け口で登録した Webhook（記録のない古いものも）は登録し直す */
+export function planJiraMaintenance(source: SourceState, now: string, webhooks: boolean, webhookUrlHash?: string): JiraMaintenance {
   const j = source.jira;
   if (source.status === 'disconnected') return j && j.webhookIds.length > 0 ? { kind: 'cleanup' } : { kind: 'idle' };
   if (source.status === 'broken') return !source.lastRetryAt || minutesBetween(source.lastRetryAt, now) >= RETRY_MINUTES ? { kind: 'retry' } : { kind: 'idle' };
-  const register = webhooks && (!j || j.webhookIds.length === 0 || !j.webhookExpiresAt || j.webhookExpiresAt <= now);
+  const moved = webhookUrlHash !== undefined && j?.webhookUrlHash !== webhookUrlHash;
+  const register = webhooks && (!j || j.webhookIds.length === 0 || !j.webhookExpiresAt || j.webhookExpiresAt <= now || moved);
   const refresh = webhooks && !register && !!j?.webhookExpiresAt && minutesBetween(now, j.webhookExpiresAt) < REFRESH_BEFORE_DAYS * 24 * 60;
   const sync = source.status === 'setup' || !source.lastSyncAt || minutesBetween(source.lastSyncAt, now) >= SAFETY_SYNC_MINUTES;
   return register || refresh || sync ? { kind: 'maintain', register, refresh, sync } : { kind: 'idle' };

@@ -86,7 +86,7 @@ export class GraphMailSync {
   }
 
   private async maintain(ctx: SourceContext): Promise<void> {
-    const plan = planMaintenance(ctx.source, ctx.subs, ctx.folders, this.deps.now());
+    const plan = planMaintenance(ctx.source, ctx.subs, ctx.folders, this.deps.now(), this.deps.notificationUrl);
     if (plan.kind === 'idle') return;
     if (plan.kind === 'retry') {
       await this.putSource(ctx, { lastRetryAt: this.deps.now() });
@@ -99,7 +99,7 @@ export class GraphMailSync {
   /** サブスクリプションをそろえ、全フォルダを取り直して ok にする（つないだ直後・broken からの戻り） */
   private async setup(ctx: SourceContext): Promise<void> {
     const now = this.deps.now();
-    const plan = planMaintenance({ ...ctx.source, status: 'ok', lastSyncAt: now }, ctx.subs, ctx.folders, now);
+    const plan = planMaintenance({ ...ctx.source, status: 'ok', lastSyncAt: now }, ctx.subs, ctx.folders, now, this.deps.notificationUrl);
     if (plan.kind === 'maintain') await this.apply(ctx, plan.actions);
     await this.syncFolders(ctx, ctx.folders);
     await this.putSource(ctx, { status: 'ok', reason: null });
@@ -146,6 +146,7 @@ export class GraphMailSync {
       folder,
       clientStateHash: await this.deps.hash(clientState),
       expiresAt: created.expiresAt,
+      notificationUrl: this.deps.notificationUrl,
     };
     await this.deps.state.putSubscription(record);
     ctx.subs = [...ctx.subs, record];

@@ -24,7 +24,17 @@
   - 同意はゲートウェイの `/features/murmur/consent`、無効化はホームから。サインインの戻り先（`next`）を足した
   - Murmur が有効になるのは `MURMUR_DB` と `ANTHROPIC_API_KEY` があるデプロイだけ。無効なら今と同じ（既存のテストはそのまま通る）。有効のときの結合テストは `test/murmur-feature.test.ts`（12 件）
   - ゲートウェイ 144 件・murmur 323 件緑。Worker のバンドルは gzip 468 KiB → 681 KiB
-  - 次: 段取り 4（UBS の移行）。Outlook のサブスクリプションの通知先が変わるので、作り直す手当てを先に入れる（0023 の「段取り 4」）。デプロイの前に直樹と手順を合わせる。Teams はそのあと
+- api-gateway-mcp#40 で段取り 3 を main に入れた
+- **段取り 4 の準備**（2026-11-05）: api-gateway-mcp#41（通知先が変わったサブスクリプションと Jira の Webhook を作り直す。同意がなければ取り込みは broken）、api-gateway-deployments#4（UBS のゲートウェイで Murmur を有効にする設定。今の D1 `murmur` とキュー `murmur-sync` をそのまま使う、`SERVICES` の `murmur` と Service Binding を外す）
+  - UBS を移す手順（直樹と合わせてから出す）:
+    1. #41 を main に入れる
+    2. 別の Worker の Murmur のキューの consumer を外す（`npx wrangler queues consumer remove murmur-sync murmur`）。キューの consumer は 1 つだけなので、先に外さないとゲートウェイの出し直しが落ちる。外したあと見回りの仕事はキューに溜まり、ゲートウェイが拾う
+    3. ゲートウェイの ubs にシークレット: `ANTHROPIC_API_KEY`（今の Murmur と同じ鍵。値は Cloudflare から読み出せないので直樹が入れる）、`MURMUR_WEBHOOK_SECRET`（新しく作る）、`MURMUR_TIMELINE_TOKEN`（管理画面を使うなら）
+    4. deployments#4 を main に入れ、api-gateway-mcp の main でゲートウェイの ubs を出し直す（`npm run deploy -- ubs`。D1 のマイグレーションは当て済みなので要らない）
+    5. 確かめる: スタンドから `GET /api/murmur/me`・`GET /api/murmur/threads` が 200
+    6. 直樹がスタンドから Outlook と Jira をつなぎ直す（`POST /connections/outlook`・`/connections/jira`）→ ゲートウェイの「Murmur を有効にしますか?」→ 有効にする。データソースは setup に戻り、Graph のサブスクリプションは `https://gateway.urban-b.com/murmur/webhooks/graph` で作り直され、Jira の Webhook も登録し直される。古いサブスクリプションは見回りが消す
+    7. 別の Worker の Murmur を消す（`npx wrangler delete murmur`）。そのあと murmur-deployments を archive、コードの単独の Worker（`murmur/src/index.ts`・`connectors/gateway/`・JWKS の検証）を消す
+  - 同意を有効にするまで（6 の前）は、既存のデータソースは見回りで broken（「Murmur がゲートウェイで有効になっていない」）になる。取り込みはその間止まるが、つなぎ直すと setup から戻る。broken からの戻りは delta の位置（Outlook）と取り込みの位置（Jira）を引き継ぐので、止まっていた間の分も拾う（delta の位置が古すぎて 410 になれば取り直し）。間を空けないよう 4〜6 は続けてやる
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:

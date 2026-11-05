@@ -65,6 +65,15 @@ describe('H9 Jira の計画（純関数）', () => {
     expect(planJiraMaintenance({ ...base, status: 'disconnected', jira: live }, at(1), true)).toEqual({ kind: 'cleanup' });
   });
 
+  it('受け口の URL が変わったら（記録のない古いものも）登録し直す（0023 の段取り 4）', () => {
+    const base: SourceState = { kind: 'jira', dataSourceId: 'd', userId: 'u', gatewayCredentialId: 'g', status: 'ok', reason: null, folders: {}, connectedAt: at(0), lastSyncAt: at(0), lastRetryAt: null };
+    const live = { syncedUntil: at(0), webhookIds: [1], webhookExpiresAt: at(30 * 24 * 60), webhookUrlHash: 'new' };
+    expect(planJiraMaintenance({ ...base, jira: live }, at(5), true, 'new')).toEqual({ kind: 'idle' });
+    expect(planJiraMaintenance({ ...base, jira: { ...live, webhookUrlHash: 'old' } }, at(5), true, 'new')).toMatchObject({ register: true });
+    const { webhookUrlHash: _, ...unrecorded } = live;
+    expect(planJiraMaintenance({ ...base, jira: unrecorded }, at(5), true, 'new')).toMatchObject({ register: true });
+  });
+
   it('呼べる口は読み取りと Webhook の管理だけ（0034 の決定 5）', () => {
     const site = '/ex/jira/cloud-1/rest/api/3';
     for (const [m, p] of [

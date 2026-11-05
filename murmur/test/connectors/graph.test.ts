@@ -93,6 +93,26 @@ describe('H5 サブスクリプションの一生の計画（取りこぼしの�
     expect(planMaintenance(source(), [sub('inbox', '2026-11-05T00:00:00Z'), sub('sentitems', '2026-11-05T00:00:00Z')], FOLDERS, now)).toEqual({ kind: 'idle' });
   });
 
+  it('通知先が変わったら（記録のない古いものも）消して作り直す（0023 の段取り 4: デプロイの形を変えて URL が変わる）', () => {
+    const NEW = 'https://gateway.test/murmur/webhooks/graph';
+    const at = (url?: string) => [
+      { ...sub('inbox', '2026-11-05T00:00:00Z'), ...(url ? { notificationUrl: url } : {}) },
+      { ...sub('sentitems', '2026-11-05T00:00:00Z'), ...(url ? { notificationUrl: url } : {}) },
+    ];
+    expect(planMaintenance(source(), at(NEW), FOLDERS, now, NEW)).toEqual({ kind: 'idle' });
+    for (const old of [at('https://murmur.test/webhooks/graph'), at()]) {
+      expect(planMaintenance(source(), old, FOLDERS, now, NEW)).toMatchObject({
+        kind: 'maintain',
+        actions: [
+          { kind: 'create', folder: 'inbox' },
+          { kind: 'delete', subscription: { id: 's_inbox' } },
+          { kind: 'create', folder: 'sentitems' },
+          { kind: 'delete', subscription: { id: 's_sentitems' } },
+        ],
+      });
+    }
+  });
+
   it('保険: 最後の delta から 30 分たったら全フォルダを取る', () => {
     const live = [sub('inbox', '2026-11-05T00:00:00Z'), sub('sentitems', '2026-11-05T00:00:00Z')];
     expect(planMaintenance(source(), live, FOLDERS, '2026-10-30T00:30:00.000Z')).toEqual({ kind: 'maintain', actions: [], sync: true });

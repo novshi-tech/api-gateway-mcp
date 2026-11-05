@@ -22,7 +22,17 @@ export type MaintenancePlan =
   | { kind: 'retry' }
   | { kind: 'maintain'; actions: SubscriptionAction[]; sync: boolean };
 
-export function planMaintenance(source: SourceState, subs: readonly SubscriptionRecord[], folders: readonly string[], now: string): MaintenancePlan {
+/**
+ * notificationUrl を渡すと、それと違う通知先で作ったサブスクリプション（通知先を記録していない古いものも）は
+ * 生きていないものとして消し、作り直す
+ */
+export function planMaintenance(
+  source: SourceState,
+  subs: readonly SubscriptionRecord[],
+  folders: readonly string[],
+  now: string,
+  notificationUrl?: string,
+): MaintenancePlan {
   if (source.status === 'disconnected') {
     return subs.length > 0 ? { kind: 'maintain', actions: subs.map((s) => ({ kind: 'delete', subscription: s })), sync: false } : { kind: 'idle' };
   }
@@ -32,7 +42,7 @@ export function planMaintenance(source: SourceState, subs: readonly Subscription
   const actions: SubscriptionAction[] = [];
   for (const folder of folders) {
     const mine = subs.filter((s) => s.folder === folder);
-    const live = mine.find((s) => s.expiresAt > now);
+    const live = mine.find((s) => s.expiresAt > now && (notificationUrl === undefined || s.notificationUrl === notificationUrl));
     if (!live) actions.push({ kind: 'create', folder });
     else if (minutesBetween(now, live.expiresAt) < RENEW_BEFORE_HOURS * 60) actions.push({ kind: 'renew', subscription: live });
     // 期限切れや重複は消す（Graph の側はもう消えているか、消しても困らない）

@@ -59,14 +59,6 @@ export interface GatewayPort {
   readonly homeUrl: string;
 }
 
-/** 本人の同意がない、または取り消された。もう一度同意してもらう */
-export class ConsentRequired extends Error {
-  constructor(message = 'no consent from the user') {
-    super(message);
-    this.name = 'ConsentRequired';
-  }
-}
-
 /** 読める口にない呼び出し。送る前に断った */
 export class UpstreamRefused extends Error {
   constructor(method: string, path: string) {
@@ -80,6 +72,17 @@ export class GatewayAuthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'GatewayAuthError';
+  }
+}
+
+/**
+ * 本人の同意がない、または取り消された。もう一度同意してもらう。
+ * 資格情報の問題の 1 つなので、取り込みではデータソースを broken にして止める（本人がつなぎ直すと戻る）
+ */
+export class ConsentRequired extends GatewayAuthError {
+  constructor(message = 'Murmur がゲートウェイで有効になっていない（本人の同意がない）') {
+    super(message);
+    this.name = 'ConsentRequired';
   }
 }
 
