@@ -103,6 +103,45 @@ export function connectJiraProject(draft: Seed, ctx: CoreContext, input: JiraPro
   });
 }
 
+// ---- Teams（0036・0037）: チャネルの共有リスト ----
+
+export function teamsSpaceKey(teamId: string, channelId: string): string {
+  return `teams:${teamId}/${channelId}`;
+}
+
+/** Teams のアドレスの値。別のテナントのゲストと衝突しないよう、テナントを前に付ける */
+export function teamsAddress(tenantId: string, objectId: string): string {
+  return `${tenantId}/${objectId}`;
+}
+
+export interface TeamsChannelInput {
+  userId: string;
+  /** つなぐ人のゲートウェイの graph の接続 */
+  gatewayCredentialId: string;
+  teamId: string;
+  teamName: string;
+  channelId: string;
+  channelName: string;
+  /** つなぐ人の Entra のテナントとオブジェクト ID（名乗り） */
+  tenantId: string;
+  objectId: string;
+}
+
+/** Teams のチャネルの共有リストを作る（あればそれを返す）。読者は見回りでチャネルのメンバーから写す */
+export function connectTeamsChannel(draft: Seed, ctx: CoreContext, input: TeamsChannelInput): SharedSpacePlan {
+  return connectSharedSpace(draft, ctx, {
+    userId: input.userId,
+    gatewayCredentialId: input.gatewayCredentialId,
+    channel: 'teams',
+    spaceKey: teamsSpaceKey(input.teamId, input.channelId),
+    name: `${input.teamName} / ${input.channelName}（Teams）`,
+    description: `Teams のチーム ${input.teamName} のチャネル ${input.channelName}。読者はチャネルのメンバー（0036・0037）`,
+    identity: teamsAddress(input.tenantId, input.objectId),
+    connector: { kind: 'teams', teamId: input.teamId, channelId: input.channelId },
+    group: true,
+  });
+}
+
 /** 実行時に作ったメールボックスのデータソースの持ち主（個人の資格情報の本人） */
 export function connectorOwner(seed: Seed, ds: DataSource): string | null {
   if (ds.kind !== 'service') return null;

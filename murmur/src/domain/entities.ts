@@ -4,7 +4,8 @@ import { z } from 'zod';
 // 1 デプロイ = 1 チームなので、テナントのキーは持たない（0020・0021）。
 
 /** note = 個人のメモ（0014）。それ以外は外のサービス */
-export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'note']);
+/** teams: Microsoft Teams のチャネル（0036）。アドレスの値は <tenantId>/<Entra のオブジェクト ID> */
+export const Channel = z.enum(['email', 'slack', 'line', 'jira', 'bitbucket', 'teams', 'note']);
 export type Channel = z.infer<typeof Channel>;
 
 /** チャネルと値だけのアドレス（Contact に属さない。イベント・データソースの窓口・資格情報が持つ） */
@@ -83,6 +84,12 @@ export const SourceConnector = z.discriminatedUnion('kind', [
     site: z.string().min(1),
     jql: z.string().min(1),
     projectKey: z.string().min(1).optional(),
+  }),
+  /** Teams のチャネル（0036・0037）。共有リスト。読者はチャネルのメンバーから写す */
+  z.object({
+    kind: z.literal('teams'),
+    teamId: z.string().min(1),
+    channelId: z.string().min(1),
   }),
 ]);
 export type SourceConnector = z.infer<typeof SourceConnector>;
