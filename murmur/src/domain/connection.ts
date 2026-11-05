@@ -3,6 +3,7 @@ import { sameValue } from './directory';
 import type { DataSource, Seed, ServiceDataSource } from './entities';
 import { DomainError } from './errors';
 import { bindIdentity, createPersonalDataSource, type IdentityOutcome } from './people';
+import { connectSharedSpace, type SharedSpacePlan } from './shared';
 
 // 実行時のデータソースの作成（0024 の決定 3）。個人の箱は本人がゲートウェイの OAuth で本体に同意したあとに作る。
 // 作り方は 0030 の個人のリスト（createPersonalDataSource）と同じ: 読者は本人だけ、窓口のアドレスは持たず、
@@ -59,74 +60,47 @@ export function connectMailbox(draft: Seed, ctx: CoreContext, input: MailboxInpu
   return { kind: 'created', dataSource, identity: created.identity };
 }
 
-// ---- Jira（0034 の決定 1・2） ----
+// ---- Jira（0034・0037）: プロジェクト単位の共有リスト ----
 
-/** 範囲の JQL の既定: 担当・起票・ウォッチ */
-export const DEFAULT_JIRA_JQL = 'assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()';
+const PROJECT_KEY = /^[A-Z][A-Z0-9_]*$/;
 
-export interface JiraSourceInput {
+export function jiraSpaceKey(cloudId: string, projectKey: string): string {
+  return `jira:${cloudId}/${projectKey}`;
+}
+
+/** 取り込む範囲。セキュリティレベル付きの課題は、プロジェクトを閲覧できても見えない人がいるので入れない（0037 の決定 3） */
+export function jiraProjectJql(projectKey: string): string {
+  return `project = ${projectKey} AND level IS EMPTY`;
+}
+
+export interface JiraProjectInput {
   userId: string;
-  /** ゲートウェイの資格情報（本人の jira の接続）の ID */
+  /** つなぐ人のゲートウェイの jira の接続 */
   gatewayCredentialId: string;
   cloudId: string;
   /** サイトの URL と名前（accessible-resources） */
   site: string;
   siteName: string;
-  /** 本人の accountId（myself）。リストでのアイデンティティ */
+  projectKey: string;
+  projectName: string;
+  /** つなぐ人の accountId（myself）。名乗り */
   accountId: string;
-  displayName: string;
-  jql?: string;
 }
 
-export type JiraSourcePlan =
-  | { kind: 'exists'; dataSource: ServiceDataSource }
-  | { kind: 'created'; dataSource: ServiceDataSource; identity: IdentityOutcome };
-
-/** 同じ本人・同じゲートウェイの接続・同じサイトの Jira があればそれを返し、なければ個人のリストとして作る */
-export function connectJiraSource(draft: Seed, ctx: CoreContext, input: JiraSourceInput): JiraSourcePlan {
-  const user = draft.users.find((u) => u.id === input.userId);
-  if (!user) throw new DomainError('forbidden', `user ${input.userId} はまだサインインしていない`);
-  const existing = draft.dataSources.find((ds): ds is ServiceDataSource => {
-    if (ds.kind !== 'service' || ds.connector?.kind !== 'jira' || ds.connector.cloudId !== input.cloudId) return false;
-    const cred = draft.credentialRefs.find((c) => c.id === ds.credentialRefId);
-    return cred?.principal.kind === 'user' && cred.principal.userId === input.userId && cred.gatewayCredentialId === input.gatewayCredentialId;
+/** Jira のプロジェクトの共有リストを作る（あればそれを返す）。読者は見回りでプロジェクトを閲覧できる人から写す */
+export function connectJiraProject(draft: Seed, ctx: CoreContext, input: JiraProjectInput): SharedSpacePlan {
+  if (!PROJECT_KEY.test(input.projectKey)) throw new DomainError('invalid', `project key ${input.projectKey} is invalid`);
+  return connectSharedSpace(draft, ctx, {
+    userId: input.userId,
+    gatewayCredentialId: input.gatewayCredentialId,
+    channel: 'jira',
+    spaceKey: jiraSpaceKey(input.cloudId, input.projectKey),
+    name: `${input.projectName}（Jira）`,
+    description: `${input.site} のプロジェクト ${input.projectKey} の課題（セキュリティレベル付きを除く）。読者はプロジェクトを閲覧できる人（0037）`,
+    identity: input.accountId,
+    connector: { kind: 'jira', cloudId: input.cloudId, site: input.site, jql: jiraProjectJql(input.projectKey), projectKey: input.projectKey },
+    group: true,
   });
-  if (existing) return { kind: 'exists', dataSource: existing };
-
-  const jql = normalizeJql(input.jql ?? DEFAULT_JIRA_JQL);
-  const name = input.displayName || user.name || input.accountId;
-  const created = createPersonalDataSource(
-    draft,
-    input.userId,
-    {
-      channel: 'jira',
-      name: `${name} の Jira（${input.siteName}）`,
-      description: `${input.site} の課題のうち、${name} の JQL の範囲（${jql}）。本人の同意で取り込む（読者は本人だけ）`,
-      identity: input.accountId,
-      gatewayCredentialId: input.gatewayCredentialId,
-    },
-    ctx,
-  );
-  const dataSource = draft.dataSources.find((d) => d.id === created.dataSourceId) as ServiceDataSource;
-  dataSource.connector = { kind: 'jira', cloudId: input.cloudId, site: input.site, jql };
-  return { kind: 'created', dataSource, identity: created.identity };
-}
-
-/** 範囲の JQL を変える（本人だけ。過去のスレッドは消さない。0034 の決定 2） */
-export function setJiraScope(draft: Seed, userId: string, dataSourceId: string, jql: string): ServiceDataSource {
-  const ds = draft.dataSources.find((d) => d.id === dataSourceId);
-  if (!ds || ds.kind !== 'service' || ds.connector?.kind !== 'jira' || connectorOwner(draft, ds) !== userId) {
-    throw new DomainError('not_found', `connection ${dataSourceId} not found`);
-  }
-  ds.connector = { ...ds.connector, jql: normalizeJql(jql) };
-  return ds;
-}
-
-/** JQL は条件だけ（並びは取り込みが付ける）。ORDER BY は落とす */
-export function normalizeJql(jql: string): string {
-  const q = jql.replace(/\s+ORDER\s+BY\s+[\s\S]*$/i, '').trim();
-  if (!q) throw new DomainError('invalid', 'jql is required');
-  return q;
 }
 
 /** 実行時に作ったメールボックスのデータソースの持ち主（個人の資格情報の本人） */

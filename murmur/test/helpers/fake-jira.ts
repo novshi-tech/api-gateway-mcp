@@ -1,5 +1,5 @@
 import { GatewayAuthError } from '../../src/ports/gateway';
-import { JiraError, type JiraApi, type JiraMe, type JiraSite, type JiraWebhookSpec, type WebhookRegistration } from '../../src/connectors/jira/api';
+import { JiraError, type JiraApi, type JiraBrowser, type JiraMe, type JiraProject, type JiraSite, type JiraWebhookSpec, type WebhookRegistration } from '../../src/connectors/jira/api';
 import { CommentPage, JiraComment, JiraIssue, SearchPage } from '../../src/connectors/jira/issue';
 
 /**
@@ -14,6 +14,13 @@ export class FakeJira implements JiraApi {
   readonly jqls: string[] = [];
   pageSize = 2;
   authBroken = false;
+  /** 本人が見えるプロジェクト */
+  projectList: JiraProject[] = [{ key: 'SPW', name: 'スポット作業' }];
+  /** プロジェクトを閲覧できるアカウント（人とアプリ） */
+  browserList: JiraBrowser[] = [
+    { accountId: 'acct-bob', accountType: 'atlassian', active: true },
+    { accountId: 'acct-app', accountType: 'app', active: true },
+  ];
   private webhookSeq = 0;
 
   constructor(
@@ -41,6 +48,16 @@ export class FakeJira implements JiraApi {
   async myself(cloudId: string) {
     this.check(`myself ${cloudId}`);
     return this.me;
+  }
+
+  async projects(cloudId: string) {
+    this.check(`projects ${cloudId}`);
+    return this.projectList;
+  }
+
+  async browsers(cloudId: string, projectKey: string) {
+    this.check(`browsers ${projectKey}`);
+    return this.browserList;
   }
 
   async search(cloudId: string, jql: string, nextPageToken?: string) {

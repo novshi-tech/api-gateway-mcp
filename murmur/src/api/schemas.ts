@@ -142,11 +142,9 @@ export const InboundItemBody = z.union([InboundMirrorBody, InboundSignalBody]);
 export const ConnectOutlookBody = z.object({ credential_id: z.string().min(1).optional() });
 
 /** Jira をつなぐ（0034）。site はサイトの cloudId（choose_site で返したもの）、jql は範囲（省けば担当・起票・ウォッチ） */
+/** Jira のプロジェクトを共有リストとしてつなぐ（0037）。project を省くと一覧（choose_project）を返す */
 export const ConnectJiraBody = z.object({
   credential_id: z.string().min(1).optional(),
   site: z.string().min(1).optional(),
-  jql: z.string().trim().min(1).max(2000).optional(),
+  project: z.string().regex(/^[A-Z][A-Z0-9_]*$/).optional(),
 });
-
-/** つないだものの設定を変える。今は Jira の範囲の JQL だけ */
-export const PatchConnectionBody = z.object({ jql: z.string().trim().min(1).max(2000) });

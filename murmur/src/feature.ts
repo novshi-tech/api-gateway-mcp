@@ -127,7 +127,7 @@ function buildConnectors(config: MurmurConfig, service: MurmurService, waitUntil
       await jira.handle(job);
     },
   };
-  const connections = new Connections({ gateway, service, queue, newId: randomIds, graphFor, jiraFor, state, now });
+  const connections = new Connections({ gateway, service, queue, newId: randomIds, graphFor, jiraFor, state, now, sharedServices: config.sharedServices ?? [] });
   return {
     sync,
     connections,

@@ -18,6 +18,8 @@ export interface JiraCursor {
   syncedUntil: string;
   webhookIds: number[];
   webhookExpiresAt: string | null;
+  /** 共有リストの読者を最後にソースから写した時刻（0037） */
+  readersSyncedAt?: string;
   /** 登録したときの受け口の URL の SHA-256（URL は秘密を含むので平文は持たない）。今のと違えば登録し直す（0023 の段取り 4）。古い記録にはない */
   webhookUrlHash?: string;
   /**

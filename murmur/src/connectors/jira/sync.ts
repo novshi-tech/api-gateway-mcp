@@ -1,5 +1,5 @@
 import type { MurmurService } from '../../app/service';
-import type { ServiceDataSource } from '../../domain';
+import { syncSharedReaders, type ServiceDataSource } from '../../domain';
 import type { ConnectorStateStore } from '../../store/connector-state';
 import { GatewayAuthError } from '../../ports/gateway';
 import { sha256Hex } from '../secrets';
@@ -8,7 +8,8 @@ import type { JiraCursor, SourceState } from '../graph/state';
 import type { JiraApi } from './api';
 import type { JiraComment, JiraIssue } from './issue';
 import { itemsOfIssue, toUtc } from './normalize';
-import { chunk, deltaJql, KEYS_PER_QUERY, minutesBefore, OVERLAP_MINUTES, planJiraMaintenance, WEBHOOK_EVENTS, webhookFilter } from './plan';
+import { chunk, deltaJql, KEYS_PER_QUERY, minutesBefore, minutesBetween, OVERLAP_MINUTES, planJiraMaintenance, WEBHOOK_EVENTS, webhookFilter } from './plan';
+import { jiraMembers, READERS_SYNC_MINUTES } from './readers';
 
 // Jira のキューの仕事（0034 の決定 3）。通知はヒントで、正は JQL の差分。位置（syncedUntil）は取り込みが終わってから進める。
 // Graph と同じキューを使い、Jira の経路のデータソースだけを扱う。
@@ -30,7 +31,7 @@ export interface JiraSyncDeps {
 
 interface Ctx {
   source: SourceState;
-  ds: ServiceDataSource & { connector: { kind: 'jira'; cloudId: string; site: string; jql: string } };
+  ds: ServiceDataSource & { connector: { kind: 'jira'; cloudId: string; site: string; jql: string; projectKey?: string } };
   api: JiraApi | null;
 }
 
@@ -87,6 +88,8 @@ export class JiraSync {
   }
 
   private async maintain(ctx: Ctx): Promise<void> {
+    // 共有リストの読者は、ソースの閲覧できる人から 60 分ごとに写す（0037 の決定 2）
+    if (this.isShared(ctx) && ctx.source.status === 'ok' && this.readersDue(ctx)) await this.syncReaders(ctx);
     const urlHash = this.deps.webhookUrlFor ? await sha256Hex(await this.deps.webhookUrlFor(ctx.source.userId)) : undefined;
     const plan = planJiraMaintenance(ctx.source, this.deps.now(), !!this.deps.webhookUrlFor, urlHash);
     switch (plan.kind) {
@@ -106,6 +109,7 @@ export class JiraSync {
 
   /** つないだ直後・範囲を変えたあと・broken からの戻り: Webhook を登録し直し、差分を取って ok にする */
   private async setup(ctx: Ctx): Promise<void> {
+    if (this.isShared(ctx)) await this.syncReaders(ctx);
     if (this.deps.webhookUrlFor) await this.register(ctx);
     await this.sync(ctx);
     await this.put(ctx, { status: 'ok', reason: null });
@@ -117,7 +121,9 @@ export class JiraSync {
     const cursor = this.cursor(ctx);
     if (cursor.webhookIds.length > 0) await api.deleteWebhooks(ctx.ds.connector.cloudId, cursor.webhookIds);
     const url = await this.deps.webhookUrlFor!(ctx.source.userId);
-    const filters = [...new Set([webhookFilter(ctx.ds.connector.jql), 'assignee = currentUser() OR reporter = currentUser()'])];
+    // 共有リストはプロジェクトで絞る（JQL の level は Webhook の絞りで使えるか分からないので、差分の JQL で除く）
+    const scope = ctx.ds.connector.projectKey ? `project = ${ctx.ds.connector.projectKey}` : webhookFilter(ctx.ds.connector.jql);
+    const filters = [...new Set([scope, 'assignee = currentUser() OR reporter = currentUser()'])];
     let ids: number[] = [];
     for (const jqlFilter of filters) {
       const [r] = await api.registerWebhooks(ctx.ds.connector.cloudId, url, [{ events: WEBHOOK_EVENTS, jqlFilter }]);
@@ -153,7 +159,9 @@ export class JiraSync {
     const cursor = this.cursor(ctx);
     const resume = cursor.resume;
     const startedAt = resume?.startedAt ?? this.deps.now();
-    const keys = resume?.keys ?? (await this.openKeys(ctx));
+    // 個人の JQL の範囲から外れた課題を追い続けるための key in (...)。共有リストはプロジェクト全体を取るので要らない
+    //（足すと、あとからセキュリティレベルが付いた課題まで取ってしまう）
+    const keys = resume?.keys ?? (this.isShared(ctx) ? [] : await this.openKeys(ctx));
     const since = minutesBefore(cursor.syncedUntil, OVERLAP_MINUTES);
     const api = await this.api(ctx);
     const { cloudId, jql } = ctx.ds.connector;
@@ -208,6 +216,30 @@ export class JiraSync {
       .map((t) => t.sourceKey!)
       .filter((k) => /^[A-Z][A-Z0-9_]*-\d+$/.test(k))
       .sort();
+  }
+
+  private isShared(ctx: Ctx): boolean {
+    return !!ctx.ds.shared && !!ctx.ds.connector.projectKey;
+  }
+
+  private readersDue(ctx: Ctx): boolean {
+    const at = ctx.source.jira?.readersSyncedAt;
+    return !at || minutesBetween(at, this.deps.now()) >= READERS_SYNC_MINUTES;
+  }
+
+  /**
+   * 共有リストの読者を、プロジェクトを閲覧できる人に合わせる（0037 の決定 2）。
+   * つないだ人がもう閲覧できなければ、資格情報の問題として broken にする（ほかの読者がつなぎ直すと戻る）
+   */
+  private async syncReaders(ctx: Ctx): Promise<void> {
+    const projectKey = ctx.ds.connector.projectKey!;
+    const members = jiraMembers(await (await this.api(ctx)).browsers(ctx.ds.connector.cloudId, projectKey));
+    const { result } = await this.deps.service.changeMaster(null, `Jira の読者の同期（${projectKey}）`, (d, c) => syncSharedReaders(d, c, ctx.ds.id, members));
+    await this.put(ctx, { jira: { ...this.cursor(ctx), readersSyncedAt: this.deps.now() } });
+    if (result.added.length > 0 || result.removed.length > 0) {
+      this.deps.log?.({ msg: 'jira_readers_synced', dataSourceId: ctx.ds.id, added: result.added.length, removed: result.removed.length });
+    }
+    if (result.ownerLost) throw new GatewayAuthError(`つないだ人がプロジェクト ${projectKey} を閲覧できなくなった。ほかの読者がつなぎ直す`);
   }
 
   private cursor(ctx: Ctx): JiraCursor {

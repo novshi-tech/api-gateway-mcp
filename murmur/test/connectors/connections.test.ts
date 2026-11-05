@@ -69,6 +69,7 @@ describe('H3 個人の箱をつなぐ', () => {
   let now: string;
   let ctx: Awaited<ReturnType<typeof setup>>;
   let jira: FakeJira;
+  let sharedServices: string[];
 
   async function setup() {
     const made = await makeService(seed);
@@ -81,6 +82,7 @@ describe('H3 個人の箱をつなぐ', () => {
       newId: counterIds(),
       graphFor: () => new FakeGraph({ id: 'oid', displayName: 'Bob', addresses: ['bob@ubs.example', 'bob.alias@ubs.example'] }),
       jiraFor: () => jira,
+      sharedServices,
     });
     return { ...made, connections };
   }
@@ -102,6 +104,7 @@ describe('H3 個人の箱をつなぐ', () => {
     queued = [];
     now = '2026-10-30T00:00:00.000Z';
     jira = new FakeJira(() => now);
+    sharedServices = ['jira'];
     ctx = await setup();
   });
 
@@ -189,8 +192,8 @@ describe('H3 個人の箱をつなぐ', () => {
     expect(queued.at(-1)).toEqual({ kind: 'disconnect', dataSourceId: dsId });
   });
 
-  describe('Jira（0034 の決定 1・2）', () => {
-    async function consentJira(asUser: string, input: { jql?: string } = {}) {
+  describe('H3 Jira のプロジェクトの共有リスト（0037）', () => {
+    async function consentJira(asUser: string, input: { projectKey?: string } = { projectKey: 'SPW' }) {
       const r = await ctx.connections.connectJira('u_bob', input);
       if (r.status !== 'authorize') throw new Error(`expected authorize, got ${r.status}`);
       const url = new URL(r.authorize_url);
@@ -199,53 +202,83 @@ describe('H3 個人の箱をつなぐ', () => {
 
     beforeEach(() => {
       gw.credentialsOf.set('u_bob', [{ id: 'gw_bob', service: 'graph', label: 'ubs' }, { id: 'gw_jira', service: 'jira', label: 'Jira' }]);
+      gw.credentialsOf.set('u_alice', [{ id: 'gw_alice_jira', service: 'jira', label: 'Jira' }]);
     });
 
-    it('同意 → サイトが 1 つならそのまま、本人の accountId をアイデンティティにして個人リストを作る', async () => {
+    const sharedDs = async () => (await ctx.service.directory()).seed.dataSources.find((d) => d.kind === 'service' && d.shared)!;
+
+    it('同意 → プロジェクトの共有リストを作る。範囲はプロジェクト（セキュリティレベル付きを除く）、作った人が読者、名乗りが Contact に付く', async () => {
       expect(await consentJira('u_bob')).toMatchObject({ ok: true, message: expect.stringMatching(/Jira/) });
-      const dir = await ctx.service.directory();
-      const ds = dir.seed.dataSources.find((d) => d.kind === 'service' && d.connector?.kind === 'jira')!;
+      const ds = await sharedDs();
       expect(ds).toMatchObject({
         channel: 'jira',
-        name: 'Bob の Jira（acme）',
-        connector: { kind: 'jira', cloudId: 'cloud-1', site: 'https://acme.atlassian.net', jql: 'assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()' },
+        name: 'スポット作業（Jira）',
+        group: true,
+        shared: { spaceKey: 'jira:cloud-1/SPW', createdBy: 'u_bob' },
+        connector: { kind: 'jira', cloudId: 'cloud-1', projectKey: 'SPW', jql: 'project = SPW AND level IS EMPTY' },
       });
-      expect(connectorOwner(dir.seed, ds)).toBe('u_bob');
-      expect(deriveViewer(dir, 'u_alice').dataSourceIds).not.toContain(ds.id);
+      const dir = await ctx.service.directory();
+      expect(dir.readersOfList(dir.seed.lists.find((l) => l.dataSourceId === ds.id)!.id)).toEqual(['u_bob']);
       expect(dir.contactIdOfAddress({ channel: 'jira', value: 'acct-bob' })).toBe('p_bob');
       expect(queued).toEqual([{ kind: 'setup', dataSourceId: ds.id }]);
-      expect(await state.source(ds.id)).toMatchObject({ kind: 'jira', gatewayCredentialId: 'gw_jira', status: 'setup', jira: { syncedUntil: now, webhookIds: [] } });
-      expect(await ctx.connections.list('u_bob')).toEqual([expect.objectContaining({ kind: 'jira', site: 'https://acme.atlassian.net', status: 'setup' })]);
+      expect(await state.source(ds.id)).toMatchObject({ kind: 'jira', userId: 'u_bob', gatewayCredentialId: 'gw_jira', status: 'setup' });
+      expect(await ctx.connections.list('u_bob')).toEqual([expect.objectContaining({ kind: 'jira', project: 'SPW', shared: true, created_by: 'u_bob', status: 'setup' })]);
     });
 
-    it('同意は Outlook と共有。Outlook をつないだあとは有効にする画面を飛ばす。サイトが複数なら選んでもらう', async () => {
+    it('プロジェクトを指定しなければ、つなぐ人が見えるプロジェクトの一覧を返す。見えないプロジェクトはつなげない', async () => {
       await consent('u_bob');
-      jira.siteList.push({ id: 'cloud-2', url: 'https://other.atlassian.net', name: 'other' });
-      expect(await ctx.connections.connectJira('u_bob')).toMatchObject({ status: 'choose_site', sites: [{ id: 'cloud-1' }, { id: 'cloud-2' }] });
-      expect(await ctx.connections.connectJira('u_bob', { cloudId: 'cloud-2', jql: 'project = OPS ORDER BY created DESC' })).toMatchObject({ status: 'connected', created: true });
-      const ds = (await ctx.service.directory()).seed.dataSources.find((d) => d.kind === 'service' && d.connector?.kind === 'jira')!;
-      // 並びは取り込みが付けるので落とす
-      expect(ds.kind === 'service' && ds.connector).toMatchObject({ cloudId: 'cloud-2', jql: 'project = OPS' });
-      expect(await ctx.connections.connectJira('u_bob', { cloudId: 'cloud-2' })).toMatchObject({ status: 'connected', created: false });
+      jira.projectList.push({ key: 'OPS', name: '運用' });
+      expect(await ctx.connections.connectJira('u_bob')).toMatchObject({ status: 'choose_project', projects: [{ key: 'SPW' }, { key: 'OPS' }] });
+      await expect(ctx.connections.connectJira('u_bob', { projectKey: 'NOPE' })).rejects.toThrow(/見えない/);
+    });
+
+    it('デプロイの設定で Jira の共有リストを許していなければ、つなげない（0037 の決定 4）', async () => {
+      sharedServices = [];
+      ctx = await setup();
+      await consent('u_bob');
+      await expect(ctx.connections.connectJira('u_bob', { projectKey: 'SPW' })).rejects.toMatchObject({ code: 'forbidden' });
+    });
+
+    it('2 人目がつなぐと同じ共有リストで、その場で読者が写る（名乗った人だけ、アプリは外す）。動いていれば資格情報は変えない', async () => {
+      await consentJira('u_bob');
+      const ds = await sharedDs();
+      await state.putSource({ ...(await state.source(ds.id))!, status: 'ok' });
+      // Alice も自分の Jira で同じプロジェクトをつなぐ
+      jira.browserList.push({ accountId: 'acct-alice', accountType: 'atlassian', active: true });
+      const aliceJira = new FakeJira(() => now, undefined, { accountId: 'acct-alice', displayName: 'Alice' });
+      aliceJira.browserList = jira.browserList;
+      const asAlice = new Connections({ ...(ctx.connections as unknown as { deps: ConstructorParameters<typeof Connections>[0] }).deps, jiraFor: () => aliceJira });
+      gw.approve('u_alice');
+      expect(await asAlice.connectJira('u_alice', { projectKey: 'SPW' })).toMatchObject({ status: 'connected', created: false, data_source: { id: ds.id } });
+      const dir = await ctx.service.directory();
+      expect(dir.readersOfList(dir.seed.lists.find((l) => l.dataSourceId === ds.id)!.id).sort()).toEqual(['u_alice', 'u_bob']);
+      expect(await state.source(ds.id)).toMatchObject({ userId: 'u_bob', status: 'ok' });
+      // Alice の一覧にも出る（読者になっている共有リスト）
+      expect(await ctx.connections.list('u_alice')).toEqual([expect.objectContaining({ data_source: ds.id, shared: true, created_by: 'u_bob' })]);
+    });
+
+    it('止まっている共有リストに別の読者がつなぐと、その人の委任でつなぎ直す（作った人は変わらない）', async () => {
+      await consentJira('u_bob');
+      const ds = await sharedDs();
+      await state.putSource({ ...(await state.source(ds.id))!, status: 'broken', reason: 'つないだ人がプロジェクトを閲覧できなくなった' });
+      jira.browserList.push({ accountId: 'acct-alice', accountType: 'atlassian', active: true });
+      const aliceJira = new FakeJira(() => now, undefined, { accountId: 'acct-alice', displayName: 'Alice' });
+      aliceJira.browserList = jira.browserList;
+      const asAlice = new Connections({ ...(ctx.connections as unknown as { deps: ConstructorParameters<typeof Connections>[0] }).deps, jiraFor: () => aliceJira });
+      gw.approve('u_alice');
+      queued = [];
+      expect(await asAlice.connectJira('u_alice', { projectKey: 'SPW' })).toMatchObject({ status: 'connected', created: false });
+      expect(await state.source(ds.id)).toMatchObject({ userId: 'u_alice', gatewayCredentialId: 'gw_alice_jira', status: 'setup' });
+      expect(queued).toEqual([{ kind: 'setup', dataSourceId: ds.id }]);
+      const after = await sharedDs();
+      expect(after.kind === 'service' && after.shared?.createdBy).toBe('u_bob');
     });
 
     it('ゲートウェイに Jira の接続がなければ、つなげない', async () => {
       gw.credentialsOf.set('u_bob', [{ id: 'gw_bob', service: 'graph', label: 'ubs' }]);
       expect(await consentJira('u_bob')).toMatchObject({ ok: false, message: expect.stringMatching(/Jira/) });
-      // 有効にした同意は残る（ゲートウェイの画面で押した時点で残る）。そのあとは同意を飛ばして、接続がないと返す
       expect(gw.consents.has('u_bob')).toBe(true);
-      expect(await ctx.connections.connectJira('u_bob')).toMatchObject({ status: 'no_credential' });
-    });
-
-    it('範囲の JQL を変える: マスタを書き換え、ok なら setup をやり直す。本人以外は変えられない', async () => {
-      await consentJira('u_bob');
-      const [view] = await ctx.connections.list('u_bob');
-      const s = (await state.source(view!.data_source))!;
-      await state.putSource({ ...s, status: 'ok' });
-      queued = [];
-      await expect(ctx.connections.setJiraScope('u_alice', view!.data_source, 'project = X')).rejects.toThrow(/not found/);
-      expect(await ctx.connections.setJiraScope('u_bob', view!.data_source, 'project = SPW')).toEqual([expect.objectContaining({ jql: 'project = SPW', status: 'setup' })]);
-      expect(queued).toEqual([{ kind: 'setup', dataSourceId: view!.data_source }]);
+      expect(await ctx.connections.connectJira('u_bob', { projectKey: 'SPW' })).toMatchObject({ status: 'no_credential' });
     });
   });
 });
