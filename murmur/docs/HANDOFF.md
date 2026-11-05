@@ -54,7 +54,9 @@
   - **UBS に出して、SPW をつないだ**（api-gateway-mcp#45・api-gateway-deployments#5、ゲートウェイのバージョン `7e360a4b-96da-4066-89df-f733922d69b4`、`MURMUR_SHARED_SERVICES=jira`）。直樹の権限で「スポット作業（Jira）」（`ds_423931eacf1448b08e6f`、作った人は直樹）を作り、setup で読者の同期（02:32）と Webhook の登録（ID 7、プロジェクトで絞る）が通って ok。直樹の Jira の個人リスト（`ds_0ffe435ee180420aa54d`）は外した（disconnected、Webhook も消えた。スレッドは残る）。SPW のメンバーには直樹から伝える
   - 今の読者は直樹だけ。ほかのメンバーは、自分の Jira をゲートウェイにつなぎ、Murmur を有効にして、自分のスタンドから `POST /connections/jira`（`project: SPW`）を 1 回呼ぶと名乗りが付いて読者になる（スキルの「Jira をつなぐ」のとおり。`created: false` が返る）。同意した人のアカウントを Murmur が自分で読みに行く形（名乗りの自動化）は、困ったら考える
   - **Teams のコネクタを実装した**（同じ日、PR。0036 を採用し、「実装の記録」に書いた）。ゲートウェイの `graph` の接続に `ChannelMember.Read.All` を足して直樹がつなぎ直した（ゲートウェイの接続の画面に「つなぎ直す」を足した。消して足し直すと接続の ID が変わり、Murmur のデータソースが壊れる）。`POST /connections/teams`（`team`・`channel`）、走査・サブスクリプション・読者の同期、チームの中のメンションは読者の番（`by: 'addressed'`）。スキル 0.1.9。347 件緑
-  - UBS で使うには、デプロイの設定の `MURMUR_SHARED_SERVICES` を `jira,teams` にして出し直し、94_電話対応をつなぐ（直樹の了承を取ってから出す）
+  - **UBS に出して、94_電話対応をつないだ**（api-gateway-mcp#47・api-gateway-deployments#6、ゲートウェイのバージョン `cd2048a4-0c1e-4438-bf68-9e63c07d478a`、`MURMUR_SHARED_SERVICES=jira,teams`）。直樹の権限で「UBS全社 / 94_電話対応（Teams）」（`ds_9e4d4a13fb04417a95ea`、リスト `l_bb9f31ea1331482494b4`）を作り、setup で読者の同期・サブスクリプション（期限 11/8、見回りで延長）・最初の走査が通って ok（03:46）
+  - 今の読者は直樹だけ。ほかのメンバーは Murmur の User がまだない（Murmur の API を一度も呼んでいない）ので読者にならない。各自がゲートウェイにサインインしてスタンドから Murmur を使えば、次の読者の同期（60 分ごと）で読者になる（名乗りは要らない）。社員への説明は直樹が口頭でする。チャネルへの「追い始めた」の投稿はしない（直樹）
+  - 次: 試用（0016 の段階 5）。チャネルの投稿・返信がスレッドになり、メンションが読者の番になるか、メンションなしの依頼が仕分け待ち → `claim` で回るかを見る
   - 次: Teams（0036）。ゲートウェイの `graph` に `ChannelMember.Read.All` を足すか（全デプロイに効き、管理者の同意と利用者のつなぎ直しが要る）を直樹と決めてから
   - 本筋の外: 直樹の箱に murmur-dev 宛ての Outlook のサブスクリプションが 2 本残っている（10-30 の dev の試験。murmur-dev が延長していれば止める）
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
