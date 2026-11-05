@@ -36,6 +36,8 @@ export interface MurmurConfig {
   timelineToken?: string;
   /** 取り込みのキュー（同時実行 1）。なければその場で処理する（ローカルの確認用） */
   queue?: Queue<SyncJob>;
+  /** 共有リストを許すサービス（0037 の決定 4。管理者がデプロイの設定で決める。既定は許さない） */
+  sharedServices?: readonly string[];
   /** 外部コネクタ（0024）。なければ /api/connections と Webhook の口は 404 */
   connectors?: {
     /** Murmur の公開 URL（Webhook の受け口の URL になる） */

@@ -9,7 +9,7 @@ import {
   type UpstreamCall,
   type UpstreamKind,
 } from "../murmur/src/ports/gateway";
-import { publicUrl } from "./config";
+import { publicUrl, splitList } from "./config";
 import { randomToken } from "./crypto";
 import { IDENTITY_CREDENTIAL } from "./identity";
 import { denied, forward, upstreamFetcher } from "./proxy";
@@ -43,6 +43,11 @@ export function featurePort(env: Env, opts: FeaturePortOptions): GatewayPort {
 
   return {
     homeUrl: `${base}/`,
+
+    // Admins are listed by user ID in ADMINS, as for the gateway's own admin pages.
+    async isAdmin(userId) {
+      return splitList(env.ADMINS).includes(userId);
+    },
 
     // The stand's gateway token, as issued by issue_token for `identity:<feature>`.
     async authenticate(token) {

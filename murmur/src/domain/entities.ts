@@ -105,6 +105,18 @@ export const DataSource = z.discriminatedUnion('kind', [
     group: z.boolean().default(false),
     /** 取り込みの経路。実行時に作ったデータソースが持つ（0024） */
     connector: SourceConnector.optional(),
+    /**
+     * 共有リスト（0037）。スペース（Teams・Slack のチャネル、Jira のプロジェクト）に 1 つで、読者はソースから写す。
+     * 資格情報はつないだ人の委任（principal は user）。ないものは今までどおり（個人の資格情報なら読者は本人だけ）
+     */
+    shared: z
+      .object({
+        /** スペースを表す鍵（例 teams:<team>/<channel>、jira:<cloudId>/<projectKey>）。同じ鍵のデータソースは 1 つ */
+        spaceKey: z.string().min(1),
+        /** 作った人の User（外せるのは作った人と管理者） */
+        createdBy: z.string().min(1),
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal('notes'),

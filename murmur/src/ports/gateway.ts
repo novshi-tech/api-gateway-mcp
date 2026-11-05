@@ -56,6 +56,8 @@ export interface GatewayPort {
   consent: ConsentPort;
   /** ゲートウェイの画面（接続の登録を案内するとき） */
   readonly homeUrl: string;
+  /** ゲートウェイの管理者か（共有リストを外せる。0037 の決定 4） */
+  isAdmin(userId: string): Promise<boolean>;
 }
 
 /** 読める口にない呼び出し。送る前に断った */

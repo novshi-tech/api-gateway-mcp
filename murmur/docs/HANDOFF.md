@@ -40,7 +40,17 @@
   - シークレット: `ANTHROPIC_API_KEY`（直樹）、`MURMUR_WEBHOOK_SECRET`・`MURMUR_TIMELINE_TOKEN`（新しく作った。管理画面は `https://gateway.urban-b.com/murmur/admin?token=…`、値は直樹に渡した）
   - **片付けた**（同じ日、PR）: 単独の Worker のコード（`src/index.ts`・`connectors/gateway/`・JWKS の検証・`SecretBox`・同意のトークンのストア・CIMD のメタデータの経路・`wrangler.example.jsonc`・`tools/wrangler.mjs`・deploy 系のスクリプト）を消した。`Connections` のテストは口の偽物（`FakeGatewayPort`）にした。seed はゲートウェイのデプロイの `MURMUR_DB` に流す。CLAUDE.md・`docs/stand/connect.md`・README・ADR の状態を今の形に直した。`gateway_grants` のテーブルは残してある
   - 残り: murmur-deployments と novshi-tech/murmur を archive（直樹）
-  - 次: 課題 1（Teams の統合）の ADR
+  - api-gateway-mcp#42 で片付けを main に入れた
+- **課題 1（Teams）: `docs/adr/0036`（案）を書いた**（2026-11-05）。チャネル 1 つ = 共有リスト、読者はチャネルのメンバーのうち Murmur の User（見回りでメンバーの一覧から写す。oid がゲートウェイの User ID に入っているので対応が取れる）、経路はつないだ人の委任（アプリの権限は保護された API で重い。0024 の「個人の資格情報は読者 1 人」を、読者をソースのメンバーから写すときに限って改める）、区切りは投稿と返信を `threadTs` で構造で 1 本、誰の番はメンションを宛先にし、なければ仕分け待ち → `ThreadClaimed`、チャネル `teams` を足す。チャットは入れない
+- **`docs/adr/0037`（採用、2026-11-05）: 共有リストはスペース単位で作り、読者はソースから写す。** 「共有リストを誰が作ってよいか」の議論から（ソースの所有者は UI で見つけにくく、Slack・Jira と形がそろわない）
+  - スペース（Teams・Slack のチャネル、Jira のプロジェクト）に 1 つ。読者はソースの読める人のうち、本人が名乗って対応が付いた User（Teams は Entra の oid、Jira・Slack は本人の接続の `myself`）。メールアドレスで推測しない
+  - 経路は作った人の委任（0024 の「個人の資格情報は読者 1 人」を改めた）。作れるのはそのスペースを読める人なら誰でも、管理者がデプロイの設定でサービスを許す（既定は許さない）。作ったらスタンドがスペースに知らせる。外せるのは作った人と管理者。ミュートは最初は入れない
+  - Jira はプロジェクトの共有リストに置き換える（0034 の個人リストをやめる。セキュリティレベル付きの課題は入れない）。直樹の Jira の個人リストは、共有リストができたら消す（直樹の了承済み）
+  - 0036（Teams）は 0037 に合わせて縮めた（案のまま。S0 待ち）。0024・0033・0034・0035 の状態に注記
+  - **S0 を回した**（UBS、Teams は UBS全社 の 94_電話対応、Jira は スポット作業 SPW。`docs/research/2026-11-05-teams-jira-s0.md`）。Teams: メンバーの一覧は `ChannelMember.Read.All` が要る（403）、delta は返信を含まず、返信で投稿の更新時刻も動かないので、投稿の一覧（`$expand=replies`）を新しい順に重なり 1 日で走査する形にした（0036 の決定 6）。委任で変更通知が作れて期限 3 日。メンションは個人の Entra の oid。Jira: 閲覧できる人の一覧が読める（人 7・アプリ 15）、セキュリティレベルは 0 件
+  - **0037 の土台を実装した**（同じ日。0037 の「実装の記録」）: `shared`（スペースの鍵・作った人）、`src/domain/shared.ts`（作る・読者を写す・入れ替え・外せる人）、口の `isAdmin`、`MURMUR_SHARED_SERVICES`。外す操作は作った人と管理者
+  - 次: Jira を共有リストに置き換える（プロジェクト単位、閲覧できる人の一覧で読者を同期、セキュリティレベル付きを除く、直樹の個人リストを消す）。そのあと Teams（ゲートウェイの `graph` に `ChannelMember.Read.All` を足すかをそこで決める）
+  - 本筋の外: 直樹の箱に murmur-dev 宛ての Outlook のサブスクリプションが 2 本残っている（10-30 の dev の試験。murmur-dev が延長していれば止める）
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:
