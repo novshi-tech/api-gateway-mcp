@@ -32,11 +32,11 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 初めてつないだユーザーは名無しで、Contact(連絡先の自分)もリストもない(`GET /me` が `contact: null`・`lists: []`)。次の順に案内する。
 
 1. 呼び方を聞いて `PATCH /me` で付ける
-2. 自分の Outlook・Jira をリストにするなら、`POST /connections/outlook`・`POST /connections/jira` を呼ぶ(下の「Outlook をつなぐ」「Jira をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
+2. 自分の Outlook を自分のリストにするなら `POST /connections/outlook`、Jira のプロジェクトを共有リストにするなら `POST /connections/jira` を呼ぶ(下の「Outlook をつなぐ」「Jira をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
 3. ほかの自分の箱(Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
    - `created`: 自分の Contact を新しく作った / `bound`: チームが先に作っていたゴーストが自分に結ばれた / `attached`・`already`: 自分の Contact に付いた
    - `merge_candidate`: そのアドレスは別のゴースト(`ghostContactId`)に付いている。同じ人なら、ユーザーに確かめてから `POST /contacts/{自分の contactId}/merge` で `from` にゴーストを渡してまとめる
-4. 共有のリスト(共有メールボックス・LINE 公式アカウント・Jira のプロジェクト)の読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
+4. **共有リスト**(Jira のプロジェクト、これから Teams・Slack のチャネル)は、スペースに 1 つ。そのスペースを読める人なら誰でもつなげ、読者はソースから自動で写る(プロジェクトを閲覧できる人のうち、自分の Jira をゲートウェイにつないで名乗った人)。共有メールボックス・LINE 公式アカウントの読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
 5. メモ(`add_note`)はリストがなくても使える(最初に書いたときに作られる)
 
 ### Outlook をつなぐ
@@ -52,15 +52,15 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 3. メールボックスのアドレスとエイリアスは自分の Contact に付く。別の人のアドレスが混じっていると `conflict` になるので、そのまま伝える
 4. 取り込むのはつないだあとに届くメールだけ(過去のメールは取らない)。止めるときは `POST /connections/{data_source}/disconnect`(スレッドとデータソースは残る)。`GET /connections` の `status` が `broken` なら、理由(`reason`)を伝えて、もう一度つないでもらう
 
-### Jira をつなぐ
+### Jira をつなぐ(プロジェクトの共有リスト)
 
-Jira は課題の状態(担当者・ステータス・期日)を自分で持つので、自分のリスト(読者は自分だけ)として取り込む。同意は Outlook と同じもの(Outlook をつないでいれば、有効にする画面は出ない)。
+Jira はプロジェクトを 1 つの**共有リスト**にする。読者は、そのプロジェクトを閲覧できる人のうち、自分の Jira をゲートウェイにつないで Murmur を有効にした人(名乗った人)で、Murmur が 1 時間ごとにソースから写す。同じプロジェクトを誰がつないでも同じリストになる。セキュリティレベルの付いた課題は取り込まない。同意は Outlook と同じもの。
 
 1. ゲートウェイで Jira がつながっているか(`list_credentials` の `jira`)を確かめる。なければ先にゲートウェイでつないでもらう
-2. どの課題を追いたいかをユーザーに聞き、JQL にする(`jql`)。省けば「担当・起票・ウォッチ」(`assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()`)。並び(`ORDER BY`)は書かなくてよい
-3. `POST /connections/jira` を呼び、`status` で分ける。`authorize`・`choose`・`no_credential` は Outlook と同じ。`choose_site` なら `sites` からユーザーに選んでもらい、`site`(その `id`)を付けてもう一度呼ぶ
-4. 取り込むのは、つないだあとに更新された課題。課題ごとにスレッドが 1 つでき、状態は写し(`source`)、起票とコメントはシグナルになる。誰の番は担当者で決まる(下の「状態を持つデータソースの扱い」)
-5. 追う範囲を変えるときは `PATCH /connections/{data_source}` に `jql`。外れた課題のスレッドは消えない(片付けるかはユーザーに聞く)
+2. `POST /connections/jira` を呼び、`status` で分ける。`authorize`・`choose`・`no_credential` は Outlook と同じ。`choose_site` なら `sites` から選んで `site`(その `id`)、`choose_project` なら `projects` からユーザーに選んでもらって `project`(その `key`)を付けてもう一度呼ぶ。`forbidden` は、このデプロイで Jira の共有リストを管理者が許していない(管理者に伝える)
+3. `connected` で `created: true` なら、新しく作った。**プロジェクトのメンバーに「このプロジェクトを Murmur で追い始めた」ことを知らせる**(ユーザーに文面と送り先を確かめて、Jira のスキルや Teams・メールで)。課題のコメントやチャネルに書いたら `record_sent` で記録する
+4. `created: false` なら、もう誰かがつないでいる(自分は読者に入る)。止まっていた(`broken`)ものは、自分の権限でつなぎ直される
+5. 止めるときは `POST /connections/{data_source}/disconnect`。共有リストを止められるのは作った人(`created_by`)とゲートウェイの管理者だけ。スレッドとデータソースは残る
 6. 起票・コメント・状態の変更は、これまでどおり Jira のスキルで行い、そのあと `record_sent` で記録する(起票は `sent_ref` に課題キー、コメントは `<課題キー>#c<コメント ID>`)
 
 ### 名寄せ(Contact)
@@ -139,10 +139,9 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | record_sent | `POST /sent` | 下の「送信の記録」 | 送ったシグナルの入ったスレッド(`get_thread` と同じ) |
 | rename_me | `PATCH /me` | `{"name"}` | `me` と同じ |
 | connect_outlook | `POST /connections/outlook` | `{"credential_id"?}`(ゲートウェイの Graph の接続。複数あるときだけ) | `status`: `authorize`(`authorize_url`)・`choose`(`credentials`)・`no_credential`(`register_url`)・`connected`(`data_source`、`created`)。上の「Outlook をつなぐ」 |
-| connect_jira | `POST /connections/jira` | `{"credential_id"?, "site"?, "jql"?}`(`site` は `choose_site` の `sites[].id`) | `connect_outlook` と同じ + `choose_site`(`sites`)。上の「Jira をつなぐ」 |
-| list_connections | `GET /connections` | | 自分がつないだもの(`kind`: `outlook` / `jira`、Jira は `site`・`jql`)と取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
-| set_connection | `PATCH /connections/{data_source}` | `{"jql"}`(Jira の範囲) | `list_connections` と同じ |
-| disconnect | `POST /connections/{data_source}/disconnect` | | 取り込みを止める。スレッドとデータソースは残る |
+| connect_jira | `POST /connections/jira` | `{"credential_id"?, "site"?, "project"?}`(`site` は `choose_site` の `sites[].id`、`project` は `choose_project` の `projects[].key`) | `connect_outlook` と同じ + `choose_site`(`sites`)・`choose_project`(`projects`)。`forbidden` はデプロイで許していない。上の「Jira をつなぐ」 |
+| list_connections | `GET /connections` | | 自分がつないだものと、読者になっている共有リスト(`kind`: `outlook` / `jira`、Jira は `site`・`project`、共有リストは `shared: true`・`created_by`)と取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
+| disconnect | `POST /connections/{data_source}/disconnect` | | 取り込みを止める。共有リストは作った人と管理者だけ。スレッドとデータソースは残る |
 | create_data_source | `POST /data-sources` | `{"channel", "name", "identity", "gateway_credential_id", "description"?, "group"?}`。個人のリスト(読者は自分だけ) | `get_list` と同じ + `identity`(上の「初めてつないだとき」) |
 | set_identity | `POST /lists/{list_id}/identity` | `{"identity"}`(そのリストでの自分のアカウント) | `identity` の結果(`kind`・`contactId`) |
 | list_unresolved | `GET /addresses/unresolved` | | `[{channel, value, count, lastSeenAt, threadIds}]`(最後に見た順) |

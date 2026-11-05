@@ -77,6 +77,14 @@ Teams のチャネルを共有リストにする案（0036）を議論するう�
 - 設定: 共有リストを許すサービスを `MURMUR_SHARED_SERVICES`（例 `jira,teams`）で渡す（`MurmurConfig.sharedServices`。既定は空）。使うのは次の Jira から
 - まだ: 読者の同期を見回りに入れること、つなぐ API（Jira・Teams のコネクタと一緒に）
 
+### Jira（2026-11-05）
+
+- 接続先に `projectKey`。範囲は `project = KEY AND level IS EMPTY`（セキュリティレベル付きを除く）。Webhook の絞りは `project = KEY`（JQL の `level` が Webhook の絞りで使えるか分からないので広めにし、差分の JQL で除く）。共有リストの差分は `key in (...)` で広げない（あとからセキュリティレベルが付いた課題を取らないため）
+- つなぐ: `POST /connections/jira` に `project`。省けばつなぐ人が見えるプロジェクトの一覧（`choose_project`）。デプロイの設定で許していなければ `forbidden`。既にあれば、つなぐ人の権限でその場で読者を写し、止まっていればその人の委任でつなぎ直す。個人リストを作る経路（本人の JQL、`PATCH /connections/{id}`）はやめた。今ある個人リストは、消すまで今のまま動く
+- 読者の同期: 見回りで 60 分ごと（と setup で）、`/user/permission/search?permissions=BROWSE_PROJECTS` の人（`atlassian`・有効）を `syncSharedReaders` に渡す。つないだ人が閲覧できなくなったら broken
+- 一覧（`GET /connections`）に、読者になっている共有リストも出す（`shared`・`created_by`）
+- スキル: `api-gateway-murmur` 0.1.8
+
 ## 未決
 
 1. 共有チャネル（別のテナントのメンバー）と外部のゲスト。読者になれない人の投稿は、Contact として取り込むだけでよいか

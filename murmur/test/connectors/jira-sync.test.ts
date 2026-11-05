@@ -4,7 +4,7 @@ import type { SourceState } from '../../src/connectors/graph/state';
 import { isAllowed } from '../../src/connectors/jira/api';
 import { deltaJql, planJiraMaintenance, webhookFilter } from '../../src/connectors/jira/plan';
 import { JiraSync } from '../../src/connectors/jira/sync';
-import { connectJiraSource, Directory, planMasterEdit, turnOf, type JiraSourcePlan } from '../../src/domain';
+import { connectJiraProject, Directory, planMasterEdit, turnOf, type SharedSpacePlan } from '../../src/domain';
 import { MemoryConnectorState } from '../../src/store/connector-state';
 import { FakeJira } from '../helpers/fake-jira';
 import { counterIds, makeService } from '../helpers/service';
@@ -108,17 +108,18 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
   let ctx: Awaited<ReturnType<typeof setup>>;
 
   async function setup() {
-    let plan!: JiraSourcePlan;
+    let plan!: SharedSpacePlan;
     const newId = counterIds();
     const { after } = planMasterEdit(seed, (d) => {
-      plan = connectJiraSource(d, { dir: new Directory(d), now: T0, newId }, {
+      plan = connectJiraProject(d, { dir: new Directory(d), now: T0, newId }, {
         userId: 'u_bob',
         gatewayCredentialId: 'gw_jira',
         cloudId: 'cloud-1',
         site: 'https://acme.atlassian.net',
         siteName: 'acme',
+        projectKey: 'SPW',
+        projectName: 'スポット作業',
         accountId: 'acct-bob',
-        displayName: 'Bob',
       });
     });
     const made = await makeService(after, { decide: () => answer({ needs_response: true }) });
@@ -158,10 +159,10 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
     ctx = await setup();
   });
 
-  it('setup: Webhook を登録し（watcher を含む範囲は担当・起票に広げる）、期限を延長の結果で置き、ok にする', async () => {
+  it('setup: 共有リストの Webhook はプロジェクトで絞って登録し、期限を延長の結果で置き、ok にする（0037）', async () => {
     await ctx.sync.handle({ kind: 'setup', dataSourceId: ctx.ds.id });
     expect([...jira.webhooks.values()]).toEqual([
-      expect.objectContaining({ url: 'https://murmur.test/webhooks/jira/secret-u_bob', spec: { events: ['jira:issue_created', 'jira:issue_updated', 'comment_created'], jqlFilter: 'assignee = currentUser() OR reporter = currentUser()' } }),
+      expect.objectContaining({ url: 'https://murmur.test/webhooks/jira/secret-u_bob', spec: { events: ['jira:issue_created', 'jira:issue_updated', 'comment_created'], jqlFilter: 'project = SPW' } }),
     ]);
     expect(await state.source(ctx.ds.id)).toMatchObject({ status: 'ok', lastSyncAt: T0, jira: { webhookIds: [1], webhookExpiresAt: at(30 * 24 * 60) } });
     // もう一度 setup しても Webhook は 1 つのまま（消してから登録し直す）
@@ -179,7 +180,7 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
     expect(await ctx.sync.notified('u_bob')).toBe(1);
     expect(queued).toEqual([{ kind: 'jira-sync', dataSourceId: ctx.ds.id }]);
     await ctx.sync.handle(queued.shift()!);
-    expect(jira.jqls.at(-1)).toBe('(assignee = currentUser() OR reporter = currentUser() OR watcher = currentUser()) AND updated >= -10m ORDER BY updated ASC');
+    expect(jira.jqls.at(-1)).toBe('(project = SPW AND level IS EMPTY) AND updated >= -10m ORDER BY updated ASC');
 
     const ts = await threads();
     expect(ts.map((t) => [t.sourceKey, t.title, t.signalIds.length]).sort()).toEqual([
@@ -197,7 +198,7 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
     now = at(7);
     await ctx.sync.handle({ kind: 'jira-sync', dataSourceId: ctx.ds.id });
     expect((await threads()).map((t) => t.signalIds.length).sort()).toEqual([1, 1]);
-    expect(jira.jqls.at(-1)).toMatch(/OR key in \(SPW-1, SPW-2\)\) AND updated >= -7m/);
+    expect(jira.jqls.at(-1)).toBe('(project = SPW AND level IS EMPTY) AND updated >= -7m ORDER BY updated ASC');
   });
 
   it('ページの上限を超えたら、検索の位置を持ち越して続きを積む（読み直さない）。読み終えてから位置を進める', async () => {
@@ -243,6 +244,46 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
     expect((await state.source(ctx.ds.id))!.jira!.webhookIds).toEqual([]);
     // 外したデータソースには通知が来ても積まない
     expect(await ctx.sync.notified('u_bob')).toBe(0);
+  });
+
+  it('H3 共有リストの読者: setup でプロジェクトを閲覧できる人を写し（名乗った人だけ、アプリは外す）、60 分ごとに写し直す（0037 の決定 2）', async () => {
+    // Alice は自分の Jira をつないで名乗っている（accountId が Contact に付いている）
+    await ctx.service.changeMaster('u_alice', '名乗り', (d) => void d.addresses.push({ id: 'a_alice_jira', channel: 'jira', value: 'acct-alice', contactId: 'p_alice' }));
+    jira.browserList.push({ accountId: 'acct-alice', accountType: 'atlassian', active: true }, { accountId: 'acct-stranger', accountType: 'atlassian', active: true });
+    await ctx.sync.handle({ kind: 'setup', dataSourceId: ctx.ds.id });
+    const readers = async () => {
+      const dir = await ctx.service.directory();
+      return dir.readersOfList(dir.seed.lists.find((l) => l.dataSourceId === ctx.ds.id)!.id).sort();
+    };
+    expect(await readers()).toEqual(['u_alice', 'u_bob']);
+    expect((await state.source(ctx.ds.id))!.jira!.readersSyncedAt).toBe(T0);
+    // 30 分後の見回りでは読まない。60 分後に読み、外れた人を外す
+    jira.browserList = jira.browserList.filter((b) => b.accountId !== 'acct-alice');
+    now = at(30);
+    await ctx.sync.handle({ kind: 'maintain' });
+    expect(await readers()).toEqual(['u_alice', 'u_bob']);
+    now = at(61);
+    await ctx.sync.handle({ kind: 'maintain' });
+    expect(await readers()).toEqual(['u_bob']);
+  });
+
+  it('H3 つないだ人がプロジェクトを閲覧できなくなったら broken（ほかの読者がつなぎ直す）', async () => {
+    await ctx.sync.handle({ kind: 'setup', dataSourceId: ctx.ds.id });
+    jira.browserList = [];
+    now = at(61);
+    await ctx.sync.handle({ kind: 'maintain' });
+    expect(await state.source(ctx.ds.id)).toMatchObject({ status: 'broken', reason: expect.stringMatching(/閲覧できなくなった/) });
+  });
+
+  it('共有リストの差分は key in (...) で広げない（あとからセキュリティレベルが付いた課題を取らない）', async () => {
+    await ctx.sync.handle({ kind: 'setup', dataSourceId: ctx.ds.id });
+    jira.put(issue('SPW-1', at(3)), [comment('11', 'acct-mori', at(3), '確認お願いします')]);
+    now = at(5);
+    await ctx.sync.handle({ kind: 'jira-sync', dataSourceId: ctx.ds.id });
+    now = at(20);
+    jira.jqls.length = 0;
+    await ctx.sync.handle({ kind: 'jira-sync', dataSourceId: ctx.ds.id });
+    expect(jira.jqls.every((q) => q.startsWith('(project = SPW AND level IS EMPTY) AND updated >='))).toBe(true);
   });
 
   it('Outlook の仕事（フォルダの同期）は扱わない', async () => {

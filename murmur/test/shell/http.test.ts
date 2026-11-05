@@ -287,14 +287,13 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     const notified: unknown[] = [];
     const connectOutlook = async (userId: string, credentialId?: string) => ({ status: 'authorize', authorize_url: `https://gw/authorize?u=${userId}&c=${credentialId ?? ''}` });
     const connectJira = async (userId: string, input: unknown) => ({ status: 'connected', userId, input });
-    const setJiraScope = async (userId: string, id: string, jql: string) => [{ data_source: id, userId, jql }];
     const http = createApp({
       service: () => ctx.service,
       authenticate,
       webhookVerify: async () => false,
       connectors: withConnectors
         ? () => ({
-            connections: { connectOutlook, connectJira, setJiraScope, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
+            connections: { connectOutlook, connectJira, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
             notifications: async (body) => {
               notified.push(body);
               return 1;
@@ -344,15 +343,14 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     expect(notified).toEqual([{ secret: 'good', body: { webhookEvent: 'comment_created' } }, { secret: 'bad', body: null }]);
   });
 
-  it('H9 /api/connections/jira と範囲の変更（本人のトークンが要る）', async () => {
+  it('H3 /api/connections/jira はプロジェクトを渡す（本人のトークンが要る。0037）。範囲を変える PATCH はない', async () => {
     const { http } = await app();
     const auth = { authorization: `Bearer ${token('u_bob')}`, 'content-type': 'application/json' };
     expect((await http.request('/api/connections/jira', { method: 'POST' })).status).toBe(401);
-    const res = await http.request('/api/connections/jira', { method: 'POST', headers: auth, body: JSON.stringify({ site: 'cloud-1', jql: 'project = SPW' }) });
-    expect(await res.json()).toEqual({ status: 'connected', userId: 'u_bob', input: { credentialId: undefined, cloudId: 'cloud-1', jql: 'project = SPW' } });
-    const patch = await http.request('/api/connections/ds_1', { method: 'PATCH', headers: auth, body: JSON.stringify({ jql: 'assignee = currentUser()' }) });
-    expect(await patch.json()).toEqual([{ data_source: 'ds_1', userId: 'u_bob', jql: 'assignee = currentUser()' }]);
-    expect((await http.request('/api/connections/ds_1', { method: 'PATCH', headers: auth, body: JSON.stringify({ jql: '' }) })).status).toBe(400);
+    const res = await http.request('/api/connections/jira', { method: 'POST', headers: auth, body: JSON.stringify({ site: 'cloud-1', project: 'SPW' }) });
+    expect(await res.json()).toEqual({ status: 'connected', userId: 'u_bob', input: { credentialId: undefined, cloudId: 'cloud-1', projectKey: 'SPW' } });
+    expect((await http.request('/api/connections/jira', { method: 'POST', headers: auth, body: JSON.stringify({ project: 'spw lower' }) })).status).toBe(400);
+    expect((await http.request('/api/connections/ds_1', { method: 'PATCH', headers: auth, body: JSON.stringify({ jql: 'x' }) })).status).toBe(404);
   });
 
   it('設定がなければ 404', async () => {
