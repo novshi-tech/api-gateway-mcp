@@ -13,7 +13,7 @@ import {
   MergeContactBody,
   RenameBody,
   ClaimBody,
-  ConnectJiraBody, ConnectOutlookBody, PatchConnectionBody,
+  ConnectJiraBody, ConnectOutlookBody,
   DismissBody,
   GetThreadQuery,
   InboundItemBody,
@@ -254,12 +254,7 @@ export function createApp(opts: HttpOptions) {
 
   api.post('/connections/jira', async (c) => {
     const b = ConnectJiraBody.parse(await json(c));
-    return c.json(await (await connectors(c)).connections.connectJira(c.var.userId, { credentialId: b.credential_id, cloudId: b.site, jql: b.jql }));
-  });
-
-  api.patch('/connections/:id', async (c) => {
-    const b = PatchConnectionBody.parse(await json(c));
-    return c.json(await (await connectors(c)).connections.setJiraScope(c.var.userId, c.req.param('id'), b.jql));
+    return c.json(await (await connectors(c)).connections.connectJira(c.var.userId, { credentialId: b.credential_id, cloudId: b.site, projectKey: b.project }));
   });
 
   api.post('/connections/:id/disconnect', async (c) =>

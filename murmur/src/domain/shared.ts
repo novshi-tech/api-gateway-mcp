@@ -31,10 +31,18 @@ export function connectSharedSpace(draft: Seed, ctx: CoreContext, input: SharedS
   if (!input.spaceKey.trim()) throw new DomainError('invalid', 'space is required');
   if (!input.name.trim()) throw new DomainError('invalid', 'name is required');
   if (!input.identity.trim()) throw new DomainError('invalid', 'identity is required');
-  const existing = sharedDataSource(draft, input.spaceKey);
-  if (existing) return { kind: 'exists', dataSource: existing };
-
   const address: AddressRef = { channel: input.channel, value: input.identity.trim() };
+  const existing = sharedDataSource(draft, input.spaceKey);
+  if (existing) {
+    // 2 人目以降: その人のアカウントを名乗りとして記録する（次の読者の同期で読者になる）。別の User のアドレスなら付けない
+    try {
+      bindIdentity(draft, input.userId, address, ctx);
+    } catch (err) {
+      if (!(err instanceof DomainError && err.code === 'conflict')) throw err;
+    }
+    return { kind: 'exists', dataSource: existing };
+  }
+
   bindIdentity(draft, input.userId, address, ctx);
   const credentialRefId = ctx.newId('cr');
   draft.credentialRefs.push({ id: credentialRefId, principal: { kind: 'user', userId: input.userId }, address, gatewayCredentialId: input.gatewayCredentialId });

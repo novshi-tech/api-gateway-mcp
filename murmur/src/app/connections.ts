@@ -1,7 +1,8 @@
-import { canDisconnect, connectJiraSource, connectorOwner, DomainError, connectMailbox, setJiraScope, type ServiceDataSource } from '../domain';
+import { canDisconnect, connectJiraProject, connectorOwner, deriveViewer, DomainError, connectMailbox, replaceSharedCredential, syncSharedReaders, type ServiceDataSource } from '../domain';
+import { jiraMembers } from '../connectors/jira/readers';
 import { ConsentRequired, GatewayAuthError, type GatewayCredential, type GatewayPort, type UpstreamCall, type UpstreamKind } from '../ports/gateway';
 import type { GraphApi } from '../connectors/graph/api';
-import type { JiraApi, JiraSite } from '../connectors/jira/api';
+import type { JiraApi, JiraProject, JiraSite } from '../connectors/jira/api';
 import type { SyncQueue } from '../connectors/graph/jobs';
 import type { SourceState } from '../connectors/graph/state';
 import type { ConnectorStateStore, PendingAuthorization } from '../store/connector-state';
@@ -24,6 +25,8 @@ export interface ConnectionsDeps {
   jiraFor(call: UpstreamCall): JiraApi;
   state: ConnectorStateStore;
   now: () => string;
+  /** 共有リストを許すサービス（0037 の決定 4。管理者がデプロイの設定で決める） */
+  sharedServices: readonly string[];
 }
 
 export type ConnectResult =
@@ -35,23 +38,29 @@ export type ConnectResult =
   | { status: 'no_credential'; register_url: string }
   /** Jira: 接続が複数のサイトに届く。site を選んでもう一度 */
   | { status: 'choose_site'; sites: JiraSite[] }
+  /** Jira: つなぐプロジェクトを選んでもう一度（0037。プロジェクト単位の共有リスト） */
+  | { status: 'choose_project'; projects: JiraProject[] }
   | { status: 'connected'; data_source: { id: string; name: string }; created: boolean };
 
 export interface ConnectJiraInput {
   credentialId?: string;
   /** サイトの cloudId（accessible-resources の id） */
   cloudId?: string;
-  /** 範囲の JQL（省けば担当・起票・ウォッチ） */
-  jql?: string;
+  /** プロジェクトのキー（0037。省けば一覧を返す） */
+  projectKey?: string;
 }
 
 export interface ConnectionView {
   data_source: string;
   name: string;
   kind: 'outlook' | 'jira';
-  /** Jira: サイトと範囲の JQL */
+  /** Jira: サイトとプロジェクト */
   site?: string;
-  jql?: string;
+  project?: string;
+  /** 共有リスト（0037）。読者はソースから写す */
+  shared?: boolean;
+  /** 共有リストを作った人 */
+  created_by?: string;
   status: SourceState['status'];
   reason: string | null;
   connected_at: string;
@@ -66,9 +75,9 @@ export class Connections {
     return this.connect(userId, credentialId ?? null, { kind: 'outlook' });
   }
 
-  /** Jira をつなぐ（0034 の決定 1）。同意は Outlook と同じもの */
+  /** Jira のプロジェクトを共有リストとしてつなぐ（0037。同意は Outlook と同じもの） */
   async connectJira(userId: string, input: ConnectJiraInput = {}): Promise<ConnectResult> {
-    return this.connect(userId, input.credentialId ?? null, { kind: 'jira', cloudId: input.cloudId, jql: input.jql });
+    return this.connect(userId, input.credentialId ?? null, { kind: 'jira', cloudId: input.cloudId, projectKey: input.projectKey });
   }
 
   private async connect(userId: string, credentialId: string | null, request: NonNullable<PendingAuthorization['request']>): Promise<ConnectResult> {
@@ -173,7 +182,10 @@ export class Connections {
     return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: plan.kind === 'created' };
   }
 
-  private async connectJiraWith(userId: string, credentialId: string, request: { kind: 'jira'; cloudId?: string; jql?: string }): Promise<ConnectResult> {
+  private async connectJiraWith(userId: string, credentialId: string, request: { kind: 'jira'; cloudId?: string; projectKey?: string }): Promise<ConnectResult> {
+    if (!this.deps.sharedServices.includes('jira')) {
+      throw new DomainError('forbidden', 'このデプロイでは Jira の共有リストを許していない（管理者がデプロイの設定 MURMUR_SHARED_SERVICES に jira を足す）');
+    }
     const api = this.deps.jiraFor(await this.deps.gateway.upstream(userId, credentialId, 'jira'));
     const sites = await api.sites();
     const site = request.cloudId ? sites.find((s) => s.id === request.cloudId) : sites.length === 1 ? sites[0] : undefined;
@@ -182,57 +194,67 @@ export class Connections {
       if (sites.length === 0) throw new DomainError('conflict', 'この Jira の接続から届くサイトがない');
       return { status: 'choose_site', sites };
     }
+    // つなぐ人が見えるプロジェクトだけを選べる（見えることが、作ってよい条件。0037 の決定 4）
+    const projects = await api.projects(site.id);
+    if (!request.projectKey) return { status: 'choose_project', projects };
+    const project = projects.find((p) => p.key === request.projectKey);
+    if (!project) throw new DomainError('not_found', `project ${request.projectKey} はこの Jira の接続から見えない`);
     const me = await api.myself(site.id);
-    const { result: plan } = await this.deps.service.changeMaster(userId, 'Jira をつなぐ', (d, ctx) =>
-      connectJiraSource(d, ctx, {
+    const { result: plan } = await this.deps.service.changeMaster(userId, 'Jira のプロジェクトをつなぐ', (d, ctx) =>
+      connectJiraProject(d, ctx, {
         userId,
         gatewayCredentialId: credentialId,
         cloudId: site.id,
         site: site.url,
         siteName: site.name,
+        projectKey: project.key,
+        projectName: project.name,
         accountId: me.accountId,
-        displayName: me.displayName,
-        jql: request.jql,
       }),
     );
     const ds = plan.dataSource;
     const current = await this.deps.state.source(ds.id);
-    if (!current || current.status !== 'ok') {
-      const now = this.deps.now();
-      await this.deps.state.putSource({
-        kind: 'jira',
-        dataSourceId: ds.id,
-        userId,
-        gatewayCredentialId: credentialId,
-        status: 'setup',
-        reason: null,
-        folders: {},
-        // 外したあとのつなぎ直しも、その時点から取る（間の分は取らない）。broken からの戻りは続きから
-        jira: current?.status === 'broken' && current.jira ? current.jira : { syncedUntil: now, webhookIds: current?.jira?.webhookIds ?? [], webhookExpiresAt: null },
-        connectedAt: current?.status === 'broken' ? current.connectedAt : now,
-        lastSyncAt: current?.lastSyncAt ?? null,
-        lastRetryAt: null,
-      });
-      await this.deps.queue.send({ kind: 'setup', dataSourceId: ds.id });
+    if (plan.kind === 'exists') {
+      // つなぐ人の権限で、その場で読者を写す（つないだ人も名乗ったので読者になる）
+      const members = jiraMembers(await api.browsers(site.id, project.key));
+      await this.deps.service.changeMaster(null, 'Jira の読者の同期', (d, ctx) => syncSharedReaders(d, ctx, ds.id, members));
+      // 動いていれば何もしない。止まっていれば（つないだ人が読めなくなった・外した）、この人の委任でつなぎ直す
+      if (current && current.status === 'ok') return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: false };
+      await this.deps.service.changeMaster(userId, 'Jira の共有リストをつなぎ直す', (d, ctx) =>
+        replaceSharedCredential(d, ctx, ds.id, { userId, gatewayCredentialId: credentialId, identity: me.accountId }),
+      );
     }
+    const now = this.deps.now();
+    await this.deps.state.putSource({
+      kind: 'jira',
+      dataSourceId: ds.id,
+      userId,
+      gatewayCredentialId: credentialId,
+      status: 'setup',
+      reason: null,
+      folders: {},
+      // 作った直後はその時点から取る（過去のコメントは取らない）。broken からの戻りは続きから
+      jira:
+        current?.status === 'broken' && current.jira
+          ? { ...current.jira, readersSyncedAt: undefined }
+          : { syncedUntil: now, webhookIds: current?.jira?.webhookIds ?? [], webhookExpiresAt: null },
+      connectedAt: current?.status === 'broken' ? current.connectedAt : now,
+      lastSyncAt: current?.lastSyncAt ?? null,
+      lastRetryAt: null,
+    });
+    await this.deps.queue.send({ kind: 'setup', dataSourceId: ds.id });
     return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: plan.kind === 'created' };
   }
 
-  /** Jira の範囲の JQL を変える（0034 の決定 2）。Webhook を登録し直し、新しい範囲で取り直す。過去のスレッドは消さない */
-  async setJiraScope(userId: string, dataSourceId: string, jql: string): Promise<ConnectionView[]> {
-    const source = await this.deps.state.source(dataSourceId);
-    if (!source || source.kind !== 'jira') throw new DomainError('not_found', `connection ${dataSourceId} not found`);
-    await this.deps.service.changeMaster(userId, 'Jira の範囲を変える', (d) => setJiraScope(d, userId, dataSourceId, jql));
-    if (source.status === 'ok') {
-      await this.deps.state.putSource({ ...source, status: 'setup' });
-      await this.deps.queue.send({ kind: 'setup', dataSourceId });
-    }
-    return this.list(userId);
-  }
-
+  /** 自分がつないだもの（個人のリストと、自分の委任で読んでいる共有リスト）と、読者になっている共有リスト */
   async list(userId: string): Promise<ConnectionView[]> {
     const dir = await this.deps.service.directory();
-    const sources = (await this.deps.state.sources()).filter((s) => s.userId === userId);
+    const readable = new Set(deriveViewer(dir, userId).dataSourceIds);
+    const sources = (await this.deps.state.sources()).filter((s) => {
+      if (s.userId === userId) return true;
+      const ds = dir.dataSource(s.dataSourceId);
+      return ds?.kind === 'service' && !!ds.shared && readable.has(ds.id);
+    });
     return sources.map((s) => {
       const ds = dir.dataSource(s.dataSourceId) as ServiceDataSource | undefined;
       const jira = ds?.connector?.kind === 'jira' ? ds.connector : undefined;
@@ -240,7 +262,8 @@ export class Connections {
         data_source: s.dataSourceId,
         name: ds?.name ?? s.dataSourceId,
         kind: s.kind ?? ('outlook' as const),
-        ...(jira ? { site: jira.site, jql: jira.jql } : {}),
+        ...(jira ? { site: jira.site, ...(jira.projectKey ? { project: jira.projectKey } : {}) } : {}),
+        ...(ds?.shared ? { shared: true, created_by: ds.shared.createdBy } : {}),
         status: s.status,
         reason: s.reason,
         connected_at: s.connectedAt,

@@ -15,6 +15,19 @@ export interface JiraMe {
   displayName: string;
 }
 
+export interface JiraProject {
+  key: string;
+  name: string;
+}
+
+/** プロジェクトを閲覧できるアカウント（読者の同期。0037 の決定 2） */
+export interface JiraBrowser {
+  accountId: string;
+  /** atlassian（人）・app（アプリ）・customer など。読者にするのは atlassian だけ */
+  accountType: string;
+  active: boolean;
+}
+
 export interface JiraWebhookSpec {
   events: string[];
   jqlFilter: string;
@@ -26,6 +39,10 @@ export type WebhookRegistration = { id: number } | { errors: string[] };
 export interface JiraApi {
   sites(): Promise<JiraSite[]>;
   myself(cloudId: string): Promise<JiraMe>;
+  /** 本人が見えるプロジェクト */
+  projects(cloudId: string): Promise<JiraProject[]>;
+  /** プロジェクトを閲覧できるアカウント（本人の権限で読める範囲） */
+  browsers(cloudId: string, projectKey: string): Promise<JiraBrowser[]>;
   search(cloudId: string, jql: string, nextPageToken?: string): Promise<SearchPage>;
   /** 新しい順。startAt で続きを読む */
   comments(cloudId: string, key: string, startAt?: number): Promise<CommentPage>;
@@ -54,6 +71,8 @@ type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export const JIRA_SCOPE: ReadScope = Object.freeze([
   ['GET', /^\/oauth\/token\/accessible-resources$/],
   ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/myself$/],
+  ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/project\/search(\?.*)?$/],
+  ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/user\/permission\/search(\?.*)?$/],
   ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/search\/jql$/],
   ['GET', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/issue\/[A-Z][A-Z0-9_]*-\d+\/comment$/],
   ['POST', /^\/ex\/jira\/[\w-]+\/rest\/api\/3\/webhook$/],
@@ -77,6 +96,29 @@ export class GatewayJiraApi implements JiraApi {
   async myself(cloudId: string): Promise<JiraMe> {
     const r = (await this.call('GET', `${site(cloudId)}/myself`)) as { accountId: string; displayName?: string };
     return { accountId: r.accountId, displayName: r.displayName ?? '' };
+  }
+
+  async projects(cloudId: string): Promise<JiraProject[]> {
+    const out: JiraProject[] = [];
+    for (let startAt = 0; ; ) {
+      const q = new URLSearchParams({ startAt: String(startAt), maxResults: '50' });
+      const r = (await this.call('GET', `${site(cloudId)}/project/search`, undefined, q)) as { values?: { key: string; name: string }[]; isLast?: boolean };
+      const page = r.values ?? [];
+      out.push(...page.map((p) => ({ key: p.key, name: p.name })));
+      if (r.isLast !== false || page.length === 0) return out;
+      startAt += page.length;
+    }
+  }
+
+  async browsers(cloudId: string, projectKey: string): Promise<JiraBrowser[]> {
+    const out: JiraBrowser[] = [];
+    const max = 100;
+    for (let startAt = 0; ; startAt += max) {
+      const q = new URLSearchParams({ permissions: 'BROWSE_PROJECTS', projectKey, startAt: String(startAt), maxResults: String(max) });
+      const page = (await this.call('GET', `${site(cloudId)}/user/permission/search`, undefined, q)) as { accountId: string; accountType?: string; active?: boolean }[];
+      out.push(...page.map((u) => ({ accountId: u.accountId, accountType: u.accountType ?? 'atlassian', active: u.active !== false })));
+      if (page.length < max) return out;
+    }
   }
 
   async search(cloudId: string, jql: string, nextPageToken?: string): Promise<SearchPage> {

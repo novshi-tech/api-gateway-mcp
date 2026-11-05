@@ -73,7 +73,8 @@ export const SourceConnector = z.discriminatedUnion('kind', [
     folders: z.array(z.string()).min(1).default(['inbox', 'sentitems']),
   }),
   /**
-   * Jira（0034）。本人の 3LO の接続で、本人の JQL の範囲を取り込む個人リスト。
+   * Jira（0034・0037）。プロジェクト単位の共有リスト（projectKey があるもの）。範囲の JQL はプロジェクトから決まる。
+   * projectKey のないものは、0037 より前の本人の JQL の範囲の個人リスト（もう作らない。消すまで動く）。
    * cloudId は Atlassian のサイトの ID（API は /ex/jira/<cloudId>/...）、site はサイトの URL（表示用）
    */
   z.object({
@@ -81,6 +82,7 @@ export const SourceConnector = z.discriminatedUnion('kind', [
     cloudId: z.string().min(1),
     site: z.string().min(1),
     jql: z.string().min(1),
+    projectKey: z.string().min(1).optional(),
   }),
 ]);
 export type SourceConnector = z.infer<typeof SourceConnector>;
