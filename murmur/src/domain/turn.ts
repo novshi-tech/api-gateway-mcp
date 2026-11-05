@@ -9,7 +9,8 @@ import { canReadDataSource, type Viewer } from './viewer';
 
 /**
  * 誰の番か。スレッドのボールに、構造（写しの holders・読者が 1 人のデータソース・宛先）を合わせたもの。
- * - user: 特定のユーザーの番（by: owner = 持ち主、holder = ソースの上でボールを持っている、reader = 読者が 1 人、addressed = 宛先・メンション）
+ * - user: 特定のユーザーの番（by: owner = 持ち主、holder = ソースの上でボールを持っている、reader = 読者が 1 人、
+ *   addressed = 宛先・メンション。相手の求めの宛先に読者がいるか、こちらから同じリストの読者にボールを渡したとき）
  * - triage: こちら（組織）で、誰の番かが決まらない（仕分け待ち）
  * - contact / none: ボールのまま
  */
@@ -25,10 +26,16 @@ export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
   if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
   const held = holderTurn(dir, t);
   if (held) return held;
-  if (ball.kind === 'contact') return { kind: 'contact', contactIds: ball.contactIds, addresses: ball.addresses };
+  const list = dir.listOfDataSource(t.dataSourceId);
+  if (ball.kind === 'contact') {
+    // 共有リストの中の頼みごと（0036 の決定 4）: ボールを持つ相手が同じリストの読者なら、その人の番（宛先・メンション）
+    const readerOf = new Map((list ? dir.readerContactsOfList(list.id) : []).map((c) => [c.id, c.userId!]));
+    const users = ball.contactIds.map((id) => readerOf.get(id)).filter((u): u is string => u !== undefined);
+    if (users.length > 0) return { kind: 'user', userIds: [...new Set(users)].sort(), by: 'addressed' };
+    return { kind: 'contact', contactIds: ball.contactIds, addresses: ball.addresses };
+  }
   if (ball.kind === 'none') return { kind: 'none' };
 
-  const list = dir.listOfDataSource(t.dataSourceId);
   const readers = list ? dir.readersOfList(list.id) : [];
   if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!], by: 'reader' };
   // 宛先・CC・メンション: 相手が求めたシグナルの保持者に、読者の Contact のアドレスが入っている（0030）

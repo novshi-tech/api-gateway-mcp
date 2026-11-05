@@ -1,7 +1,7 @@
 {
   "name": "api-gateway-murmur",
   "displayName": "API Gateway: Murmur",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "API ゲートウェイ経由で、連絡の索引 Murmur(スレッド・誰の番・個人のメモでのタスクの追跡・送信の記録)を読み書きするスキル。api-gateway プラグインと一緒に使う。",
   "author": {
     "name": "novshi-tech"

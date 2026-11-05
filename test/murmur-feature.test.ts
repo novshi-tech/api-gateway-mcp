@@ -5,6 +5,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ConsentRequired, UpstreamRefused } from "../murmur/src/ports/gateway";
 import { GRAPH_SCOPE } from "../murmur/src/connectors/graph/scope";
 import { JIRA_SCOPE } from "../murmur/src/connectors/jira/api";
+import { TEAMS_SCOPE } from "../murmur/src/connectors/teams/scope";
 import { publicUrl } from "../src/config";
 import { featurePort } from "../src/feature-port";
 import { features } from "../src/features";
@@ -110,7 +111,7 @@ describe("Murmur on", () => {
   });
 
   it("does not accept another user's consent code", async () => {
-    const port = featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE } } });
+    const port = featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE }, teams: { service: "board", scope: TEAMS_SCOPE } } });
     await vaultFor(env, mallory).setConsent("murmur", true);
     const code = (await signToken(env.SIGNING_KEY, BASE, "consent", mallory, { feature: "murmur" }, 60)).token;
     expect(await port.consent.complete({ userId: bob, code, secret: "", kind: "graph" })).toBe("wrong_user");
@@ -141,7 +142,7 @@ describe("Murmur on", () => {
 
 describe("the gateway's port for Murmur", () => {
   // `board` stands in for Graph here: an API key service, so no OAuth flow is needed.
-  const port = () => featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE } } });
+  const port = () => featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE }, teams: { service: "board", scope: TEAMS_SCOPE } } });
 
   async function addBoard(userId: string) {
     const result = await vaultFor(env, userId).add(await upstream("board"), { "x-api-key": "the-key", authorization: "board-token" });
@@ -173,7 +174,7 @@ describe("the gateway's port for Murmur", () => {
     if ("error" in jiraCred) throw new Error(jiraCred.error);
     await vaultFor(env, bob).setConsent("murmur", true);
     // `board` stands in for Jira here (the scope is Jira's).
-    const p = featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "board", scope: JIRA_SCOPE } } });
+    const p = featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "board", scope: JIRA_SCOPE }, teams: { service: "board", scope: TEAMS_SCOPE } } });
     const read = await p.upstream(bob, jiraCred.id, "jira");
     const res = await read("GET", "/ex/jira/cloud-1/rest/api/3/search/jql?jql=project%20%3D%20SPW&fields=summary");
     expect(res.status).toBe(200);
@@ -189,6 +190,15 @@ describe("the gateway's port for Murmur", () => {
     await expect(read("DELETE", "/v1.0/me/messages/1")).rejects.toBeInstanceOf(UpstreamRefused);
   });
 
+  it("reads Teams with the Graph credential through the narrower Teams scope (no mail)", async () => {
+    const cred = await addBoard(bob);
+    await vaultFor(env, bob).setConsent("murmur", true);
+    const read = await port().upstream(bob, cred.id, "teams");
+    expect((await read("GET", "/v1.0/teams/t1/channels/19:c@thread.skype/messages?$top=50&$expand=replies")).status).toBe(200);
+    await expect(read("GET", "/v1.0/me/messages")).rejects.toBeInstanceOf(UpstreamRefused);
+    await expect(read("POST", "/v1.0/teams/t1/channels/19:c@thread.skype/messages", { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+  });
+
   it("does not use another user's credential", async () => {
     const cred = await addBoard(mallory);
     await vaultFor(env, bob).setConsent("murmur", true);
@@ -196,7 +206,7 @@ describe("the gateway's port for Murmur", () => {
   });
 
   it("tells Murmur who the gateway's admins are (ADMINS)", async () => {
-    const p = featurePort({ ...on, ADMINS: `x,${bob}` } as unknown as Env, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE } } });
+    const p = featurePort({ ...on, ADMINS: `x,${bob}` } as unknown as Env, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE }, teams: { service: "board", scope: TEAMS_SCOPE } } });
     expect(await p.isAdmin(bob)).toBe(true);
     expect(await p.isAdmin(mallory)).toBe(false);
   });

@@ -29,9 +29,16 @@ export interface JiraCursor {
   resume?: { startedAt: string; keys: string[]; batch: number; nextPageToken: string | null };
 }
 
+/** Teams のチャネルの取り込みの位置（0036）。syncedUntil までに動いたものは取り込んだ（次の走査は重なりを足して読む） */
+export interface TeamsCursor {
+  syncedUntil: string;
+  /** 共有リストの読者を最後にソースから写した時刻（0037） */
+  readersSyncedAt?: string;
+}
+
 /** 実行時に作ったデータソースの取り込みの状態。kind がなければ Outlook（Jira より前の行） */
 export interface SourceState {
-  kind?: 'outlook' | 'jira';
+  kind?: 'outlook' | 'jira' | 'teams';
   dataSourceId: string;
   /** 個人の箱の本人（ゲートウェイの User） */
   userId: string;
@@ -43,6 +50,8 @@ export interface SourceState {
   folders: Record<string, FolderCursor>;
   /** Jira: 取り込みの位置と Webhook */
   jira?: JiraCursor;
+  /** Teams: 取り込みの位置 */
+  teams?: TeamsCursor;
   connectedAt: string;
   /** 最後に全フォルダの delta を終えた時刻 */
   lastSyncAt: string | null;

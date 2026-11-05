@@ -1,5 +1,7 @@
-import { canDisconnect, connectJiraProject, connectorOwner, deriveViewer, DomainError, connectMailbox, replaceSharedCredential, syncSharedReaders, type ServiceDataSource } from '../domain';
+import { canDisconnect, connectJiraProject, connectorOwner, connectTeamsChannel, deriveViewer, DomainError, teamsAddress, connectMailbox, replaceSharedCredential, syncSharedReaders, type ServiceDataSource } from '../domain';
 import { jiraMembers } from '../connectors/jira/readers';
+import type { TeamRef, TeamsApi } from '../connectors/teams/api';
+import { teamsMembers } from '../connectors/teams/plan';
 import { ConsentRequired, GatewayAuthError, type GatewayCredential, type GatewayPort, type UpstreamCall, type UpstreamKind } from '../ports/gateway';
 import type { GraphApi } from '../connectors/graph/api';
 import type { JiraApi, JiraProject, JiraSite } from '../connectors/jira/api';
@@ -23,6 +25,7 @@ export interface ConnectionsDeps {
   newId: (prefix: string) => string;
   graphFor(call: UpstreamCall): GraphApi;
   jiraFor(call: UpstreamCall): JiraApi;
+  teamsFor(call: UpstreamCall): TeamsApi;
   state: ConnectorStateStore;
   now: () => string;
   /** 共有リストを許すサービス（0037 の決定 4。管理者がデプロイの設定で決める） */
@@ -40,6 +43,9 @@ export type ConnectResult =
   | { status: 'choose_site'; sites: JiraSite[] }
   /** Jira: つなぐプロジェクトを選んでもう一度（0037。プロジェクト単位の共有リスト） */
   | { status: 'choose_project'; projects: JiraProject[] }
+  /** Teams: つなぐチーム・チャネルを選んでもう一度（0036・0037。チャネル単位の共有リスト） */
+  | { status: 'choose_team'; teams: TeamRef[] }
+  | { status: 'choose_channel'; channels: TeamRef[] }
   | { status: 'connected'; data_source: { id: string; name: string }; created: boolean };
 
 export interface ConnectJiraInput {
@@ -50,13 +56,22 @@ export interface ConnectJiraInput {
   projectKey?: string;
 }
 
+export interface ConnectTeamsInput {
+  credentialId?: string;
+  teamId?: string;
+  channelId?: string;
+}
+
 export interface ConnectionView {
   data_source: string;
   name: string;
-  kind: 'outlook' | 'jira';
+  kind: 'outlook' | 'jira' | 'teams';
   /** Jira: サイトとプロジェクト */
   site?: string;
   project?: string;
+  /** Teams: チームとチャネルの ID */
+  team?: string;
+  channel?: string;
   /** 共有リスト（0037）。読者はソースから写す */
   shared?: boolean;
   /** 共有リストを作った人 */
@@ -80,11 +95,16 @@ export class Connections {
     return this.connect(userId, input.credentialId ?? null, { kind: 'jira', cloudId: input.cloudId, projectKey: input.projectKey });
   }
 
+  /** Teams のチャネルを共有リストとしてつなぐ（0036・0037。同意は Outlook と同じもの。ゲートウェイの graph の接続で読む） */
+  async connectTeams(userId: string, input: ConnectTeamsInput = {}): Promise<ConnectResult> {
+    return this.connect(userId, input.credentialId ?? null, { kind: 'teams', teamId: input.teamId, channelId: input.channelId });
+  }
+
   private async connect(userId: string, credentialId: string | null, request: NonNullable<PendingAuthorization['request']>): Promise<ConnectResult> {
     const dir = await this.deps.service.directory();
     if (!dir.seed.users.some((u) => u.id === userId)) throw new DomainError('forbidden', `user ${userId} はまだサインインしていない`);
     try {
-      return await this.connectWithGrant(userId, await this.deps.gateway.credentials(userId, request.kind === 'jira' ? 'jira' : 'graph'), credentialId ?? undefined, request);
+      return await this.connectWithGrant(userId, await this.deps.gateway.credentials(userId, this.kindOf(request)), credentialId ?? undefined, request);
     } catch (err) {
       // 同意がない・取り消された・失効した: もう一度許可してもらう
       if (err instanceof ConsentRequired) return this.authorize(userId, credentialId, request);
@@ -139,7 +159,7 @@ export class Connections {
   }
 
   private kindOf(request: NonNullable<PendingAuthorization['request']>): UpstreamKind {
-    return request.kind === 'jira' ? 'jira' : 'graph';
+    return request.kind === 'jira' ? 'jira' : request.kind === 'teams' ? 'teams' : 'graph';
   }
 
   private async connectWithGrant(
@@ -155,6 +175,7 @@ export class Connections {
     if (creds.length === 0) return { status: 'no_credential', register_url: this.deps.gateway.homeUrl };
     if (!chosen) return { status: 'choose', credentials: creds };
     if (request.kind === 'jira') return this.connectJiraWith(userId, chosen.id, request);
+    if (request.kind === 'teams') return this.connectTeamsWith(userId, chosen.id, request);
 
     const me = await this.deps.graphFor(await this.deps.gateway.upstream(userId, chosen.id, 'graph')).me();
     const { result: plan } = await this.deps.service.changeMaster(userId, 'Outlook をつなぐ', (d, ctx) =>
@@ -246,6 +267,66 @@ export class Connections {
     return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: plan.kind === 'created' };
   }
 
+  private async connectTeamsWith(userId: string, credentialId: string, request: { kind: 'teams'; teamId?: string; channelId?: string }): Promise<ConnectResult> {
+    if (!this.deps.sharedServices.includes('teams')) {
+      throw new DomainError('forbidden', 'このデプロイでは Teams の共有リストを許していない（管理者がデプロイの設定 MURMUR_SHARED_SERVICES に teams を足す）');
+    }
+    // 読者はチャネルのメンバーの Entra の ID でゲートウェイの User に対応を付ける（0037 の決定 2）ので、Entra でサインインするゲートウェイだけ
+    const me = /^entra_([0-9a-f-]+)_([0-9a-f-]+)$/i.exec(userId);
+    if (!me) throw new DomainError('forbidden', 'Teams の共有リストは、Microsoft Entra ID でサインインするゲートウェイだけで使える');
+    const [, tenantId, objectId] = me as unknown as [string, string, string];
+    const api = this.deps.teamsFor(await this.deps.gateway.upstream(userId, credentialId, 'teams'));
+    // つなぐ人が入っているチームとチャネルだけを選べる（読めることが、作ってよい条件。0037 の決定 4）
+    const teams = await api.joinedTeams();
+    if (!request.teamId) return { status: 'choose_team', teams };
+    const team = teams.find((t) => t.id === request.teamId);
+    if (!team) throw new DomainError('not_found', `team ${request.teamId} にこの人は入っていない`);
+    const channels = await api.channels(team.id);
+    if (!request.channelId) return { status: 'choose_channel', channels };
+    const channel = channels.find((c) => c.id === request.channelId);
+    if (!channel) throw new DomainError('not_found', `channel ${request.channelId} はこの人から見えない`);
+
+    const { result: plan } = await this.deps.service.changeMaster(userId, 'Teams のチャネルをつなぐ', (d, ctx) =>
+      connectTeamsChannel(d, ctx, {
+        userId,
+        gatewayCredentialId: credentialId,
+        teamId: team.id,
+        teamName: team.name,
+        channelId: channel.id,
+        channelName: channel.name,
+        tenantId,
+        objectId,
+      }),
+    );
+    const ds = plan.dataSource;
+    const current = await this.deps.state.source(ds.id);
+    if (plan.kind === 'exists') {
+      const members = teamsMembers(await api.members(team.id, channel.id));
+      await this.deps.service.changeMaster(null, 'Teams の読者の同期', (d, ctx) => syncSharedReaders(d, ctx, ds.id, members));
+      if (current && current.status === 'ok') return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: false };
+      await this.deps.service.changeMaster(userId, 'Teams の共有リストをつなぎ直す', (d, ctx) =>
+        replaceSharedCredential(d, ctx, ds.id, { userId, gatewayCredentialId: credentialId, identity: teamsAddress(tenantId, objectId) }),
+      );
+    }
+    const now = this.deps.now();
+    await this.deps.state.putSource({
+      kind: 'teams',
+      dataSourceId: ds.id,
+      userId,
+      gatewayCredentialId: credentialId,
+      status: 'setup',
+      reason: null,
+      folders: {},
+      // 作った直後はその時点から取る（過去の投稿は取らない）。broken からの戻りは続きから
+      teams: current?.status === 'broken' && current.teams ? { ...current.teams, readersSyncedAt: undefined } : { syncedUntil: now },
+      connectedAt: current?.status === 'broken' ? current.connectedAt : now,
+      lastSyncAt: current?.lastSyncAt ?? null,
+      lastRetryAt: null,
+    });
+    await this.deps.queue.send({ kind: 'setup', dataSourceId: ds.id });
+    return { status: 'connected', data_source: { id: ds.id, name: ds.name }, created: plan.kind === 'created' };
+  }
+
   /** 自分がつないだもの（個人のリストと、自分の委任で読んでいる共有リスト）と、読者になっている共有リスト */
   async list(userId: string): Promise<ConnectionView[]> {
     const dir = await this.deps.service.directory();
@@ -258,11 +339,13 @@ export class Connections {
     return sources.map((s) => {
       const ds = dir.dataSource(s.dataSourceId) as ServiceDataSource | undefined;
       const jira = ds?.connector?.kind === 'jira' ? ds.connector : undefined;
+      const teams = ds?.connector?.kind === 'teams' ? ds.connector : undefined;
       return {
         data_source: s.dataSourceId,
         name: ds?.name ?? s.dataSourceId,
         kind: s.kind ?? ('outlook' as const),
         ...(jira ? { site: jira.site, ...(jira.projectKey ? { project: jira.projectKey } : {}) } : {}),
+        ...(teams ? { team: teams.teamId, channel: teams.channelId } : {}),
         ...(ds?.shared ? { shared: true, created_by: ds.shared.createdBy } : {}),
         status: s.status,
         reason: s.reason,

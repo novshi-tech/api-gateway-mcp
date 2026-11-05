@@ -32,11 +32,11 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gw_request.py POST murmur /sent --json '{"da
 初めてつないだユーザーは名無しで、Contact(連絡先の自分)もリストもない(`GET /me` が `contact: null`・`lists: []`)。次の順に案内する。
 
 1. 呼び方を聞いて `PATCH /me` で付ける
-2. 自分の Outlook を自分のリストにするなら `POST /connections/outlook`、Jira のプロジェクトを共有リストにするなら `POST /connections/jira` を呼ぶ(下の「Outlook をつなぐ」「Jira をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
+2. 自分の Outlook を自分のリストにするなら `POST /connections/outlook`、Jira のプロジェクトを共有リストにするなら `POST /connections/jira`、Teams のチャネルを共有リストにするなら `POST /connections/teams` を呼ぶ(下の「Outlook をつなぐ」「Jira をつなぐ」「Teams をつなぐ」)。Murmur が取り込み続けるのはこの経路だけ
 3. ほかの自分の箱(Slack・LINE など)をリストにするなら、ゲートウェイでそのサービスがつながっているか(`list_credentials`)を先に確かめ、つないだアカウントのアドレスを `identity` にして `POST /data-sources` を呼ぶ。結果の `identity.kind`:
    - `created`: 自分の Contact を新しく作った / `bound`: チームが先に作っていたゴーストが自分に結ばれた / `attached`・`already`: 自分の Contact に付いた
    - `merge_candidate`: そのアドレスは別のゴースト(`ghostContactId`)に付いている。同じ人なら、ユーザーに確かめてから `POST /contacts/{自分の contactId}/merge` で `from` にゴーストを渡してまとめる
-4. **共有リスト**(Jira のプロジェクト、これから Teams・Slack のチャネル)は、スペースに 1 つ。そのスペースを読める人なら誰でもつなげ、読者はソースから自動で写る(プロジェクトを閲覧できる人のうち、自分の Jira をゲートウェイにつないで名乗った人)。共有メールボックス・LINE 公式アカウントの読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
+4. **共有リスト**(Jira のプロジェクト、Teams のチャネル、これから Slack のチャネル)は、スペースに 1 つ。そのスペースを読める人なら誰でもつなげ、読者はソースから自動で写る(Jira はプロジェクトを閲覧できる人のうち、自分の Jira をゲートウェイにつないで名乗った人。Teams はチャネルのメンバーのうち、このゲートウェイにサインインしたことのある人)。共有メールボックス・LINE 公式アカウントの読者は管理者が足す。読者になったリストで自分のアカウントを決めるなら `POST /lists/{list_id}/identity`
 5. メモ(`add_note`)はリストがなくても使える(最初に書いたときに作られる)
 
 ### Outlook をつなぐ
@@ -62,6 +62,16 @@ Jira はプロジェクトを 1 つの**共有リスト**にする。読者は�
 4. `created: false` なら、もう誰かがつないでいる(自分は読者に入る)。止まっていた(`broken`)ものは、自分の権限でつなぎ直される
 5. 止めるときは `POST /connections/{data_source}/disconnect`。共有リストを止められるのは作った人(`created_by`)とゲートウェイの管理者だけ。スレッドとデータソースは残る
 6. 起票・コメント・状態の変更は、これまでどおり Jira のスキルで行い、そのあと `record_sent` で記録する(起票は `sent_ref` に課題キー、コメントは `<課題キー>#c<コメント ID>`)
+
+### Teams をつなぐ(チャネルの共有リスト)
+
+Teams はチャネルを 1 つの**共有リスト**にする。読者はチャネルのメンバーのうち、このゲートウェイにサインインしたことのある人(Entra ID の ID で対応が付く。名乗りは要らない)で、Murmur が 1 時間ごとにソースから写す。ゲストなど別のテナントの人は読者にならない(投稿は取り込む)。同じチャネルを誰がつないでも同じリストになる。読むのはゲートウェイの Microsoft Graph の接続で、同意は Outlook と同じもの。Entra ID でサインインするゲートウェイだけで使える。
+
+1. ゲートウェイで Microsoft Graph がつながっているか(`list_credentials`)を確かめる。なければ先にゲートウェイでつないでもらう
+2. `POST /connections/teams` を呼び、`status` で分ける。`authorize`・`choose`・`no_credential` は Outlook と同じ。`choose_team` なら `teams` からユーザーに選んでもらって `team`(その `id`)、`choose_channel` なら `channels` から選んで `channel`(その `id`)を付けてもう一度呼ぶ。`forbidden` は、このデプロイで Teams の共有リストを管理者が許していない(管理者に伝える)か、Entra ID でサインインしていない
+3. `connected` で `created: true` なら、新しく作った。**チャネルに「このチャネルを Murmur で追い始めた」ことを知らせる**(ユーザーに文面を確かめて、Teams のスキルで投稿)。投稿したら `record_sent` で記録する
+4. 取り込むのはつないだあとの投稿と返信だけ(過去の投稿は取らない)。チャネルの投稿 1 つ(と返信)が 1 スレッド。`created: false`・止めるとき・`broken` は Jira と同じ
+5. チャットのスレッドには担当者がないので、誰の番かは、メンションされた読者(`turn.by` が `addressed`)か、持った人(`claim`。`owner`)で決まる。「これは私がやる」と言われたら `claim` する
 
 ### 名寄せ(Contact)
 
@@ -140,7 +150,8 @@ Contact はチームで共有する連絡先(Outlook の連絡先と同じ)。�
 | rename_me | `PATCH /me` | `{"name"}` | `me` と同じ |
 | connect_outlook | `POST /connections/outlook` | `{"credential_id"?}`(ゲートウェイの Graph の接続。複数あるときだけ) | `status`: `authorize`(`authorize_url`)・`choose`(`credentials`)・`no_credential`(`register_url`)・`connected`(`data_source`、`created`)。上の「Outlook をつなぐ」 |
 | connect_jira | `POST /connections/jira` | `{"credential_id"?, "site"?, "project"?}`(`site` は `choose_site` の `sites[].id`、`project` は `choose_project` の `projects[].key`) | `connect_outlook` と同じ + `choose_site`(`sites`)・`choose_project`(`projects`)。`forbidden` はデプロイで許していない。上の「Jira をつなぐ」 |
-| list_connections | `GET /connections` | | 自分がつないだものと、読者になっている共有リスト(`kind`: `outlook` / `jira`、Jira は `site`・`project`、共有リストは `shared: true`・`created_by`)と取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
+| connect_teams | `POST /connections/teams` | `{"credential_id"?, "team"?, "channel"?}`(`team` は `choose_team` の `teams[].id`、`channel` は `choose_channel` の `channels[].id`) | `connect_outlook` と同じ + `choose_team`(`teams`)・`choose_channel`(`channels`)。`forbidden` はデプロイで許していないか Entra ID でない。上の「Teams をつなぐ」 |
+| list_connections | `GET /connections` | | 自分がつないだものと、読者になっている共有リスト(`kind`: `outlook` / `jira` / `teams`、Jira は `site`・`project`、Teams は `team`・`channel`、共有リストは `shared: true`・`created_by`)と取り込みの状態(`status`: `setup` / `ok` / `broken`(`reason`) / `disconnected`)、`last_sync_at` |
 | disconnect | `POST /connections/{data_source}/disconnect` | | 取り込みを止める。共有リストは作った人と管理者だけ。スレッドとデータソースは残る |
 | create_data_source | `POST /data-sources` | `{"channel", "name", "identity", "gateway_credential_id", "description"?, "group"?}`。個人のリスト(読者は自分だけ) | `get_list` と同じ + `identity`(上の「初めてつないだとき」) |
 | set_identity | `POST /lists/{list_id}/identity` | `{"identity"}`(そのリストでの自分のアカウント) | `identity` の結果(`kind`・`contactId`) |
