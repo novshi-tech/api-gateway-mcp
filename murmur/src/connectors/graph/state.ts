@@ -18,6 +18,8 @@ export interface JiraCursor {
   syncedUntil: string;
   webhookIds: number[];
   webhookExpiresAt: string | null;
+  /** 登録したときの受け口の URL の SHA-256（URL は秘密を含むので平文は持たない）。今のと違えば登録し直す（0023 の段取り 4）。古い記録にはない */
+  webhookUrlHash?: string;
   /**
    * ページの上限で止めた差分の続き。同じ JQL（startedAt と keys で決まる）の検索のページの位置から再開する。
    * 読み終えるまで syncedUntil は進めない
@@ -54,4 +56,6 @@ export interface SubscriptionRecord {
   /** clientState の SHA-256（平文は持たない） */
   clientStateHash: string;
   expiresAt: string;
+  /** 作ったときの通知先。今の通知先と違えば作り直す（デプロイの形を変えて URL が変わったとき。0023 の段取り 4）。古い記録にはない */
+  notificationUrl?: string;
 }

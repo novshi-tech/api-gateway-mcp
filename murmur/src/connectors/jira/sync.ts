@@ -2,6 +2,7 @@ import type { MurmurService } from '../../app/service';
 import type { ServiceDataSource } from '../../domain';
 import type { ConnectorStateStore } from '../../store/connector-state';
 import { GatewayAuthError } from '../../ports/gateway';
+import { sha256Hex } from '../secrets';
 import type { SyncJob, SyncQueue } from '../graph/jobs';
 import type { JiraCursor, SourceState } from '../graph/state';
 import type { JiraApi } from './api';
@@ -86,7 +87,8 @@ export class JiraSync {
   }
 
   private async maintain(ctx: Ctx): Promise<void> {
-    const plan = planJiraMaintenance(ctx.source, this.deps.now(), !!this.deps.webhookUrlFor);
+    const urlHash = this.deps.webhookUrlFor ? await sha256Hex(await this.deps.webhookUrlFor(ctx.source.userId)) : undefined;
+    const plan = planJiraMaintenance(ctx.source, this.deps.now(), !!this.deps.webhookUrlFor, urlHash);
     switch (plan.kind) {
       case 'idle':
         return;
@@ -127,7 +129,7 @@ export class JiraSync {
     }
     // 寿命は 30 日。延長の結果で正しい期限に置き換える
     const expiresAt = ids.length > 0 ? ((await api.refreshWebhooks(ctx.ds.connector.cloudId, ids)) ?? null) : null;
-    await this.put(ctx, { jira: { ...this.cursor(ctx), webhookIds: ids, webhookExpiresAt: expiresAt } });
+    await this.put(ctx, { jira: { ...this.cursor(ctx), webhookIds: ids, webhookExpiresAt: expiresAt, webhookUrlHash: await sha256Hex(url) } });
   }
 
   private async refresh(ctx: Ctx): Promise<void> {
