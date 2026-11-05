@@ -1,6 +1,6 @@
 # 0023 Murmur をゲートウェイの機能にする（1 つのデプロイ）
 
-- 状態: 採用（2026-11-04、直樹とのディスカッション。総称の単語は保留）。2026-10-28 の構想（リポジトリだけまとめて Worker は分ける）を書き直した。実装は「移し方」の段取りで進める。実装が終わるまでは、下の「採用したら直すもの」の ADR と CLAUDE.md の今の書き方が実装の正
+- 状態: 採用（2026-11-04、直樹とのディスカッション。総称の単語は保留）。2026-10-28 の構想（リポジトリだけまとめて Worker は分ける）を書き直した。2026-11-05 に段取り 1〜4 を終えた（UBS を移し、別の Worker の Murmur とそのコードを消した。下の「実装の記録」）
 - 関連: 0020（チーム単位でセルフホストする。ゲートウェイとは 1 対 1）、0021（決定 4: ゲートウェイの `deploy` スキルで一緒にデプロイする）、0024（本体はゲートウェイの OAuth クライアントになる）、0026（自分専用の Murmur は作らない）、0003（identity）、0012（本体は書き換えない）、api-gateway-mcp の `docs/adr/0004`（1 つのデプロイ = 1 つの組織）・`docs/background-access.md`
 
 ## 背景
@@ -164,12 +164,14 @@ novshi-tech/murmur の main を api-gateway-mcp の `murmur/` に `git subtree a
 - **秘密**（決定 7）: ゲートウェイの入口が Murmur に渡すのは、Murmur の D1・キュー・`ANTHROPIC_API_KEY`・`MURMUR_WEBHOOK_SECRET`（Jira の Webhook の秘密を導く鍵。`TOKEN_KEY` の代わり）と口だけ。ゲートウェイの `SIGNING_KEY`・`ENCRYPTION_KEY` は口の実装の中でだけ使う
 - **残り**: 決定 7 の 6（バンドルに入ったパッケージを許可リストと比べる検査）はまだ。CI は Worker のドライランのビルドまで
 
-### 段取り 4（未着手）: 既存のデプロイを移す
+### 段取り 4（2026-11-05）: 既存のデプロイを移した
 
 - ゲートウェイのデプロイの設定に、今の Murmur の D1（同じアカウント）を `MURMUR_DB` で束ね、キュー・cron・シークレットを足す。D1 のデータは移さなくてよい
 - Outlook のサブスクリプションの通知先が `<ゲートウェイ>/murmur/webhooks/graph` に変わる。今の見回りは通知先の変更を見ないので、移すときに作り直す手当てが要る（データソースを setup に戻すか、見回りで通知先の違いを見る）。Jira の Webhook も URL（秘密）が変わるので登録し直す
 - 本人の同意は、ゲートウェイの画面で有効にし直してもらう（CIMD の許可は使わない）
 - 移し終えたら、単独の Worker（`src/index.ts`・`connectors/gateway/`・`auth/` の JWKS の検証）と、ゲートウェイの `SERVICES` の `murmur`（identity・Service Binding）、murmur-deployments を消す
+- **やったこと**: 通知先の記録と作り直しを入れ（api-gateway-mcp#41）、UBS のゲートウェイに今の D1 とキューを束ねて出し直し、本人が有効にした。サブスクリプションは新しい通知先で作り直され、Jira の Webhook も登録し直され、テストのメールが新しい受け口から入った。別の Worker の Murmur を消した
+- **片付け**: 別の Worker のコード（`src/index.ts`・`connectors/gateway/`・JWKS の検証・`SecretBox`・同意のトークンのストア・CIMD のメタデータの経路・`wrangler.example.jsonc`・`tools/wrangler.mjs`・Murmur の deploy 系のスクリプト）を消した。`gateway_grants` のテーブルは使わなくなったが残してある（消すときはマイグレーション）。ゲートウェイの `identity` は boid の逆接続のため残る
 
 ## 未決
 

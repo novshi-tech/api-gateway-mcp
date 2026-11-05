@@ -85,14 +85,17 @@ export const dummyQueue = sqliteTable('dummy_queue', {
 
 // ---- 取り込みの運用の状態（0024）。台帳ではないのでイベントにしない。リプレイの対象外 ----
 
-/** 本人が本体に出した同意（ゲートウェイの OAuth のトークン。暗号化して置く）。version で入れ替わりを直列にする */
+/**
+ * 使っていない（0023 の段取り 4 で、別の Worker の Murmur が持っていたゲートウェイの OAuth のトークンをやめた。
+ * 同意はゲートウェイの保管庫が持つ）。消すときはマイグレーションを作る
+ */
 export const gatewayGrants = sqliteTable('gateway_grants', {
   userId: text('user_id').primaryKey(),
   version: integer('version').notNull(),
   data: text('data', { mode: 'json' }).notNull(),
 });
 
-/** 認可の途中（state → 本人と PKCE の verifier）。コールバックで取り出して消す */
+/** 同意の途中（state → 本人と、つなぐ途中の頼み）。コールバックで取り出して消す */
 export const oauthPending = sqliteTable('oauth_pending', {
   state: text('state').primaryKey(),
   createdAt: text('created_at').notNull(),

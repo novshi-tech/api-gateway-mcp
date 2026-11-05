@@ -34,20 +34,7 @@ describe.each(impls)('H3 運用の状態のストア（%s）', (_name, make) => 
     close = undefined;
   });
 
-  it('同意は版の比較で書く（古い版の書き込みは負ける）', async () => {
-    const g = { userId: 'u', refreshToken: 'r1', accessToken: 'a1', accessExpiresAt: 't1' };
-    expect(await state.putGrant(g, 0)).toBe(true);
-    expect(await state.putGrant({ ...g, refreshToken: 'r2' }, 0)).toBe(false);
-    expect(await state.putGrant({ ...g, refreshToken: 'r2' }, 1)).toBe(true);
-    expect(await state.putGrant({ ...g, refreshToken: 'r3' }, 1)).toBe(false);
-    expect(await state.grant('u')).toMatchObject({ refreshToken: 'r2', version: 2 });
-    expect(await state.putGrant({ ...g, refreshToken: 'r4' }, 'any')).toBe(true);
-    expect(await state.grant('u')).toMatchObject({ refreshToken: 'r4', version: 3 });
-    await state.deleteGrant('u');
-    expect(await state.grant('u')).toBeNull();
-  });
-
-  it('認可の途中は 1 回だけ取り出せ、古いものは取り出せない', async () => {
+  it('同意の途中は 1 回だけ取り出せ、古いものは取り出せない', async () => {
     await state.putPending({ state: 's1', userId: 'u', verifier: 'v', credentialId: null, createdAt: '2026-10-30T00:00:00Z' });
     await state.putPending({ state: 's2', userId: 'u', verifier: 'v', credentialId: 'c', createdAt: '2026-10-29T00:00:00Z' });
     expect(await state.takePending('s1', '2026-10-29T23:45:00Z')).toMatchObject({ userId: 'u', verifier: 'v' });

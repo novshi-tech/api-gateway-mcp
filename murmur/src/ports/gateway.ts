@@ -1,7 +1,6 @@
 // ゲートウェイの口（0023 の決定 2・4・7、段取り 2）。Murmur がゲートウェイに頼むことは、全部この口を通す。
 // ここに置くのは型と取り決め（エラーの種類・許可リストの形）だけで、実装は持たない。
-// 今の実装は connectors/gateway/remote.ts（別の Worker のゲートウェイを CIMD・MCP・REST で呼ぶ）。
-// 1 つの Worker にしたら（段取り 3）、ゲートウェイの中核がこの口を直に実装する。
+// 実装はゲートウェイの中核（api-gateway-mcp の src/feature-port.ts）。Murmur はゲートウェイの Worker の機能として動く。
 
 /** 取り込みに使うサービスの種類。種類ごとに、ゲートウェイの接続先の名前と読める口が組み立て時に決まる */
 export type UpstreamKind = 'graph' | 'jira';
@@ -35,7 +34,7 @@ export function inScope(scope: ReadScope, method: UpstreamMethod, path: string):
   return scope.some(([m, re]) => m === method && re.test(path));
 }
 
-/** 本人の同意（Murmur に取り込みを許すこと）。今は CIMD の OAuth、1 つの Worker にしたらゲートウェイの画面の有効化 */
+/** 本人の同意（Murmur に取り込みを許すこと）。ゲートウェイの画面で本人が Murmur を有効にする */
 export interface ConsentPort {
   /** 同意をもらいに行く URL。state はこちらが覚えておき、戻ってきたときに complete に渡す。secret は口の実装だけが使う */
   begin(userId: string): Promise<{ url: string; state: string; secret: string }>;
@@ -97,6 +96,5 @@ export class GatewayError extends Error {
   }
 }
 
-// CIMD のあいだだけ（段取り 3 で消える）: 本体が公開する OAuth のクライアントのメタデータとコールバックの経路
-export const CLIENT_METADATA_PATH = '/oauth/client.json';
+/** 同意の画面から戻ってくる経路（Murmur の公開の経路の下） */
 export const CALLBACK_PATH = '/oauth/callback';

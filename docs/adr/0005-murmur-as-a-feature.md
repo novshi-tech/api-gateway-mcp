@@ -1,6 +1,6 @@
 # 0005 Murmur をゲートウェイの機能として持つ
 
-- 状態: 採用(2026-11-04、直樹とのディスカッション)。段取り 1(リポジトリをまとめる)・2(口と依存の削減)・3(1 つの Worker)を実装した
+- 状態: 採用(2026-11-04、直樹とのディスカッション)。段取り 1〜4 を終えた(2026-11-05 に UBS を移し、別の Worker の Murmur とそのコードを消した)
 - 関連: Murmur の [`murmur/docs/adr/0023`](../../murmur/docs/adr/0023-murmur-as-gateway-feature.md)(本体の決定。理由・脅威の整理・段取りはそちら)、[0004](0004-one-deployment-per-organization.md)(1 つのデプロイ = 1 つの組織)、[background-access.md](../background-access.md)
 
 ## 決定
@@ -19,7 +19,7 @@ Murmur(チームの仕事の記憶)を、ゲートウェイの機能にする。
 2. **中核の口を作る**(済み、2026-11-04): Murmur の側で、ゲートウェイを呼ぶところを口(`murmur/src/ports/gateway.ts`)の後ろにまとめた。読める口の許可リストは口の実装が強制する。実行時の依存は `zod` と `drizzle-orm` だけにした(`@anthropic-ai/sdk`・`hono` を外した)。段取り 3 では、ゲートウェイの中核がこの口を実装する
 3. **1 つの Worker にする**(済み、2026-11-04): 下の「段取り 3 の形」
 
-4. **既存のデプロイを移す**: Murmur のデプロイの設定(murmur-deployments)を、ゲートウェイの設定(`deployments/<名前>.jsonc`)にまとめる
+4. **既存のデプロイを移す**(済み、2026-11-05): 今の D1 とキューをゲートウェイの設定(`deployments/<名前>.jsonc`)に束ね、Graph のサブスクリプションと Jira の Webhook は新しい通知先で作り直した。別の Worker の Murmur とそのコード(CIMD・JWKS の検証)を消した
 
 ## 段取り 3 の形(2026-11-04)
 
@@ -31,4 +31,4 @@ Murmur(チームの仕事の記憶)を、ゲートウェイの機能にする。
 - **cron とキュー**: 毎日の `0 18 * * *` は今までどおり期限切れの許可の掃除、ほかの cron は機能に渡す(Murmur の見回り)。キューは機能に渡す
 - **有効にする条件**: `MURMUR_DB` と `ANTHROPIC_API_KEY`。Webhook(Graph・Jira)は `MURMUR_WEBHOOK_SECRET` も要る。Murmur に渡すのはこれらと口だけで、ゲートウェイの鍵は渡さない
 - **ルートの `npm install`** が `murmur/` の依存も入れる(`postinstall`)。CI は Worker のドライランのビルドも行う
-- **別の Worker の Murmur**(Service Binding・identity・CIMD の形)は、既存のデプロイを移す(段取り 4)まで残す。移し終えたら、Murmur の `index.ts`・`connectors/gateway/` と、ゲートウェイの `identity` の Murmur 向けの使い道を消す(`identity` は boid の逆接続のため残る。[0003](0003-reverse-connection.md))
+- **別の Worker の Murmur**(Service Binding・identity・CIMD の形)は段取り 4 で消した。ゲートウェイの `identity` は boid の逆接続のため残る([0003](0003-reverse-connection.md))

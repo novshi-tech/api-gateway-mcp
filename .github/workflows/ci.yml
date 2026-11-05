@@ -44,4 +44,3 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run scenario verify all
-      - run: npx wrangler deploy --dry-run --outdir dist -c wrangler.example.jsonc

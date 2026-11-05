@@ -17,7 +17,7 @@
 - タスクは 1 つの個人のメモのスレッドで追い、共有スレッドには事実と構造の操作だけを書く。属性はメモのスレッドだけのもの（標準は `due`）。写しは Murmur が決めた形（`closed / holders / title / statusLabel / due`）で、コネクタはサービスの標準の意味で写す（`docs/adr/0031`、2026-11-03 に採用）
 - 状態を持つデータソースで「アクションが要る」のは、ソースでボールを持つ人（`holders`。Jira は担当者）に自分がいるものだけ。ほかは文脈として取り込み、範囲の外の話しかけ（Jira の範囲外のメンション）は取り込まない（ソースの通知がメールで入る経路で気づく）。解決されていない登場人物はスタンドが Contact を作る（`docs/adr/0035`）
 - エージェントは「次の一手を決める者が書く」。オーケストレータの下で動くものは書かず、直接の参加者は書き手の印（`author`）を付けて書く。書き手の印は番に使わない（`docs/adr/0032`、0027 を改めた）
-- Murmur をゲートウェイの機能にし、1 つの Worker・1 つのデプロイ・1 つのリポジトリにまとめる（`docs/adr/0023`、2026-11-04 に採用）。段取り 1（リポジトリ）・2（口と依存の削減）・3（1 つの Worker）は済み: Murmur は novshi-tech/api-gateway-mcp の `murmur/` にあり、パッケージ管理は npm（コマンドはこのディレクトリで実行）。運用はゲートウェイに合わせて PR で回す。ゲートウェイとのやりとりは全部 `src/ports/gateway.ts` の口を通す。組み立ては `src/feature.ts`（env を読まない）で、入口はゲートウェイの `src/murmur-feature.ts`（機能として）と、段取り 4 まで残す単独の Worker の `src/index.ts`。コードの境界は vertical slice（互いの実装を import しない、env は入口だけ、秘密ではなく能力を渡す、Murmur は実行時の依存を足さない）。MCP のツールは足さず、スキルと REST で使う。実装が終わるまで、下の「注意」の配線（identity・Service Binding・CIMD）は今の実装の説明
+- Murmur はゲートウェイの Worker の機能（`docs/adr/0023`、2026-11-04 に採用、2026-11-05 に UBS を移して完了）。novshi-tech/api-gateway-mcp の `murmur/` にあり、パッケージ管理は npm（コマンドはこのディレクトリで実行）。運用はゲートウェイに合わせて PR で回す。ゲートウェイとのやりとりは全部 `src/ports/gateway.ts` の口を通し、口はゲートウェイの中核（`../src/feature-port.ts`）が実装する。組み立ては `src/feature.ts`（env を読まない）で、入口はゲートウェイの `../src/murmur-feature.ts`。コードの境界は vertical slice（互いの実装を import しない、env は入口だけ、秘密ではなく能力を渡す、Murmur は実行時の依存を足さない）。MCP のツールは足さず、スキルと REST で使う
 - ADR には汎用の製品としての決定を書く。特定の会社の事情（どの会社のアカウントで回すか、どの会社をまとめるか）は書かない
 
 ## 約束事
@@ -59,24 +59,20 @@ src/
     turn.ts        クエリ層の「誰の番か」（持ち主・担当者の写し・読者が 1 人・宛先）、リンク先から導出したボール、結び候補
     visibility.ts  クエリ層の可視性（Viewer から見えるものだけ返す）、一覧のフィルタ、スレッドの詳細とタイムライン
   app/service.ts 命令型シェルの中心。読む → コアで決める → 追記 → fold して保存
-  app/connections.ts 個人の箱をつなぐ（ゲートウェイの OAuth の同意 → 実行時のデータソースの作成）
+  app/connections.ts 個人の箱をつなぐ（ゲートウェイの画面で本人が Murmur を有効にする → 実行時のデータソースの作成）
   store/         イベントストア・投影・マスタ（メモリ実装と D1 実装。投影は変わった行だけ upsert する）、取り込みの運用の状態（connector-state.ts）
   ingest/        Claude 呼び出し（記録・再生）、Decider
   connectors/    Connector インタフェース（取り込みだけ。シグナルと状態の写し）+ dummy/
-    gateway/       ゲートウェイの口の今の実装（remote.ts）: OAuth クライアント（CIMD）と MCP（list_credentials・issue_token）・REST。入口のほかから import しない
     graph/         Outlook（0024）: 正規化・delta・サブスクリプションの計画（純関数）と、キューの仕事をこなす同期
     jira/          Jira（0034）: 写像（純関数）・差分の JQL と Webhook の計画（純関数）・呼べる口を固定した API・キューの仕事
-  ports/gateway.ts  ゲートウェイの口（型と取り決めだけ。0023）。認証・本人の接続・上流を読む関数・同意。読める口の許可リストは入口で固定し、口の実装が強制する
+  ports/gateway.ts  ゲートウェイの口（型と取り決めだけ。0023）。認証・本人の接続・上流を読む関数・同意。読める口の許可リストはゲートウェイの入口で固定し、ゲートウェイの中核が強制する
   api/           HTTP API の入力スキーマ
-  auth/          ゲートウェイが署名した sub の検証（claims.ts は純関数）
+  auth/          Bearer の取り出し（確かめるのは口）と、ダミーの Webhook の署名
   http/          経路（router.ts は app.ts が使う口だけの小さな仕組み）、参照専用の管理画面（admin.ts: /admin・timeline.html）
-  feature.ts     組み立て（設定とゲートウェイの口だけで fetch / scheduled / queue を作る。env を読まない）
-  index.ts       単独の Worker の入口（env → 設定、口は connectors/gateway/remote.ts。段取り 4 まで）
+  feature.ts     組み立て（設定とゲートウェイの口だけで fetch / scheduled / queue を作る。env を読まない。入口はゲートウェイの側）
 scripts/         scenario CLI と、その部品（Node 専用。Worker には入らない）
 fixtures/<scenario>/  seed.json / signals.jsonl / expected.json / scenario.json / recordings/
-tools/wrangler.mjs  デプロイの設定 deployments/<名前>.jsonc を渡して wrangler を呼ぶラッパー
-deployments/     デプロイの設定（git の管理外。デプロイする人の private リポジトリを clone する。docs/adr/0029）
-drizzle/         D1 のマイグレーション（drizzle-kit generate で作り、wrangler d1 migrations apply で当てる）
+drizzle/         D1 のマイグレーション（drizzle-kit generate で作り、リポジトリのルートの npm run d1-migrate で MURMUR_DB に当てる）
 ```
 
 時刻と ID はシェルが `CoreContext`（`now`・`newId`）で渡す。コアの関数は同じ入力なら同じ出力を返す。
@@ -91,16 +87,14 @@ npm run scenario verify all                    # 4 シナリオを expected.json
 npm run scenario verify development -- --db d1
 npm run scenario verify all -- --ai replay        # 記録した Claude の判断で H6 の一致率を出す
 ANTHROPIC_API_KEY=... npm run scenario verify all -- --ai record   # 記録を作る（モデルを変えたら --ai rerecord）
-npm run db:generate                            # src/store/schema.ts からマイグレーションを作る
-npm run db:migrate <名前>                      # D1 に当てる（deployments/<名前>.jsonc で wrangler d1 migrations apply）
-npm run seed <scenario> -- --deployment <名前>    # D1 のデータを消して seed を入れる
-npm run dev                                    # wrangler dev（ひな形 wrangler.example.jsonc）
-npm run deploy <名前> / npm run secret <名前> put <KEY> / npm run tail <名前>   # デプロイの設定は deployments/（docs/adr/0029）
+npm run db:generate                            # src/store/schema.ts からマイグレーションを作る（当てるのはルートの npm run d1-migrate -- <名前>）
+npm run seed <scenario> -- --deployment <名前>    # ゲートウェイのデプロイの MURMUR_DB のデータを消して seed を入れる
+# デプロイ・シークレット・ログはリポジトリのルートで（npm run deploy -- <名前> など。docs/stand/connect.md）
 ```
 
 ## 注意
 
-- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。取り込みはゲートウェイ経由。個人の箱は本体がゲートウェイの OAuth クライアントになって本人の同意をもらい、共有の箱は管理者が登録した client credentials をゲートウェイの専用入口（Service Binding）から使う。実装は個人の箱の Outlook（`src/connectors/graph/`）と個人リストの Jira（`src/connectors/jira/`。0034）とダミーコネクタ。外部コネクタは `PUBLIC_URL` と `TOKEN_KEY` があるデプロイだけ有効
+- 本体は上流サービスのトークンを持たず、データソースの中身は書き換えない（購読の管理だけはする。`docs/adr/0024`）。上流を読むのはゲートウェイの口の `upstream` だけで、トークンはゲートウェイの中核の中で使われ、読める口の許可リストもゲートウェイの中核が強制する。本人がゲートウェイの画面で Murmur を有効にしていなければ何も読めない。実装は個人の箱の Outlook（`src/connectors/graph/`）と個人リストの Jira（`src/connectors/jira/`。0034）とダミーコネクタ。外部コネクタは `MURMUR_WEBHOOK_SECRET` があるデプロイだけ有効
 - 初めてつないだ sub は User の行だけ作る（名無し、Contact なし）。自分の Contact はリストに入るときのアイデンティティで決まり、名寄せは人とスタンドが API で付ける（`docs/adr/0030`）。seed の `--user` の差し替えはシナリオを実環境で回すときだけ
-- 本体の API（`/api/*`）は `Authorization: Bearer <JWT>` が必須。JWT はゲートウェイ（api-gateway-mcp の認証方式 `identity`）がサインイン中のユーザーの ID を Ed25519 で署名したもので、本体は `GATEWAY_JWKS` で検証する（`docs/adr/0003`）。公開ルートは `/webhooks/*`（Graph の通知は clientState、Jira の通知は URL の本人ごとの秘密で照合）、ゲートウェイの OAuth のクライアントのメタデータとコールバック（`/oauth/client.json`・`/oauth/callback`）、`TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
+- 本体の API はゲートウェイの中継の後ろ（`<ゲートウェイ>/api/murmur/*`）だけで、`issue_token` の `identity:murmur` で発行したゲートウェイのトークンが要る（口の `authenticate` でもう一度確かめる）。公開の経路は `<ゲートウェイ>/murmur/` の下の `/webhooks/*`（Graph の通知は clientState、Jira の通知は URL の本人ごとの秘密で照合）、同意のコールバック（`/oauth/callback`）、`MURMUR_TIMELINE_TOKEN` で守る参照専用の画面（`/admin`・`/timeline.html`）だけ
 - スタンド（Cowork / Claude Code）用のスキルは同じリポジトリの `plugins/api-gateway-murmur/skills/murmur/SKILL.md`（`murmur/` から見て `../plugins/...`）（プラグイン `api-gateway-murmur`。ゲートウェイに同梱し、`/setup` とマーケットプレイスで配る）、接続手順は `docs/stand/connect.md`。下書きは置かない。HTTP API を変えたら、同じ時期にゲートウェイのスキル（API の表と手順）も直し、プラグインの版を上げる

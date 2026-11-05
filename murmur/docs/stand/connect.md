@@ -1,64 +1,37 @@
 # スタンドからの接続手順（Cowork / Claude Code）
 
-認可の接続の形は (B)（2026-10-16 決定）: スタンドから見える MCP は API ゲートウェイの 1 つだけ。
-Murmur の本体はゲートウェイの上流サービス `murmur` として登録され、ゲートウェイが User ID を署名して Service Binding 越しに伝える。
+スタンドから見える MCP は API ゲートウェイの 1 つだけ。Murmur はゲートウェイの Worker の機能として動き（`docs/adr/0023`、api-gateway-mcp の `docs/adr/0005`）、
+スタンドはほかのサービスと同じく `issue_token`（`identity:murmur`）で発行したトークンで `<ゲートウェイ>/api/murmur/...` を呼ぶ。
 
-## ゲートウェイ側（api-gateway-mcp、0003 を参照）
+## ゲートウェイで Murmur を有効にする（デプロイする人）
 
-ゲートウェイには、認証方式 `identity` と Service Binding での中継が入っている（api-gateway-mcp の README「連携先を設定する」）。
-
-1. 署名鍵を作って登録する
-
-   ```sh
-   node -e "crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>console.log(JSON.stringify(j)))" | npx wrangler secret put IDENTITY_SIGNING_KEY
-   ```
-
-2. ゲートウェイのデプロイの設定（`deployments/<名前>.jsonc`）に Service Binding とサービスの定義を足して、デプロイする。Service Binding は同じ Cloudflare アカウントの中でしか張れないので、Murmur はゲートウェイと同じアカウントに置く
-
-   ```jsonc
-   "services": [{ "binding": "MURMUR", "service": "murmur" }],
-   "vars": {
-     "SERVICES": {
-       "murmur": {
-         "display_name": "Murmur",
-         "base_url": "https://murmur.internal/api",
-         "binding": "MURMUR",
-         "auth": { "type": "identity", "audience": "murmur" }
-       }
-     }
-   }
-   ```
-
-3. `<gateway>/.well-known/jwks.json` の中身を、本体の `GATEWAY_JWKS` に設定する。`IDENTITY_ISSUER` にはゲートウェイの PUBLIC_URL を設定する
-4. スタンド用スキルは、ゲートウェイに同梱のプラグイン `api-gateway-murmur` に入っている（`docs/stand/skill.md`）。api-gateway プラグインと一緒にインストールする。
-   以前の nvt-api-gateway-skills のプラグイン `nvt-api-gateway`（0.7.0 まで）に入っていた `murmur` は使わない（0.8.0 で外した）
-
-## 本体の準備
-
-デプロイの設定は `deployments/<名前>.jsonc`（`docs/adr/0029`）。`deployments/` には、デプロイする人の private リポジトリを clone する。
-ひな形 `wrangler.example.jsonc` からデプロイの設定を作るときは、`$schema`・`main`・`migrations_dir` のパスの先頭に `../` を付け、`account_id`（ゲートウェイと同じアカウント）・`IDENTITY_ISSUER`・`GATEWAY_JWKS`・D1 の `database_id` を書く。
-受信の Webhook と管理画面を使うなら `workers_dev` を `true` にする。
+リポジトリのルートの `wrangler.example.jsonc` の末尾のとおり、ゲートウェイのデプロイの設定（`deployments/<名前>.jsonc`）に Murmur の D1・キュー・cron を足す。
 
 ```sh
+# リポジトリのルートで（npm install が murmur/ の依存も入れる）
 npm install
-git clone <デプロイの設定のリポジトリ> deployments
-# D1 を作り（日本のチームなら apac）、出力の database_id を deployments/<名前>.jsonc に書く（初回だけ）
-npx wrangler d1 create murmur --location apac
-# マイグレーション（drizzle/ を当てる。スキーマを変えたらデプロイの前に手で当てる）
-npm run db:migrate <名前>
-npm run deploy <名前>
+# D1 とキューを作り（日本のチームなら apac）、database_id を deployments/<名前>.jsonc の MURMUR_DB に書く（初回だけ）
+npx wrangler d1 create <名前>-murmur --location apac
+npx wrangler queues create <名前>-murmur-sync
+# マイグレーション（murmur/drizzle を MURMUR_DB に当てる。スキーマを変えたらデプロイの前に手で当てる）
+npm run d1-migrate -- <名前>
 # secrets
-npm run secret <名前> put ANTHROPIC_API_KEY
-npm run secret <名前> put WEBHOOK_SECRET
-npm run secret <名前> put TIMELINE_TOKEN   # 管理画面（/admin・timeline.html）を見る人だけに渡す
+npm run secret -- <名前> put ANTHROPIC_API_KEY
+npm run secret -- <名前> put MURMUR_WEBHOOK_SECRET   # openssl rand -base64 32。Graph・Jira の Webhook
+npm run secret -- <名前> put MURMUR_TIMELINE_TOKEN   # 管理画面（/murmur/admin・/murmur/timeline.html）を見る人だけに渡す
+npm run deploy -- <名前>
 ```
 
-設定を変えたら、設定のリポジトリにコミットしてプッシュする。CI はデプロイしない。
+`MURMUR_DB` と `ANTHROPIC_API_KEY` がそろうと有効になる。なければゲートウェイは Murmur なしで動く。設定を変えたら、設定のリポジトリにコミットしてプッシュする。CI はデプロイしない。
+
+利用者は、スタンドから Outlook や Jira をつなぐよう頼んだときに、ゲートウェイの画面「Murmur を有効にしますか?」に案内されて有効にする。無効にするのはゲートウェイのホームの「このゲートウェイの機能」から。
 
 マスタの `User.id` は、ゲートウェイの User ID（`entra_<tenant-id>_<object-id>` / `google_<sub>`）にする。
-マスタ（seed）の投入は `npm run seed <scenario> -- --deployment <名前> --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で流す）。
-DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST /webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
-WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む。
+マスタ（seed）の投入は `murmur/` で `npm run seed <scenario> -- --deployment <名前> --user <seed の User ID>=<ゲートウェイの User ID>`（SQL を作って `wrangler d1 execute` で MURMUR_DB に流す）。
+DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST <ゲートウェイ>/murmur/webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
+MURMUR_WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む（`npm run send`）。
+
+スタンド用スキルは、ゲートウェイに同梱のプラグイン `api-gateway-murmur` に入っている。api-gateway プラグインと一緒にインストールする。
 
 ## Cowork
 
@@ -90,7 +63,7 @@ Murmur とゲートウェイは「1 つの接続 = 1 つの組織（IdP が 1 �
 
 ## 管理画面（参照専用）
 
-`https://<Murmur の URL>/admin?token=<TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
-書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。全スレッドを 1 枚で見るときは `/timeline.html?token=...`
+`https://<ゲートウェイ>/murmur/admin?token=<MURMUR_TIMELINE_TOKEN>` でリスト一覧 → リストのスレッドの一覧（誰の番・結び・属性・状態）→ スレッドの詳細（結び・結び候補・属性・結んだ先も含むタイムライン）を辿れる。
+書き込みはできない。全データソースが見えるので、トークンは運用する人だけに渡す。全スレッドを 1 枚で見るときは `/murmur/timeline.html?token=...`
 
 H7 で absence をスタンド主導で回す手順は `docs/stand/h7-absence.md`。
