@@ -1,6 +1,7 @@
 import { createMurmur, type MurmurConfig } from "../murmur/src/feature";
 import { GRAPH_SCOPE } from "../murmur/src/connectors/graph/scope";
 import { JIRA_SCOPE } from "../murmur/src/connectors/jira/api";
+import { TEAMS_SCOPE } from "../murmur/src/connectors/teams/scope";
 import type { SyncJob } from "../murmur/src/connectors/graph/jobs";
 import { CALLBACK_PATH } from "../murmur/src/ports/gateway";
 import { publicUrl, splitList } from "./config";
@@ -41,6 +42,8 @@ export function murmurFeature(env: Env): Feature | null {
     kinds: {
       graph: { service: m.MURMUR_GRAPH_SERVICE || "graph", scope: GRAPH_SCOPE },
       jira: { service: m.MURMUR_JIRA_SERVICE || "jira", scope: JIRA_SCOPE },
+      // Teams channels are read with the same Microsoft Graph credential, through a narrower scope.
+      teams: { service: m.MURMUR_GRAPH_SERVICE || "graph", scope: TEAMS_SCOPE },
     },
   });
   const config: MurmurConfig = {
@@ -61,7 +64,7 @@ export function murmurFeature(env: Env): Feature | null {
     name: NAME,
     displayName: "Murmur",
     consentText:
-      "Murmur は、あなたがつないだメール(Microsoft Graph)と Jira を読み取り、対応の要る件と誰の番かを記録します。Claude が「いまやるべきこと」に答えるときに使います。読むのは、あなたが Claude から頼んでつないだものだけで、送信や書き込みはしません。",
+      "Murmur は、あなたがつないだメール(Microsoft Graph)・Teams のチャネル・Jira を読み取り、対応の要る件と誰の番かを記録します。Claude が「いまやるべきこと」に答えるときに使います。読むのは、あなたが Claude から頼んでつないだものだけで、送信や書き込みはしません。",
     consentCallbackPath: CALLBACK_PATH,
     fetch: (request, ctx) => murmur.fetch(request, ctx),
     scheduled: (_controller, ctx) => murmur.scheduled(ctx),

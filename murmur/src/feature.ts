@@ -17,6 +17,8 @@ import { jobsFromNotifications } from './connectors/graph/notifications';
 import { GraphMailSync } from './connectors/graph/sync';
 import { GatewayJiraApi } from './connectors/jira/api';
 import { JiraSync } from './connectors/jira/sync';
+import { GatewayTeamsApi } from './connectors/teams/api';
+import { TeamsSync } from './connectors/teams/sync';
 import { randomHex, sha256Hex } from './connectors/secrets';
 import { D1ConnectorState } from './store/connector-state';
 
@@ -93,6 +95,7 @@ function buildConnectors(config: MurmurConfig, service: MurmurService, waitUntil
   const state = new D1ConnectorState(drizzle(config.db) as Db);
   const graphFor = (call: UpstreamCall) => new GatewayGraphApi(call);
   const jiraFor = (call: UpstreamCall) => new GatewayJiraApi(call);
+  const teamsFor = (call: UpstreamCall) => new GatewayTeamsApi(call);
   // Jira の Webhook の受け口の秘密（本人ごと。S0: REST の Webhook の URL は本人ごとに 1 つ）。鍵から導くので保管しない
   const jiraSecret = (userId: string) => sha256Hex(`${c.webhookKey}:jira-webhook:${userId}`);
 
@@ -121,13 +124,25 @@ function buildConnectors(config: MurmurConfig, service: MurmurService, waitUntil
     hash: sha256Hex,
     log,
   });
+  const teams = new TeamsSync({
+    service,
+    state,
+    queue,
+    teamsFor: async (source) => teamsFor(await gateway.upstream(source.userId, source.gatewayCredentialId, 'teams')),
+    now,
+    notificationUrl: `${publicUrl}/webhooks/graph`,
+    newClientState: () => randomHex(32),
+    hash: sha256Hex,
+    log,
+  });
   sync = {
     async handle(job) {
       await graph.handle(job);
       await jira.handle(job);
+      await teams.handle(job);
     },
   };
-  const connections = new Connections({ gateway, service, queue, newId: randomIds, graphFor, jiraFor, state, now, sharedServices: config.sharedServices ?? [] });
+  const connections = new Connections({ gateway, service, queue, newId: randomIds, graphFor, jiraFor, teamsFor, state, now, sharedServices: config.sharedServices ?? [] });
   return {
     sync,
     connections,

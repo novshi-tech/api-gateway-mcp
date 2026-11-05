@@ -13,7 +13,7 @@ import {
   MergeContactBody,
   RenameBody,
   ClaimBody,
-  ConnectJiraBody, ConnectOutlookBody,
+  ConnectJiraBody, ConnectOutlookBody, ConnectTeamsBody,
   DismissBody,
   GetThreadQuery,
   InboundItemBody,
@@ -250,6 +250,11 @@ export function createApp(opts: HttpOptions) {
   api.post('/connections/outlook', async (c) => {
     const b = ConnectOutlookBody.parse(await json(c));
     return c.json(await (await connectors(c)).connections.connectOutlook(c.var.userId, b.credential_id));
+  });
+
+  api.post('/connections/teams', async (c) => {
+    const b = ConnectTeamsBody.parse(await json(c));
+    return c.json(await (await connectors(c)).connections.connectTeams(c.var.userId, { credentialId: b.credential_id, teamId: b.team, channelId: b.channel }));
   });
 
   api.post('/connections/jira', async (c) => {

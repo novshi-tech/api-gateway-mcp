@@ -142,6 +142,13 @@ export const InboundItemBody = z.union([InboundMirrorBody, InboundSignalBody]);
 export const ConnectOutlookBody = z.object({ credential_id: z.string().min(1).optional() });
 
 /** Jira をつなぐ（0034）。site はサイトの cloudId（choose_site で返したもの）、jql は範囲（省けば担当・起票・ウォッチ） */
+/** Teams のチャネルを共有リストとしてつなぐ（0036・0037）。team・channel を省くと一覧（choose_team・choose_channel）を返す */
+export const ConnectTeamsBody = z.object({
+  credential_id: z.string().min(1).optional(),
+  team: z.string().min(1).optional(),
+  channel: z.string().min(1).optional(),
+});
+
 /** Jira のプロジェクトを共有リストとしてつなぐ（0037）。project を省くと一覧（choose_project）を返す */
 export const ConnectJiraBody = z.object({
   credential_id: z.string().min(1).optional(),

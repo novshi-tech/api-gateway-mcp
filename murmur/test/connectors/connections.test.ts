@@ -7,12 +7,16 @@ import { MemoryConnectorState } from '../../src/store/connector-state';
 import { counterIds, makeService } from '../helpers/service';
 import { FakeGraph } from '../helpers/fake-graph';
 import { FakeJira } from '../helpers/fake-jira';
+import { FakeTeams } from '../helpers/fake-teams';
 import { seed } from '../helpers/world';
 
 // 個人の箱をつなぐ（0024 の決定 3）。ゲートウェイは口（ports/gateway.ts）の偽物。
 // 本物はゲートウェイの中核（api-gateway-mcp の src/feature-port.ts）で、そちらのテストは test/murmur-feature.test.ts。
 
 const GATEWAY = 'https://gateway.test';
+
+/** 種類ごとのゲートウェイの接続先（本物は組み立て時に決まる。Teams は Graph の接続で読む） */
+const serviceOf = (kind: UpstreamKind) => (kind === 'teams' ? 'graph' : kind);
 
 /** ゲートウェイの口の偽物。本人が「有効にする」を押すと同意が残り、コールバックに本人のコードで戻ってくる */
 class FakeGatewayPort implements GatewayPort {
@@ -35,7 +39,7 @@ class FakeGatewayPort implements GatewayPort {
 
   async credentials(userId: string, kind: UpstreamKind) {
     if (!this.consents.has(userId)) throw new ConsentRequired();
-    return (this.credentialsOf.get(userId) ?? []).filter((c) => c.service === kind);
+    return (this.credentialsOf.get(userId) ?? []).filter((c) => c.service === serviceOf(kind));
   }
 
   async upstream(userId: string, credentialId: string) {
@@ -51,7 +55,7 @@ class FakeGatewayPort implements GatewayPort {
     },
     complete: async ({ userId, code, kind }) => {
       if (code !== `code:${userId}`) return 'wrong_user';
-      return (this.credentialsOf.get(userId) ?? []).some((c) => c.service === kind) ? 'ok' : 'no_credential';
+      return (this.credentialsOf.get(userId) ?? []).some((c) => c.service === serviceOf(kind)) ? 'ok' : 'no_credential';
     },
   };
 
@@ -70,9 +74,10 @@ describe('H3 個人の箱をつなぐ', () => {
   let ctx: Awaited<ReturnType<typeof setup>>;
   let jira: FakeJira;
   let sharedServices: string[];
+  let teams: FakeTeams;
 
-  async function setup() {
-    const made = await makeService(seed);
+  async function setup(world = seed) {
+    const made = await makeService(world);
     const connections = new Connections({
       gateway: gw,
       state,
@@ -82,6 +87,7 @@ describe('H3 個人の箱をつなぐ', () => {
       newId: counterIds(),
       graphFor: () => new FakeGraph({ id: 'oid', displayName: 'Bob', addresses: ['bob@ubs.example', 'bob.alias@ubs.example'] }),
       jiraFor: () => jira,
+      teamsFor: () => teams,
       sharedServices,
     });
     return { ...made, connections };
@@ -104,6 +110,7 @@ describe('H3 個人の箱をつなぐ', () => {
     queued = [];
     now = '2026-10-30T00:00:00.000Z';
     jira = new FakeJira(() => now);
+    teams = new FakeTeams(() => now);
     sharedServices = ['jira'];
     ctx = await setup();
   });
@@ -279,6 +286,69 @@ describe('H3 個人の箱をつなぐ', () => {
       expect(await consentJira('u_bob')).toMatchObject({ ok: false, message: expect.stringMatching(/Jira/) });
       expect(gw.consents.has('u_bob')).toBe(true);
       expect(await ctx.connections.connectJira('u_bob', { projectKey: 'SPW' })).toMatchObject({ status: 'no_credential' });
+    });
+  });
+  describe('H3 Teams のチャネルの共有リスト（0036・0037）', () => {
+    const TID = '11111111-1111-1111-1111-111111111111';
+    const BOB = '22222222-2222-2222-2222-222222222222';
+    const ALICE = '33333333-3333-3333-3333-333333333333';
+    const U_BOB = `entra_${TID}_${BOB}`;
+    const U_ALICE = `entra_${TID}_${ALICE}`;
+
+    beforeEach(async () => {
+      sharedServices = ['jira', 'teams'];
+      ctx = await setup({ ...seed, users: [...seed.users, { id: U_BOB, name: 'Bob' }, { id: U_ALICE, name: 'Alice' }] });
+      gw.credentialsOf.set(U_BOB, [{ id: 'gw_bob_graph', service: 'graph', label: 'ubs' }]);
+      gw.credentialsOf.set(U_ALICE, [{ id: 'gw_alice_graph', service: 'graph', label: 'ubs' }]);
+      gw.approve(U_BOB);
+      teams.memberList = [
+        { userId: BOB, tenantId: TID, displayName: 'Bob' },
+        { userId: ALICE, tenantId: TID, displayName: 'Alice' },
+        { userId: null, tenantId: null, displayName: 'ゲスト' },
+      ] as never;
+    });
+
+    const sharedDs = async () => (await ctx.service.directory()).seed.dataSources.find((d) => d.kind === 'service' && d.shared)!;
+
+    it('チーム → チャネルの順に選んでもらい、チャネルの共有リストを作る。作った人が読者、Entra の ID が名乗り', async () => {
+      expect(await ctx.connections.connectTeams(U_BOB)).toMatchObject({ status: 'choose_team', teams: [{ id: 'team-1', name: '全社' }] });
+      expect(await ctx.connections.connectTeams(U_BOB, { teamId: 'team-1' })).toMatchObject({ status: 'choose_channel', channels: [{ id: '19:ch@thread.skype' }] });
+      await expect(ctx.connections.connectTeams(U_BOB, { teamId: 'team-x' })).rejects.toMatchObject({ code: 'not_found' });
+      const r = await ctx.connections.connectTeams(U_BOB, { teamId: 'team-1', channelId: '19:ch@thread.skype' });
+      expect(r).toMatchObject({ status: 'connected', created: true, data_source: { name: '全社 / 電話対応（Teams）' } });
+      const ds = await sharedDs();
+      expect(ds).toMatchObject({
+        channel: 'teams',
+        group: true,
+        shared: { spaceKey: 'teams:team-1/19:ch@thread.skype', createdBy: U_BOB },
+        connector: { kind: 'teams', teamId: 'team-1', channelId: '19:ch@thread.skype' },
+      });
+      const dir = await ctx.service.directory();
+      expect(dir.readersOfList(dir.seed.lists.find((l) => l.dataSourceId === ds.id)!.id)).toEqual([U_BOB]);
+      expect(await state.source(ds.id)).toMatchObject({ kind: 'teams', userId: U_BOB, gatewayCredentialId: 'gw_bob_graph', status: 'setup', teams: { syncedUntil: now } });
+      expect(queued).toEqual([{ kind: 'setup', dataSourceId: ds.id }]);
+      expect(await ctx.connections.list(U_BOB)).toEqual([expect.objectContaining({ kind: 'teams', team: 'team-1', channel: '19:ch@thread.skype', shared: true, created_by: U_BOB, status: 'setup' })]);
+    });
+
+    it('2 人目がつなぐと同じ共有リストで、その場でチャネルのメンバーが読者に写る（ゲストは外れる）', async () => {
+      await ctx.connections.connectTeams(U_BOB, { teamId: 'team-1', channelId: '19:ch@thread.skype' });
+      const ds = await sharedDs();
+      await state.putSource({ ...(await state.source(ds.id))!, status: 'ok' });
+      gw.approve(U_ALICE);
+      expect(await ctx.connections.connectTeams(U_ALICE, { teamId: 'team-1', channelId: '19:ch@thread.skype' })).toMatchObject({ status: 'connected', created: false, data_source: { id: ds.id } });
+      const dir = await ctx.service.directory();
+      expect(dir.readersOfList(dir.seed.lists.find((l) => l.dataSourceId === ds.id)!.id).sort()).toEqual([U_BOB, U_ALICE].sort());
+      expect(await state.source(ds.id)).toMatchObject({ userId: U_BOB, status: 'ok' });
+    });
+
+    it('デプロイの設定で許していない・Entra でサインインしていない人は、つなげない', async () => {
+      sharedServices = ['jira'];
+      ctx = await setup({ ...seed, users: [...seed.users, { id: U_BOB, name: 'Bob' }] });
+      await expect(ctx.connections.connectTeams(U_BOB, { teamId: 'team-1', channelId: '19:ch@thread.skype' })).rejects.toMatchObject({ code: 'forbidden' });
+      sharedServices = ['teams'];
+      ctx = await setup();
+      gw.approve('u_bob');
+      await expect(ctx.connections.connectTeams('u_bob', { teamId: 'team-1', channelId: '19:ch@thread.skype' })).rejects.toMatchObject({ code: 'forbidden' });
     });
   });
 });

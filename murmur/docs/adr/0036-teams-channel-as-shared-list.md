@@ -1,6 +1,6 @@
 # 0036 Teams のチャネルを共有リストとして取り込む
 
-- 状態: 案（2026-11-05）。共有リストの作り方（単位・読者・経路・作れる人）は 0037（採用）に移した。この ADR は Teams の形（区切り・誰の番・アドレス・通知）を持つ。2026-11-05 に S0 を回した（`docs/research/2026-11-05-teams-jira-s0.md`）。結果を決定 5・6 に反映した
+- 状態: 採用（2026-11-05、実装とともに。下の「実装の記録」）。共有リストの作り方（単位・読者・経路・作れる人）は 0037（採用）に移した。この ADR は Teams の形（区切り・誰の番・アドレス・通知）を持つ。2026-11-05 に S0 を回した（`docs/research/2026-11-05-teams-jira-s0.md`）。結果を決定 5・6 に反映した
 - 関連: 0037（共有リストはスペース単位で、読者はソースから写す）、0013（チームリストは持たない。誰の番は構造と持ち主で決める）、0014（スレッド 1 種類）、0005・0006（区切り）、0023（ゲートウェイの機能。口と読める口）、0024（Webhook は本体が持つ。通知はヒントで正は delta。個人の箱は本人の権限、共有の箱はアプリの権限）、0030（Contact とアドレス、誰の番はクエリ層）、0033（共有リストは共有の状態を持たないデータソースのためにある）、0035（アクションの範囲）、H3・H8
 
 ## 背景
@@ -12,7 +12,7 @@
 - 目指す姿（0023 の背景）: Jira になっていない Teams の件も、誰かが着手すれば `ThreadClaimed` が付き、ほかの人のスタンドは「この件は○○さんが対応しています」と答えられる
 - 業務では Teams のチャネルでやりとりすることが多い
 
-## 決定（案）
+## 決定
 
 ### 1. 単位・読者・経路・作れる人は 0037 のとおり
 
@@ -74,6 +74,17 @@
 - 口: `UpstreamKind` に `teams`、読める口 `TEAMS_SCOPE`（ゲートウェイの入口で固定）
 - スキル: 「Teams のチャネルをつなぐ」と、共有リストで持つ・手放す（`ThreadClaimed`）の案内（`api-gateway-murmur`）
 - シナリオ: Teams のチャネルを模した fixture を 1 つ足すか、development（Slack）の形で足りるかは実装のときに決める
+
+## 実装の記録（2026-11-05）
+
+- ドメイン: `Channel` に `teams`、接続先 `{ kind: 'teams', teamId, channelId }`、スペースのキー `teams:<team>/<channel>`、アドレス `<tenantId>/<oid>`。`connectTeamsChannel`（`src/domain/connection.ts`）は 0037 の `connectSharedSpace` の Teams の形
+- 誰の番（`src/domain/turn.ts`）: ボールが Contact で、その Contact がリストの読者の User なら、その人の番（`by: 'addressed'`）。チームの中でのメンションは「相手の番」ではなく「その人の番」になる
+- 正規化（`src/connectors/teams/normalize.ts`）: 投稿の ID を `threadTs`、返信は構造で投稿のスレッドに。個人へのメンションを `to`、本文の HTML はテキストに
+- 同期（`src/connectors/teams/sync.ts`・`plan.ts`）: 投稿の一覧（`$top=50&$expand=replies`）を新しい順に、最後に動いた時刻が前回から 1 日引いた時刻より古いページまで（1 回の仕事で 10 ページまで）。サブスクリプションは Outlook と同じ台帳（フォルダ `messages`）で、通知は同じ受け口（`/murmur/webhooks/graph`）。期限は 3 日から 10 分引いたもの。読者の同期は 60 分ごと（と setup で）、メンバーの一覧の Entra の ID → `entra_<tenant>_<oid>`
+- つなぐ: `POST /connections/teams`（`team`・`channel`。省けば `choose_team`・`choose_channel`）。Entra でサインインするゲートウェイだけ（User ID からテナントと oid を取る）。既にあれば、その場でメンバーを読者に写し、止まっていればつなぐ人の委任でつなぎ直す（Jira と同じ）。作った直後はその時点から取る
+- 口: `UpstreamKind` に `teams`。ゲートウェイの入口で `graph` の接続と `TEAMS_SCOPE`（`src/connectors/teams/scope.ts`。メールの口は通らない）に結ぶ
+- スキル: `api-gateway-murmur` 0.1.9（Teams をつなぐ、`connect_teams`）
+- シナリオの fixture は足していない（正規化と同期はコネクタのテストで、誰の番はクエリ層のテストで確かめた）。試用で足りなければ足す
 
 ## 未決
 

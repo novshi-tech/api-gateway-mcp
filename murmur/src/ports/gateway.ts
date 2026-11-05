@@ -3,7 +3,7 @@
 // 実装はゲートウェイの中核（api-gateway-mcp の src/feature-port.ts）。Murmur はゲートウェイの Worker の機能として動く。
 
 /** 取り込みに使うサービスの種類。種類ごとに、ゲートウェイの接続先の名前と読める口が組み立て時に決まる */
-export type UpstreamKind = 'graph' | 'jira';
+export type UpstreamKind = 'graph' | 'jira' | 'teams';
 
 export interface GatewayCredential {
   id: string;
