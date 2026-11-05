@@ -40,7 +40,9 @@
   - シークレット: `ANTHROPIC_API_KEY`（直樹）、`MURMUR_WEBHOOK_SECRET`・`MURMUR_TIMELINE_TOKEN`（新しく作った。管理画面は `https://gateway.urban-b.com/murmur/admin?token=…`、値は直樹に渡した）
   - **片付けた**（同じ日、PR）: 単独の Worker のコード（`src/index.ts`・`connectors/gateway/`・JWKS の検証・`SecretBox`・同意のトークンのストア・CIMD のメタデータの経路・`wrangler.example.jsonc`・`tools/wrangler.mjs`・deploy 系のスクリプト）を消した。`Connections` のテストは口の偽物（`FakeGatewayPort`）にした。seed はゲートウェイのデプロイの `MURMUR_DB` に流す。CLAUDE.md・`docs/stand/connect.md`・README・ADR の状態を今の形に直した。`gateway_grants` のテーブルは残してある
   - 残り: murmur-deployments と novshi-tech/murmur を archive（直樹）
-  - 次: 課題 1（Teams の統合）の ADR
+  - api-gateway-mcp#42 で片付けを main に入れた
+- **課題 1（Teams）: `docs/adr/0036`（案）を書いた**（2026-11-05）。チャネル 1 つ = 共有リスト、読者はチャネルのメンバーのうち Murmur の User（見回りでメンバーの一覧から写す。oid がゲートウェイの User ID に入っているので対応が取れる）、経路はつないだ人の委任（アプリの権限は保護された API で重い。0024 の「個人の資格情報は読者 1 人」を、読者をソースのメンバーから写すときに限って改める）、区切りは投稿と返信を `threadTs` で構造で 1 本、誰の番はメンションを宛先にし、なければ仕分け待ち → `ThreadClaimed`、チャネル `teams` を足す。チャットは入れない
+  - 次: 直樹のレビュー。採用したら S0（委任の通知・delta と返信・メンバーの権限・メンションの形・ゲスト）を UBS で回す
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:
