@@ -67,6 +67,16 @@ Teams のチャネルを共有リストにする案（0036）を議論するう�
 - スキル: スペースをつなぐ手順、つないだらスペースに知らせる、持つ・手放す（`ThreadClaimed`）
 - 試用（0016 の段階 5）は、この形の Teams と Jira で回す
 
+## 実装の記録
+
+### 土台（2026-11-05）
+
+- マスタ: サービスのデータソースに `shared`（`spaceKey`・`createdBy`）。あれば共有リスト。`seedProblems` は、共有リストを「個人の資格情報は読者 1 人」から外し、「スペースに 1 つ」を足した
+- `src/domain/shared.ts`（純関数）: `connectSharedSpace`（スペースに 1 つ。作った人が最初の読者、名乗りのアドレスを本人の Contact に付ける）、`syncSharedReaders`（ソースの読める人を読者に写す。本人が名乗ったアドレスか、IdP の ID で User が分かる人だけ。つないだ人が外れたら `ownerLost`）、`replaceSharedCredential`（読者の 1 人の委任に入れ替える）、`canDisconnect`（共有は作った人と管理者、個人は本人）
+- ゲートウェイの口に `isAdmin`（ゲートウェイの `ADMINS`）。外す操作（`Connections.disconnect`）は `canDisconnect` で決める
+- 設定: 共有リストを許すサービスを `MURMUR_SHARED_SERVICES`（例 `jira,teams`）で渡す（`MurmurConfig.sharedServices`。既定は空）。使うのは次の Jira から
+- まだ: 読者の同期を見回りに入れること、つなぐ API（Jira・Teams のコネクタと一緒に）
+
 ## 未決
 
 1. 共有チャネル（別のテナントのメンバー）と外部のゲスト。読者になれない人の投稿は、Contact として取り込むだけでよいか

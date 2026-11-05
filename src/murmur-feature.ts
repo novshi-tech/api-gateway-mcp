@@ -3,7 +3,7 @@ import { GRAPH_SCOPE } from "../murmur/src/connectors/graph/scope";
 import { JIRA_SCOPE } from "../murmur/src/connectors/jira/api";
 import type { SyncJob } from "../murmur/src/connectors/graph/jobs";
 import { CALLBACK_PATH } from "../murmur/src/ports/gateway";
-import { publicUrl } from "./config";
+import { publicUrl, splitList } from "./config";
 import { featurePort } from "./feature-port";
 import { registerFeatures, type Feature } from "./features";
 
@@ -23,6 +23,8 @@ interface MurmurEnv {
   MURMUR_RECENT_THREAD_LIMIT?: string;
   MURMUR_WEBHOOK_SECRET?: string;
   MURMUR_TIMELINE_TOKEN?: string;
+  // Services whose spaces may become shared lists (Murmur's 0037), e.g. "jira,teams". None by default.
+  MURMUR_SHARED_SERVICES?: string;
   // Gateway services Murmur reads, by kind.
   MURMUR_GRAPH_SERVICE?: string;
   MURMUR_JIRA_SERVICE?: string;
@@ -49,6 +51,7 @@ export function murmurFeature(env: Env): Feature | null {
     webhookSecret: m.MURMUR_WEBHOOK_SECRET,
     timelineToken: m.MURMUR_TIMELINE_TOKEN,
     queue: m.MURMUR_QUEUE,
+    sharedServices: splitList(m.MURMUR_SHARED_SERVICES),
     connectors: m.MURMUR_WEBHOOK_SECRET
       ? { publicUrl: `${publicUrl(env)}/${NAME}`, gateway: port, webhookKey: m.MURMUR_WEBHOOK_SECRET }
       : undefined,

@@ -99,7 +99,8 @@ function isValidAt(a: Address, at?: string): boolean {
  * - User の Contact は 1 つまで（1 デプロイ = 1 チーム、0020・0021）
  * - データソース 1 つにリスト 1 つ
  * - 個人のメモのリストの読者は本人だけ
- * - 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない。共有のデータソースは組織の資格情報（0013）
+ * - 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない。共有のデータソースは組織の資格情報（0013）か、
+ *   読者をソースから写す共有リスト（0037）。共有リストはスペースに 1 つ
  */
 /** 個人のメモに標準で付く属性（0031 の 4）。マスタには置かない */
 export const STANDARD_NOTE_ATTRIBUTES = ['due'] as const;
@@ -135,7 +136,7 @@ export function seedProblems(seed: Seed): string[] {
     const cred = seed.credentialRefs.find((c) => c.id === ds.credentialRefId);
     if (!cred) {
       problems.push(`data source ${ds.id}: 資格情報 ${ds.credentialRefId} がない`);
-    } else if (cred.principal.kind === 'user') {
+    } else if (cred.principal.kind === 'user' && !ds.shared) {
       if (readers.length !== 1 || readers[0] !== cred.principal.userId) {
         problems.push(`data source ${ds.id}: 個人の資格情報は読者 1 人（その本人）のデータソースにしか使わない`);
       }
@@ -146,6 +147,14 @@ export function seedProblems(seed: Seed): string[] {
   }
   for (const l of seed.lists) {
     if (!dir.dataSource(l.dataSourceId)) problems.push(`list ${l.id}: data source ${l.dataSourceId} がない`);
+  }
+  // 共有リストはスペースに 1 つ（0037 の決定 1）
+  const spaces = new Map<string, string>();
+  for (const ds of seed.dataSources) {
+    if (ds.kind !== 'service' || !ds.shared) continue;
+    const other = spaces.get(ds.shared.spaceKey);
+    if (other) problems.push(`data source ${ds.id}: スペース ${ds.shared.spaceKey} の共有リストは ${other} がある`);
+    else spaces.set(ds.shared.spaceKey, ds.id);
   }
   // 属性は個人のメモのスレッドだけのもの（0031）
   for (const d of seed.attributeDefs) {

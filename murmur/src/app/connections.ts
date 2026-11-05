@@ -1,4 +1,4 @@
-import { connectJiraSource, connectorOwner, DomainError, connectMailbox, setJiraScope, type ServiceDataSource } from '../domain';
+import { canDisconnect, connectJiraSource, connectorOwner, DomainError, connectMailbox, setJiraScope, type ServiceDataSource } from '../domain';
 import { ConsentRequired, GatewayAuthError, type GatewayCredential, type GatewayPort, type UpstreamCall, type UpstreamKind } from '../ports/gateway';
 import type { GraphApi } from '../connectors/graph/api';
 import type { JiraApi, JiraSite } from '../connectors/jira/api';
@@ -254,9 +254,13 @@ export class Connections {
     const dir = await this.deps.service.directory();
     const ds = dir.dataSource(dataSourceId);
     const source = await this.deps.state.source(dataSourceId);
-    if (!ds || !source || connectorOwner(dir.seed, ds) !== userId) throw new DomainError('not_found', `connection ${dataSourceId} not found`);
+    if (!ds || !source) throw new DomainError('not_found', `connection ${dataSourceId} not found`);
+    // 外せるのは、共有リストは作った人と管理者、個人のリストは本人（0037 の決定 4）。外せない人には、ないのと同じに見せる
+    const admin = ds.kind === 'service' && !!ds.shared && (await this.deps.gateway.isAdmin(userId));
+    if (!canDisconnect(dir.seed, dataSourceId, userId, admin)) throw new DomainError('not_found', `connection ${dataSourceId} not found`);
+    const who = connectorOwner(dir.seed, ds) === userId ? '本人が外した' : admin ? '管理者が外した' : '作った人が外した';
     // Webhook の ID は消すまで残す（disconnect の仕事が消す）
-    await this.deps.state.putSource({ ...source, status: 'disconnected', reason: '本人が外した', folders: {} });
+    await this.deps.state.putSource({ ...source, status: 'disconnected', reason: who, folders: {} });
     await this.deps.queue.send({ kind: 'disconnect', dataSourceId });
     return this.list(userId);
   }

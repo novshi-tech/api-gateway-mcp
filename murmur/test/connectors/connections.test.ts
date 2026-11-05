@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Connections } from '../../src/app/connections';
 import type { SyncJob } from '../../src/connectors/graph/jobs';
-import { connectorOwner, deriveViewer } from '../../src/domain';
+import { connectorOwner, connectSharedSpace, deriveViewer } from '../../src/domain';
 import { ConsentRequired, GatewayAuthError, type GatewayCredential, type GatewayPort, type UpstreamKind } from '../../src/ports/gateway';
 import { MemoryConnectorState } from '../../src/store/connector-state';
 import { counterIds, makeService } from '../helpers/service';
@@ -23,8 +23,14 @@ class FakeGatewayPort implements GatewayPort {
   readonly reconnect = new Set<string>();
   private n = 0;
 
+  readonly admins = new Set<string>();
+
   async authenticate() {
     return null;
+  }
+
+  async isAdmin(userId: string) {
+    return this.admins.has(userId);
   }
 
   async credentials(userId: string, kind: UpstreamKind) {
@@ -167,6 +173,20 @@ describe('H3 個人の箱をつなぐ', () => {
     now = '2026-10-31T00:00:00.000Z';
     expect(await ctx.connections.connectOutlook('u_bob')).toMatchObject({ status: 'connected', created: false });
     expect(await state.source(view!.data_source)).toMatchObject({ status: 'setup', connectedAt: now, folders: {} });
+  });
+
+  it('H3 共有リストを外せるのは作った人と管理者（0037 の決定 4）。ほかの読者には、ないのと同じ', async () => {
+    const { result } = await ctx.service.changeMaster('u_alice', '共有リスト', (d, c) =>
+      connectSharedSpace(d, c, { userId: 'u_alice', gatewayCredentialId: 'gw_alice', channel: 'jira', spaceKey: 'jira:cloud-1/SPW', name: 'SPW', identity: 'acct-alice' }),
+    );
+    const dsId = result.dataSource.id;
+    await ctx.service.changeMaster('u_alice', '読者', (d) => d.listMembers.push({ listId: d.lists.find((l) => l.dataSourceId === dsId)!.id, userId: 'u_bob' }));
+    await state.putSource({ kind: 'jira', dataSourceId: dsId, userId: 'u_alice', gatewayCredentialId: 'gw_alice', status: 'ok', reason: null, folders: {}, connectedAt: now, lastSyncAt: null, lastRetryAt: null });
+    await expect(ctx.connections.disconnect('u_bob', dsId)).rejects.toThrow(/not found/);
+    gw.admins.add('u_bob');
+    await ctx.connections.disconnect('u_bob', dsId);
+    expect(await state.source(dsId)).toMatchObject({ status: 'disconnected', reason: '管理者が外した' });
+    expect(queued.at(-1)).toEqual({ kind: 'disconnect', dataSourceId: dsId });
   });
 
   describe('Jira（0034 の決定 1・2）', () => {

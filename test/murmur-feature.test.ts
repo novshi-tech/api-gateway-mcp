@@ -182,6 +182,12 @@ describe("the gateway's port for Murmur", () => {
     await expect(port().upstream(bob, cred.id, "graph")).rejects.toThrow(/unknown credential/);
   });
 
+  it("tells Murmur who the gateway's admins are (ADMINS)", async () => {
+    const p = featurePort({ ...on, ADMINS: `x,${bob}` } as unknown as Env, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "jira", scope: JIRA_SCOPE } } });
+    expect(await p.isAdmin(bob)).toBe(true);
+    expect(await p.isAdmin(mallory)).toBe(false);
+  });
+
   it("authenticates only gateway tokens that cover identity:murmur", async () => {
     expect(await port().authenticate(await apiToken(bob, { murmur: "identity" }))).toBe(bob);
     expect(await port().authenticate(await apiToken(bob, { board: "x" }))).toBeNull();
