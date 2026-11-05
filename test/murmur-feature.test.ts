@@ -168,6 +168,19 @@ describe("the gateway's port for Murmur", () => {
     expect(echoed.headers.prefer).toBe("x");
   });
 
+  it("matches the read scope on the path only, so Jira's searches with a query go through", async () => {
+    const jiraCred = await vaultFor(env, bob).add(await upstream("board"), { "x-api-key": "k", authorization: "t" });
+    if ("error" in jiraCred) throw new Error(jiraCred.error);
+    await vaultFor(env, bob).setConsent("murmur", true);
+    // `board` stands in for Jira here (the scope is Jira's).
+    const p = featurePort(on, { feature: "murmur", kinds: { graph: { service: "board", scope: GRAPH_SCOPE }, jira: { service: "board", scope: JIRA_SCOPE } } });
+    const read = await p.upstream(bob, jiraCred.id, "jira");
+    const res = await read("GET", "/ex/jira/cloud-1/rest/api/3/search/jql?jql=project%20%3D%20SPW&fields=summary");
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { url: string }).url).toBe("https://api.the-board.jp/ex/jira/cloud-1/rest/api/3/search/jql?jql=project%20%3D%20SPW&fields=summary");
+    await expect(read("POST", "/ex/jira/cloud-1/rest/api/3/issue?x=1", { body: {} })).rejects.toBeInstanceOf(UpstreamRefused);
+  });
+
   it("refuses calls outside the read scope before sending them", async () => {
     const cred = await addBoard(bob);
     await vaultFor(env, bob).setConsent("murmur", true);

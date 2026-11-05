@@ -30,8 +30,10 @@ export type UpstreamCall = (
  */
 export type ReadScope = ReadonlyArray<readonly [UpstreamMethod, RegExp]>;
 
+/** 照合はパス（クエリ文字列の前）だけで行う。読める口は「どの口か」で決まり、クエリは口を変えない */
 export function inScope(scope: ReadScope, method: UpstreamMethod, path: string): boolean {
-  return scope.some(([m, re]) => m === method && re.test(path));
+  const pathname = path.split('?')[0]!;
+  return scope.some(([m, re]) => m === method && re.test(pathname));
 }
 
 /** 本人の同意（Murmur に取り込みを許すこと）。ゲートウェイの画面で本人が Murmur を有効にする */
