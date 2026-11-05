@@ -42,7 +42,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
   const idp = IDP_NAMES[env.IDP_TYPE as string] ?? (env.IDP_TYPE as string);
   const gateway = { organization, idp, url: base };
   const server = new McpServer(
-    { name: "api-gateway-mcp", title: `API Gateway (${organization})`, version: "0.0.0" },
+    { name: "api-gateway-mcp", title: `Heddleway (${organization})`, version: "0.0.0" },
     { instructions: instructions(organization, idp, base) },
   );
   const vault = vaultFor(env, props.userId);

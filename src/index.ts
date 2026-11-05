@@ -139,7 +139,7 @@ function provider(env: Env): OAuthProvider<Env> {
           resource: `${url}/mcp`,
           authorization_servers: [url],
           scopes_supported: [MCP_SCOPE],
-          resource_name: "API Gateway MCP",
+          resource_name: "Heddleway",
         },
       }),
     };

@@ -341,7 +341,7 @@ describe("mcp tools", () => {
 
   it("names the organization it serves, so connectors of several organizations can be told apart", async () => {
     const client = await connect(alice);
-    expect(client.getServerVersion()?.title).toBe("API Gateway (Acme)");
+    expect(client.getServerVersion()?.title).toBe("Heddleway (Acme)");
     expect(client.getInstructions()).toContain(`API gateway of the organization "Acme" (sign-in: Microsoft Entra ID, ${BASE})`);
     const { tools } = await client.listTools();
     for (const tool of tools) expect(tool.description).toContain(`"Acme"`);
@@ -454,7 +454,7 @@ describe("web ui", () => {
     expect(empty).toContain("Murmur");
     expect(empty).toContain("登録不要");
     expect(empty).toContain(`href="/connections/new"`);
-    expect(empty).toContain("API ゲートウェイ · Acme");
+    expect(empty).toContain("Heddleway · Acme");
 
     const cred = await addBoard(carol);
     const page = await (await SELF.fetch(`${BASE}/`, { headers: { cookie } })).text();
