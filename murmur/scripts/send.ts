@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { echoFrom, loadScenario, type Scenario, type Step } from './lib/scenario';
 
-// WEBHOOK_SECRET=... npm run send <scenario> <signal の id>... -- --url <本体の URL> [--sent-ref <ref>]（URL は MURMUR_URL でもよい）
+// WEBHOOK_SECRET=<MURMUR_WEBHOOK_SECRET の値> npm run send <scenario> <signal の id>... -- --url <ゲートウェイの URL>/murmur [--sent-ref <ref>]（URL は MURMUR_URL でもよい）
 // fixtures/<scenario>/signals.jsonl の signal 行（と状態の写しの mirror 行）を、実環境の Webhook（POST /webhooks/dummy）に 1 件ずつ流す（H7）。
 // record_sent の action 行で echo のものは、その送信がデータソースで観測された分（H5 の統合を確かめる）を流す。
 // sent_ref はシナリオの値か、スタンドが記録したときの値を --sent-ref で渡す。

@@ -24,15 +24,15 @@ import {
   ReopenBody,
   SetAttributeBody,
 } from '../api/schemas';
-import { bearerToken } from '../auth/claims';
+import { bearerToken } from '../auth/bearer';
 import type { Connections } from '../app/connections';
-import { CALLBACK_PATH, CLIENT_METADATA_PATH } from '../ports/gateway';
+import { CALLBACK_PATH } from '../ports/gateway';
 import { adminHref, renderAdminIndex, renderAdminList, renderAdminThread, renderTimeline } from './admin';
 
 export interface HttpOptions {
   /** リクエストごとにサービスを組み立てる（Worker では DB 接続をリクエスト単位で張る） */
   service: (c: Context) => Promise<MurmurService> | MurmurService;
-  /** 伝搬されたユーザー識別を検証して sub（User ID）を返す。失敗なら null */
+  /** API のトークンをゲートウェイの口で確かめて User ID を返す。失敗なら null */
   authenticate: (token: string) => Promise<string | null>;
   webhookVerify: (body: string, signature: string) => Promise<boolean>;
   timelineToken?: string;
@@ -42,8 +42,6 @@ export interface HttpOptions {
 
 export interface ConnectorHttp {
   connections: Connections;
-  /** CIMD のクライアントのメタデータ（別の Worker のゲートウェイを使うときだけ） */
-  clientMetadata?: Record<string, unknown>;
   /** Graph の通知を照合してキューに積む。積んだ数を返す */
   notifications(body: unknown): Promise<number>;
   /** Jira の Webhook（0034）。URL の本人ごとの秘密を照合し、その本人の Jira を取り直すよう積む。照合できなければ null */
@@ -75,7 +73,7 @@ export function createApp(opts: HttpOptions) {
     await next();
   });
 
-  // ---- スタンド向け API（ゲートウェイ経由。ゲートウェイが署名したユーザー識別を必須にする） ----
+  // ---- スタンド向け API（ゲートウェイの中継の後ろ。ゲートウェイのトークンを必須にする） ----
 
   const api = new Router<Vars>();
   api.use(async (c, next) => {
@@ -307,12 +305,6 @@ export function createApp(opts: HttpOptions) {
     const body = await c.req.json().catch(() => null);
     const n = await k.jiraNotified(c.req.param('secret'), body);
     return n === null ? c.json({ error: 'not found' }, 404) : c.body(null, 202);
-  });
-
-  // 本体はゲートウェイの OAuth クライアント（CIMD）。ゲートウェイがこのメタデータを読みに来る
-  app.get(CLIENT_METADATA_PATH, async (c) => {
-    const metadata = (await connectors(c)).clientMetadata;
-    return metadata ? c.json(metadata) : c.text('not found', 404);
   });
 
   app.get(CALLBACK_PATH, async (c) => {

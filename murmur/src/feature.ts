@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { MurmurService, randomIds, systemClock } from './app/service';
 import { DEFAULT_POLICY } from './domain';
-import { verifyWebhookSignature } from './auth/identity';
+import { verifyWebhookSignature } from './auth/webhook';
 import { DummyConnector } from './connectors/dummy/connector';
 import { D1DummyBackend } from './connectors/dummy/d1-backend';
 import type { Connectors } from './connectors/types';
@@ -20,9 +20,8 @@ import { JiraSync } from './connectors/jira/sync';
 import { randomHex, sha256Hex } from './connectors/secrets';
 import { D1ConnectorState } from './store/connector-state';
 
-// Murmur の組み立て（0023 の段取り 3）。env を読まず、入口が渡す設定とゲートウェイの口だけで組み立てる。
-// 入口は 2 つ: 単独の Worker（index.ts。ゲートウェイは別の Worker で、口は RemoteGateway）と、
-// ゲートウェイの Worker の機能（ゲートウェイの入口が、自分の中核で実装した口を渡す）。
+// Murmur の組み立て（0023）。env を読まず、入口が渡す設定とゲートウェイの口だけで組み立てる。
+// 入口はゲートウェイの Worker（api-gateway-mcp の src/murmur-feature.ts）で、口はゲートウェイの中核が実装する。
 
 export interface MurmurConfig {
   /** 本体の D1（0021） */
@@ -44,8 +43,6 @@ export interface MurmurConfig {
     gateway: GatewayPort;
     /** Jira の Webhook の受け口の URL に入れる本人ごとの秘密を導く鍵（保管しない） */
     webhookKey: string;
-    /** CIMD のクライアントのメタデータ（別の Worker のゲートウェイを使うときだけ） */
-    clientMetadata?: Record<string, unknown>;
   };
 }
 
@@ -132,7 +129,6 @@ function buildConnectors(config: MurmurConfig, service: MurmurService, waitUntil
   return {
     sync,
     connections,
-    clientMetadata: c.clientMetadata,
     notifications: async (body) => {
       const { jobs, rejected } = await jobsFromNotifications(body, { subscription: (id) => state.subscription(id), hash: sha256Hex });
       if (rejected > 0) console.warn(JSON.stringify({ msg: 'graph_notification_rejected', rejected }));

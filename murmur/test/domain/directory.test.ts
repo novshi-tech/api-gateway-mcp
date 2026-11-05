@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, canReadDataSource, deriveViewer, Directory, isOurs, Seed, seedProblems, type SeedInput } from '../../src/domain';
-import { bearerToken, checkClaims, selectKey, splitCompactJws, base64UrlEncode, base64UrlDecode } from '../../src/auth/claims';
+import { bearerToken } from '../../src/auth/bearer';
 import { dir, seed } from '../helpers/world';
 
 describe('Directory', () => {
@@ -109,59 +109,11 @@ describe('canonicalJson', () => {
   });
 });
 
-describe('ユーザー識別のクレーム検証', () => {
-  const now = 1_800_000_000;
-  const ok = { sub: 'u_alice', aud: 'murmur', iat: now - 10, exp: now + 290 };
-
-  it('aud・期限・発行時刻・寿命を確かめる', () => {
-    expect(checkClaims(ok, { audience: 'murmur' }, now)).toEqual({ ok: true, sub: 'u_alice' });
-    expect(checkClaims({ ...ok, aud: ['x', 'murmur'] }, { audience: 'murmur' }, now).ok).toBe(true);
-    expect(checkClaims({ ...ok, aud: 'other' }, { audience: 'murmur' }, now)).toEqual({ ok: false, reason: 'audience mismatch' });
-    expect(checkClaims({ ...ok, exp: now - 31 }, { audience: 'murmur' }, now)).toEqual({ ok: false, reason: 'expired' });
-    expect(checkClaims({ ...ok, exp: now - 29 }, { audience: 'murmur' }, now).ok).toBe(true);
-    expect(checkClaims({ ...ok, iat: now + 60 }, { audience: 'murmur' }, now)).toEqual({ ok: false, reason: 'issued in the future' });
-    expect(checkClaims({ ...ok, exp: now + 7200 }, { audience: 'murmur' }, now)).toEqual({ ok: false, reason: 'lifetime too long' });
-    expect(checkClaims({ ...ok, sub: '' }, { audience: 'murmur' }, now)).toEqual({ ok: false, reason: 'malformed claims' });
-  });
-
-  it('iss を期待するときはゲートウェイの URL と一致すること', () => {
-    const withIss = { ...ok, iss: 'https://gw.example' };
-    expect(checkClaims(withIss, { audience: 'murmur', issuer: 'https://gw.example' }, now).ok).toBe(true);
-    expect(checkClaims(withIss, { audience: 'murmur', issuer: 'https://other.example' }, now)).toEqual({ ok: false, reason: 'issuer mismatch' });
-    expect(checkClaims(ok, { audience: 'murmur', issuer: 'https://gw.example' }, now)).toEqual({ ok: false, reason: 'issuer mismatch' });
-  });
-
-  it('Authorization ヘッダから Bearer トークンを取り出す', () => {
+describe('本体の API のトークン', () => {
+  it('Authorization ヘッダから Bearer トークンを取り出す（確かめるのはゲートウェイの口）', () => {
     expect(bearerToken('Bearer abc.def.ghi')).toBe('abc.def.ghi');
     expect(bearerToken('bearer   x')).toBe('x');
     expect(bearerToken('Basic abc')).toBeNull();
     expect(bearerToken(undefined)).toBeNull();
-  });
-
-  it('JWKS から kid に合う Ed25519 の鍵を選ぶ', () => {
-    const a = { kty: 'OKP', crv: 'Ed25519', x: 'AAA', kid: 'a' };
-    const b = { kty: 'OKP', crv: 'Ed25519', x: 'BBB', kid: 'b' };
-    const rsa = { kty: 'RSA', n: 'x', e: 'AQAB', kid: 'r' };
-    expect(selectKey({ keys: [a, b, rsa] }, 'b')).toBe(b);
-    expect(selectKey({ keys: [a, b] }, 'zzz')).toBeNull();
-    expect(selectKey({ keys: [rsa] }, 'r')).toBeNull();
-    // kid がなければ、鍵が 1 つのときだけ使う
-    expect(selectKey({ keys: [a] }, undefined)).toBe(a);
-    expect(selectKey({ keys: [a, b] }, undefined)).toBeNull();
-    // 単体の JWK でもよい
-    expect(selectKey(a, 'a')).toBe(a);
-    expect(selectKey(null, undefined)).toBeNull();
-  });
-
-  it('compact JWS を分解でき、壊れたものは null', () => {
-    const enc = (o: unknown) => base64UrlEncode(new TextEncoder().encode(JSON.stringify(o)));
-    const token = `${enc({ alg: 'EdDSA' })}.${enc(ok)}.${base64UrlEncode(new Uint8Array([1, 2, 255]))}`;
-    const jws = splitCompactJws(token);
-    expect(jws?.header).toEqual({ alg: 'EdDSA' });
-    expect(jws?.claims).toEqual(ok);
-    expect([...jws!.signature]).toEqual([1, 2, 255]);
-    expect(splitCompactJws('a.b')).toBeNull();
-    expect(splitCompactJws('!!!.@@@.###')).toBeNull();
-    expect([...base64UrlDecode(base64UrlEncode(new Uint8Array([251, 252, 253, 254])))]).toEqual([251, 252, 253, 254]);
   });
 });

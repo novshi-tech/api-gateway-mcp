@@ -1,12 +1,12 @@
 # Murmur
 
-AI ネイティブ タスク管理ツールのプロトタイプ。イベントソーシングによるタスク導出、通信状態と作業状態の二層、
-リスト境界と派生シグナル、観測された送信、スタンドへの MCP ハンドオフが成立するかを、外部接続なしで確かめる。
+チームの仕事の記憶。連絡から対応の要る件を拾い、誰の番かを追う。API ゲートウェイの Worker の機能として動き
+（`docs/adr/0023`）、スタンド（Claude）が裏で読んで「いまやるべきこと」に答える。
 
 - 計画: [docs/PLAN.md](docs/PLAN.md)（実装の順序と仮説 H1〜H7）
 - 開発の約束事と構成: [CLAUDE.md](CLAUDE.md)
 - 決定の記録: [docs/adr/](docs/adr/)
-- 接続手順: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは同じリポジトリのプラグイン `api-gateway-murmur`、`../plugins/api-gateway-murmur`）
+- 有効にする手順と接続: [docs/stand/connect.md](docs/stand/connect.md)（スタンド用スキルは同じリポジトリのプラグイン `api-gateway-murmur`、`../plugins/api-gateway-murmur`）
 - シナリオ: [fixtures/](fixtures/)
 
 ```sh

@@ -1,53 +1,16 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { base64UrlEncode } from '../../src/auth/claims';
-import { signWebhook, verifyIdentity, verifyWebhookSignature } from '../../src/auth/identity';
+import { describe, expect, it } from 'vitest';
+import { signWebhook, verifyWebhookSignature } from '../../src/auth/webhook';
 import { MoveSignalBody } from '../../src/api/schemas';
 import { createApp } from '../../src/http/app';
 import { makeService } from '../helpers/service';
 import { answer, email, seed } from '../helpers/world';
 
-// ゲートウェイ役: Ed25519 で sub に署名する
-let keys: CryptoKeyPair;
-let jwks: { keys: JsonWebKey[] };
-const ISS = 'https://gw.example';
-const expect_ = { audience: 'murmur', issuer: ISS };
-const NOW = 1_800_000_000;
+// ゲートウェイの口の偽物: トークン "gw:<User ID>" だけを通す（本物はゲートウェイの issue_token のトークンを確かめる）
+const token = (user: string) => `gw:${user}`;
+const authenticate = async (t: string) => (t.startsWith('gw:') ? t.slice(3) : null);
 
-async function sign(claims: Record<string, unknown>, key = keys.privateKey, alg = 'EdDSA', kid = 'gw-1'): Promise<string> {
-  const enc = (o: unknown) => base64UrlEncode(new TextEncoder().encode(JSON.stringify(o)));
-  const input = `${enc({ alg, typ: 'JWT', kid })}.${enc(claims)}`;
-  const sig = new Uint8Array(await crypto.subtle.sign('Ed25519', key, new TextEncoder().encode(input)));
-  return `${input}.${base64UrlEncode(sig)}`;
-}
-// api-gateway-mcp の identity と同じ形（iss = ゲートウェイの URL、寿命 5 分）
-const claims = (sub: string) => ({ sub, iss: ISS, aud: 'murmur', iat: NOW, exp: NOW + 300 });
-
-beforeAll(async () => {
-  keys = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
-  const pub = await crypto.subtle.exportKey('jwk', keys.publicKey);
-  jwks = { keys: [{ kty: pub.kty, crv: pub.crv, x: pub.x, kid: 'gw-1', alg: 'EdDSA', use: 'sig' } as JsonWebKey] };
-});
-
-describe('verifyIdentity', () => {
-  it('ゲートウェイの署名だけを受け入れる', async () => {
-    expect(await verifyIdentity(await sign(claims('u_alice')), jwks, expect_, NOW)).toEqual({ ok: true, sub: 'u_alice' });
-    const other = (await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify'])) as CryptoKeyPair;
-    expect(await verifyIdentity(await sign(claims('u_alice'), other.privateKey), jwks, expect_, NOW)).toEqual({ ok: false, reason: 'bad signature' });
-    expect(await verifyIdentity(await sign(claims('u_alice'), keys.privateKey, 'none'), jwks, expect_, NOW)).toEqual({ ok: false, reason: 'unsupported alg' });
-    expect(await verifyIdentity('garbage', jwks, expect_, NOW)).toEqual({ ok: false, reason: 'malformed token' });
-    expect(await verifyIdentity(await sign(claims('u_alice'), keys.privateKey, 'EdDSA', 'rotated'), jwks, expect_, NOW)).toEqual({
-      ok: false,
-      reason: 'unknown key',
-    });
-    expect((await verifyIdentity(await sign({ ...claims('u_alice'), iss: 'https://evil.example' }), jwks, expect_, NOW)).ok).toBe(false);
-    // 署名部分の改ざん
-    const t = await sign(claims('u_alice'));
-    const [h, , s] = t.split('.');
-    const forged = `${h}.${base64UrlEncode(new TextEncoder().encode(JSON.stringify(claims('u_bob'))))}.${s}`;
-    expect((await verifyIdentity(forged, jwks, expect_, NOW)).ok).toBe(false);
-  });
-
-  it('Webhook の HMAC 署名', async () => {
+describe('Webhook の署名', () => {
+  it('ダミーの Webhook の HMAC 署名', async () => {
     const sig = await signWebhook('body', 'secret');
     expect(await verifyWebhookSignature('body', sig, 'secret')).toBe(true);
     expect(await verifyWebhookSignature('body2', sig, 'secret')).toBe(false);
@@ -60,16 +23,13 @@ describe('HTTP API', () => {
     const ctx = await makeService(seed, { decide: () => answer({ title: '雨漏り' }) });
     const http = createApp({
       service: () => ctx.service,
-      authenticate: async (token) => {
-        const r = await verifyIdentity(token, jwks, expect_, NOW);
-        return r.ok ? r.sub : null;
-      },
+      authenticate,
       webhookVerify: (body, sig) => verifyWebhookSignature(body, sig, 'whsec'),
       timelineToken: 'tok',
     });
     const call = async (method: string, path: string, user?: string, body?: unknown) => {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
-      if (user) headers.authorization = `Bearer ${await sign(claims(user))}`;
+      if (user) headers.authorization = `Bearer ${token(user)}`;
       const res = await http.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const out: any = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
@@ -136,7 +96,7 @@ describe('HTTP API', () => {
     const res = await http.request('/api/me', { headers: { authorization: 'Bearer x.y.z' } });
     expect(res.status).toBe(401);
     // 仮決めだった旧ヘッダは受け付けない
-    const legacy = await http.request('/api/me', { headers: { 'x-murmur-identity': await sign(claims('u_alice')) } });
+    const legacy = await http.request('/api/me', { headers: { 'x-murmur-identity': token('u_alice') } });
     expect(legacy.status).toBe(401);
   });
 
@@ -330,15 +290,11 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     const setJiraScope = async (userId: string, id: string, jql: string) => [{ data_source: id, userId, jql }];
     const http = createApp({
       service: () => ctx.service,
-      authenticate: async (token) => {
-        const r = await verifyIdentity(token, jwks, expect_, NOW);
-        return r.ok ? r.sub : null;
-      },
+      authenticate,
       webhookVerify: async () => false,
       connectors: withConnectors
         ? () => ({
             connections: { connectOutlook, connectJira, setJiraScope, list: async () => [], disconnect: async () => [], callback: async () => ({ ok: true, message: '<b>つないだ</b>' }) } as never,
-            clientMetadata: { client_id: 'https://murmur.test/oauth/client.json' },
             notifications: async (body) => {
               notified.push(body);
               return 1;
@@ -365,16 +321,16 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     expect((await http.request('/webhooks/graph', { method: 'POST', body: 'not json' })).status).toBe(400);
   });
 
-  it('CIMD のメタデータとコールバックは公開、/api/connections は本人の JWT が要る', async () => {
+  it('同意のコールバックは公開、/api/connections は本人のトークンが要る', async () => {
     const { http } = await app();
-    expect(await (await http.request('/oauth/client.json')).json()).toEqual({ client_id: 'https://murmur.test/oauth/client.json' });
+    expect((await http.request('/oauth/client.json')).status).toBe(404);
     const cb = await http.request('/oauth/callback?state=s&code=c');
     expect(cb.status).toBe(200);
     expect(await cb.text()).toContain('&lt;b&gt;つないだ&lt;/b&gt;');
     expect((await http.request('/api/connections/outlook', { method: 'POST' })).status).toBe(401);
     const res = await http.request('/api/connections/outlook', {
       method: 'POST',
-      headers: { authorization: `Bearer ${await sign(claims('u_bob'))}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${token('u_bob')}`, 'content-type': 'application/json' },
       body: JSON.stringify({ credential_id: 'gw_1' }),
     });
     expect(await res.json()).toEqual({ status: 'authorize', authorize_url: 'https://gw/authorize?u=u_bob&c=gw_1' });
@@ -388,9 +344,9 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
     expect(notified).toEqual([{ secret: 'good', body: { webhookEvent: 'comment_created' } }, { secret: 'bad', body: null }]);
   });
 
-  it('H9 /api/connections/jira と範囲の変更（本人の JWT が要る）', async () => {
+  it('H9 /api/connections/jira と範囲の変更（本人のトークンが要る）', async () => {
     const { http } = await app();
-    const auth = { authorization: `Bearer ${await sign(claims('u_bob'))}`, 'content-type': 'application/json' };
+    const auth = { authorization: `Bearer ${token('u_bob')}`, 'content-type': 'application/json' };
     expect((await http.request('/api/connections/jira', { method: 'POST' })).status).toBe(401);
     const res = await http.request('/api/connections/jira', { method: 'POST', headers: auth, body: JSON.stringify({ site: 'cloud-1', jql: 'project = SPW' }) });
     expect(await res.json()).toEqual({ status: 'connected', userId: 'u_bob', input: { credentialId: undefined, cloudId: 'cloud-1', jql: 'project = SPW' } });
@@ -401,7 +357,7 @@ describe('H3 外部コネクタの公開ルート（0024）', () => {
 
   it('設定がなければ 404', async () => {
     const { http } = await app(false);
-    expect((await http.request('/oauth/client.json')).status).toBe(404);
+    expect((await http.request('/oauth/callback?state=s&code=c')).status).toBe(404);
     expect((await http.request('/webhooks/graph', { method: 'POST', body: '{}' })).status).toBe(404);
   });
 });

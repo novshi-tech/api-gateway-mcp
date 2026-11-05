@@ -3,19 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "AI ネイティブ タスク管理ツールのプロトタイプ（データモデルとアーキテクチャの検証用）",
+  "description": "チームの仕事の記憶 Murmur（ゲートウェイの Worker の機能。docs/adr/0023）",
   "scripts": {
-    "dev": "wrangler dev -c wrangler.example.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "scenario": "tsx scripts/scenario.ts",
     "seed": "tsx scripts/seed.ts",
     "send": "tsx scripts/send.ts",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "node tools/wrangler.mjs d1-migrate",
-    "deploy": "node tools/wrangler.mjs deploy",
-    "secret": "node tools/wrangler.mjs secret",
-    "tail": "node tools/wrangler.mjs tail"
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",
