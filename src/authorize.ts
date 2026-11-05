@@ -27,7 +27,7 @@ function consentPage(client: ClientInfo, request: AuthRequest, handle: string, h
   return page(
     `${client.clientName ?? "アプリ"} の接続`,
     html`<div class="card">
-<h1>${name} に API ゲートウェイへのアクセスを許可しますか?</h1>
+<h1>${name} に Heddleway へのアクセスを許可しますか?</h1>
 <p>${origin}</p>
 <p>アクセス権は <strong>${redirectHost}</strong> に送られます。</p>
 ${local && html`<p><strong>このコンピューター上のアプリにアクセス権を渡します。</strong>自分でサインインを始めた場合だけ続けてください。</p>`}

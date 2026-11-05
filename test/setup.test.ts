@@ -101,21 +101,21 @@ describe("Claude につなぐ", () => {
 
   it("offers the built-in plugins as zips, with the Claude Code marketplace", async () => {
     const page = await (await get("/setup")).text();
-    expect(page).toContain(`href="/plugins/api-gateway.zip"`);
-    expect(page).toContain(`href="/plugins/api-gateway-google.zip"`);
-    expect(page).toContain("/plugin marketplace add novshi-tech/api-gateway-mcp");
-    expect(page).toContain("/plugin install api-gateway@api-gateway-mcp");
+    expect(page).toContain(`href="/plugins/heddleway.zip"`);
+    expect(page).toContain(`href="/plugins/heddleway-google.zip"`);
+    expect(page).toContain("/plugin marketplace add novshi-tech/heddleway");
+    expect(page).toContain("/plugin install heddleway@heddleway");
 
-    const res = await get("/plugins/api-gateway.zip");
+    const res = await get("/plugins/heddleway.zip");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
-    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="api-gateway-\d+\.\d+\.\d+\.zip"$/);
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="heddleway-\d+\.\d+\.\d+\.zip"$/);
     const manifest = await readManifest(new Uint8Array(await res.arrayBuffer()));
-    expect(manifest).toMatchObject({ name: "api-gateway" });
+    expect(manifest).toMatchObject({ name: "heddleway" });
   });
 
   it("hands zips only to signed-in users", async () => {
-    expect((await get("/plugins/api-gateway.zip", null)).headers.get("location")).toBe("/login");
+    expect((await get("/plugins/heddleway.zip", null)).headers.get("location")).toBe("/login");
     expect((await get("/plugins/no-such.zip")).status).toBe(404);
   });
 });
@@ -152,14 +152,14 @@ describe("plugins admins upload", () => {
     expect((await get("/admin/plugins", "someone")).status).toBe(404);
     expect((await upload(await pluginZip(unique("x")), "someone")).status).toBe(404);
     expect((await upload(await pluginZip(unique("x")), ADMIN, "https://evil.example")).status).toBe(403);
-    expect(await (await upload(await pluginZip("api-gateway"))).text()).toContain("組み込みのプラグインと同じ名前");
+    expect(await (await upload(await pluginZip("heddleway"))).text()).toContain("組み込みのプラグインと同じ名前");
     expect(await (await upload(await makeZip({ "README.md": "hi" }))).text()).toContain("plugin.json がありません");
     expect(await (await upload(new TextEncoder().encode("not a zip"))).text()).toContain("zip として読めませんでした");
     expect(await (await upload(await pluginZip("Bad_Name"))).text()).toContain("英小文字・数字・ハイフン");
   });
 
   it("reads plugin.json at the top of the zip, stored or deflated", async () => {
-    const top = await makeZip({ ".claude-plugin/plugin.json": JSON.stringify({ name: "top", version: "0.1.0", dependencies: ["api-gateway"] }) }, false);
-    expect(await readManifest(top)).toEqual({ name: "top", version: "0.1.0", description: "", dependencies: ["api-gateway"] });
+    const top = await makeZip({ ".claude-plugin/plugin.json": JSON.stringify({ name: "top", version: "0.1.0", dependencies: ["heddleway"] }) }, false);
+    expect(await readManifest(top)).toEqual({ name: "top", version: "0.1.0", description: "", dependencies: ["heddleway"] });
   });
 });

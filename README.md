@@ -1,6 +1,6 @@
-# api-gateway-mcp
+# Heddleway
 
-Claude から、既存のコネクタではできない API 呼び出しを行うための、汎用 API ゲートウェイです。Cloudflare Workers で動くリモート MCP サーバーとして、自分の組織の Cloudflare アカウントにデプロイします。
+エージェントのための、チームのゲートウェイです(a team gateway for agents。名前は [docs/adr/0006](docs/adr/0006-name-heddleway.md))。Claude から、既存のコネクタではできない API 呼び出しを行うための汎用の API ゲートウェイで、通り抜ける連絡を Murmur(チームの仕事の記憶)がスレッドとして整理します。Cloudflare Workers で動くリモート MCP サーバーとして、自分の組織の Cloudflare アカウントにデプロイします。
 
 Claude(Cowork など)のコード実行のサンドボックスから、freee や Microsoft 365 などの API を、スクリプトで直接呼べるようになります。一覧の全件取得や集計、ファイルのダウンロード・アップロードのように、コネクタのツールでは手間のかかる作業を、Claude がスクリプトを書いて進めます。
 
@@ -25,7 +25,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 
 - ゲートウェイの Worker に入っていて、デプロイの設定に Murmur の D1 を足すと有効になります(`wrangler.example.jsonc` の末尾)。足さなければ、ゲートウェイは Murmur なしで今までどおり動きます
 - 利用者ごとに、ゲートウェイの画面で有効にします(Claude から Murmur に接続をつなぐよう頼むと、有効にする画面に案内されます)。有効にした人の接続だけを、読み取りだけで使います。「つないだサービス」の画面でいつでも無効にできます
-- Claude からは、ほかのサービスと同じく `issue_token`(`identity:murmur`)と REST(`/api/murmur/...`)で使います。使い方はプラグイン `api-gateway-murmur` のスキルです
+- Claude からは、ほかのサービスと同じく `issue_token`(`identity:murmur`)と REST(`/api/murmur/...`)で使います。使い方はプラグイン `heddleway-murmur` のスキルです
 
 ## 前提
 
@@ -50,7 +50,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
 1. コネクタを追加します。
    - Pro / Max: 個人の設定で、カスタムコネクタとして `https://<ゲートウェイ>/mcp` を追加します。
    - Team / Enterprise: Owner が組織の設定で同じ URL を追加し、各メンバーが接続します。
-2. プラグイン `api-gateway` と、使う提供元のプラグイン(`api-gateway-google` など)をインストールします(下の「スキル」)。「Claude につなぐ」から zip でダウンロードできます。
+2. プラグイン `heddleway` と、使う提供元のプラグイン(`heddleway-google` など)をインストールします(下の「スキル」)。「Claude につなぐ」から zip でダウンロードできます。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
 4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
 5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
@@ -69,35 +69,43 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 
 ## スキル
 
-このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。共通の `api-gateway` を入れ、使う提供元のプラグインを足します。Microsoft 365 だけ、Google だけ、という使い方ができます。
+このリポジトリは Claude のプラグインのマーケットプレイスを兼ねています。共通の `heddleway` を入れ、使う提供元のプラグインを足します。Microsoft 365 だけ、Google だけ、という使い方ができます。
 
 | プラグイン | スキル | サービス名 | できること |
 | --- | --- | --- | --- |
-| `api-gateway`(必須) | `api-gateway` | — | トークンの発行と、REST の呼び出し(`gw_request.py`)の共通手順。ほかのスキルはこれを前提にする |
+| `heddleway`(必須) | `heddleway` | — | トークンの発行と、REST の呼び出し(`gw_request.py`)の共通手順。ほかのスキルはこれを前提にする |
 | | `board` | `board` | 販売管理 SaaS「board」の案件・見積・請求・発注・支払・顧客などの検索・登録・更新 |
 | | `gbizinfo` | `gbizinfo` | 経済産業省の法人情報(gBizINFO)の検索 |
 | | `serper` | `serper` | Serper 経由の Google 検索(ウェブ・画像・ニュース・地図・論文など) |
-| `api-gateway-microsoft` | `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
-| `api-gateway-google` | `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
+| `heddleway-microsoft` | `microsoft-graph` | `graph` | Outlook メール、OneDrive / SharePoint、Teams、予定表 |
+| `heddleway-google` | `gmail` | `gmail` | メールの検索・送信・返信・下書き、添付ファイル |
 | | `google-drive` | `drive` | ファイルの検索・ダウンロード・エクスポート・アップロード、共有ドライブ |
 | | `google-calendar` | `calendar` | 予定の検索・作成・更新、空き時間の確認 |
 | | `google-docs` | `docs` | ドキュメントの本文の読み取り、作成、追記・置換・書式の編集 |
 | | `google-analytics` | `analytics`・`analytics-admin` | GA4 のレポート取得、アカウントとプロパティの参照(読み取り専用) |
-| `api-gateway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
-| `api-gateway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
-| `api-gateway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
-| `api-gateway-murmur` | `murmur` | `murmur` | [Murmur](https://github.com/novshi-tech/murmur)(連絡の索引)のスレッド・誰の番・個人のメモでのタスクの追跡・送信の記録。上流の設定は下の「3. 連携先を設定する」(`identity` と Service Binding) |
+| `heddleway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
+| `heddleway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
+| `heddleway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
+| `heddleway-murmur` | `murmur` | `murmur` | [Murmur](https://github.com/novshi-tech/murmur)(連絡の索引)のスレッド・誰の番・個人のメモでのタスクの追跡・送信の記録。上流の設定は下の「3. 連携先を設定する」(`identity` と Service Binding) |
 
 インストールの方法:
 
-- Claude Code: `/plugin marketplace add novshi-tech/api-gateway-mcp` のあと、`/plugin install api-gateway@api-gateway-mcp` と、使う提供元のもの(例: `/plugin install api-gateway-microsoft@api-gateway-mcp`)をインストールします。提供元のプラグインは `api-gateway` に依存しているので、先に入れていなくても一緒に入ります。
-- Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` と使う提供元のプラグインをインストールします。
+- Claude Code: `/plugin marketplace add novshi-tech/heddleway` のあと、`/plugin install heddleway@heddleway` と、使う提供元のもの(例: `/plugin install heddleway-microsoft@heddleway`)をインストールします。提供元のプラグインは `heddleway` に依存しているので、先に入れていなくても一緒に入ります。
+- Pro / Max: Customize > Plugins > Add marketplace で `novshi-tech/heddleway` を追加し、`heddleway` と使う提供元のプラグインをインストールします。
 - Team / Enterprise: Owner が Organization settings > Plugins & skills で、このリポジトリ(または、これを参照する社内のマーケットプレイス用リポジトリ)を同期し、配布方法を選びます。
 - zip: `npm run plugin:zip` で `dist/<プラグイン>-<version>.zip` をプラグインごとに作り、Plugins の Upload plugin で追加します。更新するときは `plugin.json` と `.claude-plugin/marketplace.json` の `version` を上げて作り直し、同じ名前でアップロードし直します。Cowork で GitHub のマーケットプレイスの同期がうまくいかないときは、zip を使ってください。
 
 - ゲートウェイの Web 画面: 「Claude につなぐ」(`/setup`)に、このリポジトリのプラグインの zip が並び、サインインした人がダウンロードできます。`npm run deploy` が `tools/build-plugin-zip.py --bundle` で zip を `dist/plugins.js` に書き出し、Worker 本体に同梱してデプロイするので、いつもそのゲートウェイの版のものです。静的アセットにしないのは、アセットのアップロードがアップロードごとのトークンを `Authorization` で送るためで、Cloudflare の API トークンを差し込むプロキシ(Claude Code のクラウドのセッションなど)の下ではデプロイが失敗するからです。ほかのプラグイン(自社のサービスのスキルなど)は、管理者が「プラグインの配布」(`/admin/plugins`)で zip を追加すると、同じ画面に並びます(下の「管理画面から接続先を足す」)。
 
-以前の版の `api-gateway`(0.11 まで)は、全部のスキルが 1 つに入っていました。0.12 に上げたら、使う提供元のプラグインを足してください。
+2026-11-05 に、プラグインの名前を `api-gateway*` から `heddleway*` に変えました([docs/adr/0006](docs/adr/0006-name-heddleway.md))。前の名前のプラグインを入れている人は、入れ直してください。
+
+1. 前のプラグイン(`api-gateway` と `api-gateway-<提供元>`)をアンインストールします。並べて入れておくと、同じスキルが 2 つ出ます
+2. 新しいプラグイン(`heddleway` と、使う提供元の `heddleway-<提供元>`)をインストールします。Claude アプリでは「Claude につなぐ」から zip をダウンロードしてアップロードし、Claude Code では `/plugin marketplace remove api-gateway-mcp` のあと、上の手順でマーケットプレイス `novshi-tech/heddleway` を足し直します
+3. ほかのマーケットプレイスの、`api-gateway` に依存するプラグインは、依存を `heddleway` に変えた版に上げます
+
+コネクタ(MCP の URL)は変わらないので、つなぎ直しは要りません。
+
+以前の版の `api-gateway`(0.11 まで)は、全部のスキルが 1 つに入っていました。0.12 からは、使う提供元のプラグインを足します。
 
 スキルのスクリプトが使う共通のファイル(`gwlib.py`、`gw_request.py`、`google_paging.py`)の原本は `lib/plugin/` にあります。Claude Code はプラグインごとに別の場所にインストールし、Cowork はスキルのディレクトリを `<プラグイン>:<スキル>` と名付けるので、スキルからほかのスキルのファイルには届きません。そのため、各スキルの `scripts/` にコピーを置いています。原本を変えたら `npm run plugin:sync` でコピーを更新します(テストがずれを検出します)。
 
@@ -116,7 +124,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 
 ### 2. 設定してデプロイする
 
-デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`deployments/` はこのリポジトリの git の管理外です。設定は、デプロイする人の private リポジトリで管理し、`deployments/` に clone して使うのがおすすめです(下の「設定をリポジトリで管理する」)。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、組織名(`ORGANIZATION_NAME`)、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
+デプロイ先ごとに、設定を `deployments/<名前>.jsonc` に置きます。名前は自由に付けてよく、1 つの clone で複数のデプロイを扱えます。`deployments/` はこのリポジトリの git の管理外です。設定は、デプロイする人の private リポジトリで管理し、`deployments/` に clone して使うのがおすすめです(下の「設定をリポジトリで管理する」)。`wrangler.example.jsonc` をコピーし、`$schema` と `main` のパスの先頭に `../` を付けます。Worker の `name` はデプロイごとに変え(すでに動いているデプロイの `name` は変えません。Durable Object の保管庫が Worker の名前に結びついているので、変えると登録済みの認証情報が見えなくなります。[docs/adr/0006](docs/adr/0006-name-heddleway.md))、別の Cloudflare アカウントなら `account_id` も書きます。`vars` に `PUBLIC_URL`、組織名(`ORGANIZATION_NAME`)、IdP の設定を書きます。Microsoft Graph を使うなら `MICROSOFT_TENANT_ID` も書きます。組み込みにないサービスは `SERVICES` に足します。KV ネームスペースを作って、ID を `kv_namespaces` に設定します。
 
 wrangler は、`npm run deploy` / `npm run secret` / `npm run tail` に名前を付けて呼びます(`tools/wrangler.mjs` が `--config deployments/<名前>.jsonc` を渡します)。リポジトリの直下には `wrangler.jsonc` を置かないので、名前を付けずに `npx wrangler deploy` を打っても、どこにもデプロイされません。
 
@@ -144,7 +152,7 @@ npm run deploy -- acme
 `deployments/` は、このリポジトリの git が見ないディレクトリです。そこに、設定だけを入れた別の private リポジトリを clone します(サブモジュールにはしません)。
 
 ```sh
-git clone git@github.com:<組織>/api-gateway-deployments.git deployments
+git clone git@github.com:<組織>/heddleway-deployments.git deployments
 ```
 
 - 設定ファイルの `main` などの相対パス(`../src/index.ts`)は、`deployments/` の中にあるので、そのまま動きます。`tools/wrangler.mjs` も変わりません。
@@ -170,7 +178,7 @@ Basic 認証のサービス(`auth.type` が `basic`)は、ユーザーが Web �
 git -c http.extraHeader="Authorization: Bearer $GW_TOKEN" clone https://<ゲートウェイ>/api/github-git/<owner>/<repo>.git
 ```
 
-Claude からは、組み込みのプラグイン `api-gateway` の `git` スキルが、トークンを `.git/config` に残さずに git を呼びます。
+Claude からは、組み込みのプラグイン `heddleway` の `git` スキルが、トークンを `.git/config` に残さずに git を呼びます。
 
 OAuth 2.0 のサービス(`auth.type` が `oauth2`)は、Web 画面から認可コード + PKCE で接続します。連携先にアプリを登録し、コールバック URL に `https://<ゲートウェイ>/connect/callback` を指定します。クライアント ID とシークレットは、クライアントの名前を大文字にした名前で登録します(ハイフンは `_` に)。組み込みのサービスのクライアントは `FREEE`・`GOOGLE`・`MICROSOFT` の 3 つで、Google の 6 つのサービスは 1 組を共有します。`SERVICES` に足したサービスは、`auth.client` に書いた名前か、なければサービス名がクライアントの名前です。
 

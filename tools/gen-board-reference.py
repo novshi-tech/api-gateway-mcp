@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generates the Board skill's endpoint reference from Board's OpenAPI spec.
 
-Usage: tools/gen-board-reference.py > plugins/api-gateway/skills/board/references/endpoints.md
+Usage: tools/gen-board-reference.py > plugins/heddleway/skills/board/references/endpoints.md
 """
 import json
 import re
@@ -41,7 +41,7 @@ def merge_properties(schema, out, required):
 
 
 def main():
-    request = urllib.request.Request(SPEC_URL, headers={"User-Agent": "api-gateway-mcp-tools"})
+    request = urllib.request.Request(SPEC_URL, headers={"User-Agent": "heddleway-tools"})
     spec = json.load(urllib.request.urlopen(request))
     components = spec.get("components", {}).get("parameters", {})
     print(f"# Board API エンドポイント一覧(v{spec['info']['version']})")

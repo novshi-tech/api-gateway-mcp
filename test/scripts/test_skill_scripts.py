@@ -23,7 +23,7 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Every skill of every plugin, by skill name.
 SKILLS = {os.path.basename(p): p for p in sorted(glob.glob(os.path.join(ROOT, "plugins", "*", "skills", "*")))}
-GW_REQUEST = os.path.join(SKILLS["api-gateway"], "scripts", "gw_request.py")
+GW_REQUEST = os.path.join(SKILLS["heddleway"], "scripts", "gw_request.py")
 GRAPH_ALL = os.path.join(SKILLS["microsoft-graph"], "scripts", "graph_all.py")
 FREEE_ALL = os.path.join(SKILLS["freee"], "scripts", "freee_all.py")
 GMAIL_ALL = os.path.join(SKILLS["gmail"], "scripts", "gmail_all.py")
@@ -207,7 +207,7 @@ class SkillScriptsTest(unittest.TestCase):
         self.assertEqual(len(json.loads(out.stdout)), 2)
         req = FakeGateway.requests[0]
         self.assertEqual(req["headers"]["Authorization"], "Bearer tok")
-        self.assertTrue(req["headers"]["User-Agent"].startswith("api-gateway-client"))
+        self.assertTrue(req["headers"]["User-Agent"].startswith("heddleway-client"))
         self.assertIn("name_cont=%E4%BF%9D%E5%AE%88", req["path"])
         self.assertIn("X-Total-Count: 250", out.stderr.decode())
 
@@ -273,7 +273,7 @@ class SkillScriptsTest(unittest.TestCase):
         for req in FakeGateway.requests:
             self.assertTrue(req["path"].startswith("/api/graph/v1.0/me/messages?"))
             self.assertEqual(req["headers"]["Authorization"], "Bearer tok")
-            self.assertTrue(req["headers"]["User-Agent"].startswith("api-gateway-client"))
+            self.assertTrue(req["headers"]["User-Agent"].startswith("heddleway-client"))
         self.assertIn("skiptoken=100", FakeGateway.requests[1]["path"])
 
     def test_graph_all_csv_with_nested_field(self):
@@ -370,7 +370,7 @@ class SkillScriptsTest(unittest.TestCase):
                 self.assertEqual([q.get("pageToken") for q in queries], [None, "100", "200"])
                 self.assertTrue(all(q["q"] == "請求書" and "nextPageToken" in q["fields"] for q in queries))
                 self.assertTrue(all(r["headers"]["Authorization"] == "Bearer tok" for r in FakeGateway.requests))
-                self.assertTrue(all(r["headers"]["User-Agent"].startswith("api-gateway-client") for r in FakeGateway.requests))
+                self.assertTrue(all(r["headers"]["User-Agent"].startswith("heddleway-client") for r in FakeGateway.requests))
 
     def test_google_lists_continue_after_empty_page(self):
         for script, path in ((DRIVE_ALL, "/drive/v3/files"), (CALENDAR_ALL, "/calendar/v3/calendars/primary/events")):
@@ -492,7 +492,7 @@ class SkillScriptsTest(unittest.TestCase):
         ]
         for skill, script, args in scripts:
             with self.subTest(script=script):
-                alone = os.path.join(self.tmp.name, skill, f"api-gateway-x:{skill}")
+                alone = os.path.join(self.tmp.name, skill, f"heddleway-x:{skill}")
                 shutil.copytree(SKILLS[skill], alone, ignore=shutil.ignore_patterns("__pycache__"))
                 self.run_script(os.path.join(alone, "scripts", script), *args)
                 self.run_script(os.path.join(alone, "scripts", "gw_request.py"), "GET", "board", "/v1/projects")
@@ -546,7 +546,7 @@ class SkillDocsTest(unittest.TestCase):
                 manifest = json.load(f)
                 self.assertEqual(manifest["name"], name)
                 self.assertEqual(entries[name]["version"], manifest["version"])
-                self.assertEqual(entries[name]["source"], {"source": "git-subdir", "url": "novshi-tech/api-gateway-mcp", "path": f"plugins/{name}"})
+                self.assertEqual(entries[name]["source"], {"source": "git-subdir", "url": "novshi-tech/heddleway", "path": f"plugins/{name}"})
 
 
 if __name__ == "__main__":

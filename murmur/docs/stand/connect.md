@@ -1,6 +1,6 @@
 # スタンドからの接続手順（Cowork / Claude Code）
 
-スタンドから見える MCP は API ゲートウェイの 1 つだけ。Murmur はゲートウェイの Worker の機能として動き（`docs/adr/0023`、api-gateway-mcp の `docs/adr/0005`）、
+スタンドから見える MCP は API ゲートウェイの 1 つだけ。Murmur はゲートウェイの Worker の機能として動き（`docs/adr/0023`、heddleway の `docs/adr/0005`）、
 スタンドはほかのサービスと同じく `issue_token`（`identity:murmur`）で発行したトークンで `<ゲートウェイ>/api/murmur/...` を呼ぶ。
 
 ## ゲートウェイで Murmur を有効にする（デプロイする人）
@@ -31,27 +31,27 @@ npm run deploy -- <名前>
 DB を空にしてから `fixtures/<scenario>/seed.json` を入れるので、シナリオは 1 つずつ回す。受信は `POST <ゲートウェイ>/murmur/webhooks/dummy`（本文は InboundSignal の配列、`x-murmur-signature` は
 MURMUR_WEBHOOK_SECRET の HMAC-SHA256 hex）で流し込む（`npm run send`）。
 
-スタンド用スキルは、ゲートウェイに同梱のプラグイン `api-gateway-murmur` に入っている。api-gateway プラグインと一緒にインストールする。
+スタンド用スキルは、ゲートウェイに同梱のプラグイン `heddleway-murmur` に入っている。heddleway プラグインと一緒にインストールする。
 
 ## Cowork
 
 1. Cowork の設定で API ゲートウェイの MCP コネクタを有効にする（既存のもの。追加の MCP は不要）
-2. プラグイン `api-gateway` と `api-gateway-murmur` をインストールし（ゲートウェイの「Claude につなぐ」からダウンロードできる）、スキル `murmur` を有効にする
+2. プラグイン `heddleway` と `heddleway-murmur` をインストールし（ゲートウェイの「Claude につなぐ」からダウンロードできる）、スキル `murmur` を有効にする
 3. 「自分の番のものを見せて」で `GET /threads?filter=my_turn`（list_threads）が呼ばれることを確認する
 
 ## Claude Code
 
 1. `claude mcp add` でゲートウェイの MCP を追加する（既に使っていればそのまま）
-2. マーケットプレイス `novshi-tech/api-gateway-mcp` を追加し、`api-gateway` と `api-gateway-murmur` のプラグインをインストールする
+2. マーケットプレイス `novshi-tech/heddleway` を追加し、`heddleway` と `heddleway-murmur` のプラグインをインストールする
 3. 同じく list_threads で確認する
 
-## 複数の組織を使い分けるとき（`docs/adr/0018`、api-gateway-mcp の `docs/adr/0004`）
+## 複数の組織を使い分けるとき（`docs/adr/0018`、heddleway の `docs/adr/0004`）
 
 Murmur とゲートウェイは「1 つの接続 = 1 つの組織（IdP が 1 つ）」が前提。1 人のユーザが複数の組織にまたがる対応は本体にもゲートウェイにも入れない（適切なセキュリティ境界を引けないため）。
 別の組織の Murmur を使うときは、その組織のゲートウェイを**別のコネクタとして並べてつなぐ**。切り替えは要らない。
 
 - Cowork / Claude Code とも、組織ごとのゲートウェイの `<ゲートウェイ>/mcp` を別々のコネクタとして追加する。コネクタには組織が分かる名前を付ける。ゲートウェイの設定 `ORGANIZATION_NAME` が、コネクタの説明と `list_credentials` の `gateway.organization` に出る
-- スキルは 1 回入れれば全部のコネクタで使う。`api-gateway` スキル（0.14.0 から）の「コネクタの選び方」で作業する組織のコネクタを選び、Murmur の記録もその組織のコネクタで行う
+- スキルは 1 回入れれば全部のコネクタで使う。`heddleway` スキル（0.14.0 から）の「コネクタの選び方」で作業する組織のコネクタを選び、Murmur の記録もその組織のコネクタで行う
 - どの Claude にどのゲートウェイをつなぐかは使う側が決める。組織が契約している Claude（Team / Enterprise）には、その組織のゲートウェイだけをつなぐ
 
 ## H7（スタンド主導の完走）の回し方

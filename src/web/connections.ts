@@ -35,7 +35,7 @@ function addable(directory: Directory): [string, ServiceConfig][] {
 }
 
 export function masthead(env: Env, user: Session): Html {
-  return html`<header class="masthead"><a class="home" href="/">API ゲートウェイ · ${organizationName(env)}</a>
+  return html`<header class="masthead"><a class="home" href="/">Heddleway · ${organizationName(env)}</a>
 <div class="who"><a href="/setup">Claude につなぐ</a>${isAdmin(env, user) && html`<a href="/admin/services">接続先の管理</a><a href="/admin/plugins">プラグインの配布</a>`}<span>${user.name}</span><form method="post" action="/logout"><button class="quiet">サインアウト</button></form></div></header>`;
 }
 
@@ -94,7 +94,7 @@ export async function home(request: Request, env: Env & { OAUTH_PROVIDER: OAuthH
   const grants = await listGrants(env, user.sub);
   const featureSection = await featureRows(env, user.sub);
   return page(
-    `API ゲートウェイ · ${organizationName(env)}`,
+    `Heddleway · ${organizationName(env)}`,
     html`${masthead(env, user)}
 ${notice(new URL(request.url), credentials, services)}
 ${grants.length === 0 && html`<div class="card start"><p><strong>はじめに、Claude にこのゲートウェイをつなぎます。</strong>コネクタの URL と、スキル(プラグイン)のダウンロードは「Claude につなぐ」にあります。</p><a class="button" href="/setup">Claude につなぐ</a></div>`}

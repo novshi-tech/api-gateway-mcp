@@ -67,7 +67,7 @@ ${copyField("connector-name", "コネクタの名前(おすすめ)", `${organiza
 </div>
 
 <h2>2. スキル(プラグイン)を入れる</h2>
-<p>Claude アプリ(Cowork など)では、zip をダウンロードして、Customize &gt; Plugins の「Upload plugin」で追加します。まず <code>api-gateway</code> を入れ、使うサービスのプラグインを足します。新しい版が出たら、ダウンロードし直して同じようにアップロードします。Team / Enterprise では、Owner が組織の設定でまとめて配ることもできます。</p>
+<p>Claude アプリ(Cowork など)では、zip をダウンロードして、Customize &gt; Plugins の「Upload plugin」で追加します。まず <code>heddleway</code> を入れ、使うサービスのプラグインを足します。新しい版が出たら、ダウンロードし直して同じようにアップロードします。前の名前のプラグイン(<code>api-gateway</code>、<code>api-gateway-*</code>)を入れていたら、先にアンインストールします。Team / Enterprise では、Owner が組織の設定でまとめて配ることもできます。</p>
 ${plugins.length > 0
   ? html`<ul class="list">${plugins.map(pluginRow)}</ul>`
   : html`<p class="empty">このゲートウェイで配っているプラグインはありません。管理者に連絡してください。</p>`}

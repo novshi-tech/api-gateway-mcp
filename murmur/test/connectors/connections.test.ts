@@ -11,7 +11,7 @@ import { FakeTeams } from '../helpers/fake-teams';
 import { seed } from '../helpers/world';
 
 // 個人の箱をつなぐ（0024 の決定 3）。ゲートウェイは口（ports/gateway.ts）の偽物。
-// 本物はゲートウェイの中核（api-gateway-mcp の src/feature-port.ts）で、そちらのテストは test/murmur-feature.test.ts。
+// 本物はゲートウェイの中核（heddleway の src/feature-port.ts）で、そちらのテストは test/murmur-feature.test.ts。
 
 const GATEWAY = 'https://gateway.test';
 
