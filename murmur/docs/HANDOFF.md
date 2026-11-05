@@ -34,7 +34,7 @@
     5. 確かめる: スタンドから `GET /api/murmur/me`・`GET /api/murmur/threads` が 200
     6. 直樹がスタンドから Outlook と Jira をつなぎ直す（`POST /connections/outlook`・`/connections/jira`）→ ゲートウェイの「Murmur を有効にしますか?」→ 有効にする。データソースは setup に戻り、Graph のサブスクリプションは `https://gateway.urban-b.com/murmur/webhooks/graph` で作り直され、Jira の Webhook も登録し直される。古いサブスクリプションは見回りが消す
     7. 別の Worker の Murmur を消す（`npx wrangler delete murmur`）。そのあと murmur-deployments を archive、コードの単独の Worker（`murmur/src/index.ts`・`connectors/gateway/`・JWKS の検証）を消す
-  - 同意を有効にするまで（6 の前）は、既存のデータソースは見回りで broken（「Murmur がゲートウェイで有効になっていない」）になる。取り込みはその間止まるが、つなぎ直すと setup から戻る（Outlook は過去の分を取らないので、止まっていた間のメールは取りこぼす。気になるなら 4〜6 を続けてやる）
+  - 同意を有効にするまで（6 の前）は、既存のデータソースは見回りで broken（「Murmur がゲートウェイで有効になっていない」）になる。取り込みはその間止まるが、つなぎ直すと setup から戻る。broken からの戻りは delta の位置（Outlook）と取り込みの位置（Jira）を引き継ぐので、止まっていた間の分も拾う（delta の位置が古すぎて 410 になれば取り直し）。間を空けないよう 4〜6 は続けてやる
 - プラグイン名 `api-gateway-*` は変えない（入れ直しを避ける）
 
 **2026-11-04: Jira のコネクタの設計を議論し、`docs/adr/0033` を書いて実装した。** 要点:
