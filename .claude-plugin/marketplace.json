@@ -37,7 +37,7 @@
         "url": "novshi-tech/api-gateway-mcp",
         "path": "plugins/api-gateway-microsoft"
       },
-      "version": "0.12.1",
+      "version": "0.12.2",
       "description": "API ゲートウェイ経由で Microsoft Graph(Outlook メール・OneDrive / SharePoint・Teams・予定表)を操作するスキル。api-gateway プラグインと一緒に使う。",
       "dependencies": [
         "api-gateway"

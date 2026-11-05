@@ -7,7 +7,7 @@ import { ALREADY_CONNECTED, vaultFor, type CredentialInfo } from "../vault";
 import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import { featureRows } from "./features";
 import { grantRows, listGrants } from "./grants";
-import { html, type Html } from "./html";
+import { Html, html } from "./html";
 import { page } from "./layout";
 import { cookie, isAdmin, LOGIN_TTL_SECONDS, readCookie, redirect, sameOrigin, session, type Session } from "./session";
 
@@ -59,12 +59,16 @@ function notice(url: URL, credentials: CredentialInfo[], services: Services): Ht
 function connectionRow(c: CredentialInfo, services: Services, duplicated = false): Html {
   // An OAuth connection is reconnected in place; one with an API key is deleted and added again.
   const oauth = Object.hasOwn(services, c.service) && services[c.service].auth.type === "oauth2";
-  const status =
-    c.needsReconnect &&
-    (oauth
-      ? html`<span class="badge broken">再接続が必要</span>
-<form method="post" action="/connect"><input type="hidden" name="service" value="${c.service}"><input type="hidden" name="credential" value="${c.id}"><button>つなぎ直す</button></form>`
-      : html`<span class="badge broken">使えなくなりました。削除して追加し直してください</span>`);
+  // An OAuth connection can always be reconnected in place (same credential ID), e.g. after the
+  // gateway asks for more permissions: deleting and adding it again would change the ID that
+  // other apps (Murmur's data sources) hold.
+  const reconnect = (label: string, quiet: boolean) =>
+    html`<form method="post" action="/connect"><input type="hidden" name="service" value="${c.service}"><input type="hidden" name="credential" value="${c.id}"><button${quiet ? new Html(' class="quiet"') : ''}>${label}</button></form>`;
+  const status = c.needsReconnect
+    ? oauth
+      ? html`<span class="badge broken">再接続が必要</span>${reconnect("つなぎ直す", false)}`
+      : html`<span class="badge broken">使えなくなりました。削除して追加し直してください</span>`
+    : oauth && reconnect("つなぎ直す", true);
   const extra = duplicated && html`<span class="badge broken">1 つのサービスにつなげるのは 1 つだけになりました。使わないほうを削除してください</span>`;
   return html`<li id="c-${c.id}">
 <div class="row-main"><p class="row-title">${displayName(services, c.service)}</p><p class="row-sub">${c.label !== displayName(services, c.service) && html`${c.label} · `}${addedOn.format(c.createdAt)}に追加</p></div>
