@@ -42,10 +42,10 @@ export interface CommState {
   activeSinceDismissed: boolean;
   /** 担当する操作（ThreadClaimed）の担当。手放せば null。状態を持つソースでは使わない（0038 の決定 1） */
   ownerUserId: string | null;
-  /** 返事期待（記録した送信だけが持つ）。その送信の宛先の名指しが全部外れれば消える（0038 の決定 6） */
+  /** 返事期待（記録した送信だけが持つ）。続いているかは、その送信の宛先の名指しからクエリ層が決める（turn.ts の replyStateOf。0038） */
   replyExpectedBy: string | null;
   replyExpectedSignalId: string | null;
-  /** 返事期待の期限を過ぎた（ReplyOverdue）。返事期待が消えれば解消する */
+  /** 返事期待の期限を過ぎた（ReplyOverdue がいまの返事期待を指している）。返事期待が続いているかはクエリ層が決める */
   overdue: boolean;
   /** ソースの側で完了している（写しの closed）。片付けと同じく、どの見え方にも数えない */
   closedAtSource: boolean;
@@ -93,6 +93,9 @@ export interface ThreadLogEntry {
   addresses?: AddressRef[];
   list?: boolean;
   untilSignalId?: string;
+  /** acknowledged: 外した位置（外したときのシグナルの時刻と seq。あとでシグナルを移し替えても位置は変わらない） */
+  untilAt?: string;
+  untilSeq?: number;
 }
 
 /** 写しのうち、スレッドの他の項目に入らないもの（0031 の 6） */

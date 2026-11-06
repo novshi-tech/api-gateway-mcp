@@ -2,7 +2,8 @@ import { comparePos, isPending, sameAddress } from './comm';
 import type { Directory } from './directory';
 import type { DataSource } from './entities';
 import type { AddressRef } from './events';
-import type { LogPos, Projections, Thread } from './projections';
+import type { LogPos, Naming, Projections, Thread } from './projections';
+import { isOurs } from './sides';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // クエリ層の「誰の番か」（0038）と結び（0014 の 3）。投影のスナップショットとマスタから計算する純関数で、
@@ -100,32 +101,54 @@ export interface Attention {
   list: { userIds: string[]; signalId: string; at: string } | null;
 }
 
+/** スレッドのシグナルのうち、送り主を除いた宛先と位置（ログの順） */
+function signalsOf(t: Thread): (LogPos & { from: AddressRef; to: AddressRef[] })[] {
+  return t.log
+    .filter((e) => e.kind === 'signal' && e.from !== undefined)
+    .map((e) => ({ signalId: e.signalId!, at: e.at, seq: e.seq, from: e.from!, to: (e.to ?? []).filter((r) => !sameAddress(r, e.from!)) }));
+}
+
+/**
+ * リスト宛てのシグナル（0038 の決定 2）。シグナルごとに持つ（同じ窓口への名指しが後の 1 通で上書きされない）:
+ * - 窓口のアドレス（データソースの selfAddresses）が宛先にある
+ * - グループのチャネルで宛先がない
+ * - 個人リストで、こちらでない送り主から、本人のアドレスが宛先にない受信（エイリアス・BCC・配布リスト宛て）
+ */
+export function listSignalsOf(dir: Directory, t: Thread): (LogPos & { from: AddressRef })[] {
+  const ds = dir.dataSource(t.dataSourceId);
+  if (ds?.kind !== 'service') return [];
+  const personal = listKindOf(dir, t.dataSourceId) === 'personal';
+  return signalsOf(t)
+    .filter((x) => {
+      if (x.to.some((r) => isListAddress(ds, r))) return true;
+      if (x.to.length === 0) return ds.group;
+      return personal && !isOurs(dir, ds, x.from, x.at) && !x.to.some((r) => isOurs(dir, ds, r, x.at));
+    })
+    .map(({ signalId, at, seq, from }) => ({ signalId, at, seq, from }));
+}
+
+/** リスト宛ての名指しが、その読者に残っているか（外した位置より後の、本人以外が送ったリスト宛てのシグナル） */
+export function pendingListSignalsFor(dir: Directory, t: Thread, userId: string): (LogPos & { from: AddressRef })[] {
+  const acked = t.attention.listAcks[userId];
+  return listSignalsOf(dir, t).filter((x) => (!acked || comparePos(x, acked) > 0) && readerOfAddress(dir, t.dataSourceId, x.from, x.at) !== userId);
+}
+
 export function attentionOf(dir: Directory, t: Thread): Attention {
   const ds = dir.dataSource(t.dataSourceId);
   const named: AttentionItem[] = [];
-  /** リスト宛てのシグナル（窓口のアドレスの名指しと、グループのチャネルの宛先のない投稿） */
-  const listSignals: (LogPos & { from: AddressRef })[] = [];
   for (const n of t.attention.named) {
-    if (isListAddress(ds, n.address)) {
-      listSignals.push({ ...n.last, from: n.from });
-      continue;
-    }
-    if (!isPending(n)) continue;
+    if (isListAddress(ds, n.address) || !isPending(n)) continue;
     const userId = readerOfAddress(dir, t.dataSourceId, n.address, n.last.at);
     const contactId = userId ? null : dir.contactIdOfAddress(n.address, n.last.at);
     named.push({ address: n.address, userId, contactId: contactId && dir.contact(contactId) ? contactId : null, signalId: n.last.signalId, at: n.last.at });
   }
-  if (ds?.kind === 'service' && ds.group) listSignals.push(...t.attention.broadcasts);
-
   let list: Attention['list'] = null;
   const lst = dir.listOfDataSource(t.dataSourceId);
-  if (listSignals.length > 0 && lst) {
+  if (lst) {
     const users: string[] = [];
     let latest: LogPos | null = null;
     for (const u of dir.readersOfList(lst.id)) {
-      const acked = t.attention.listAcks[u];
-      // 送り主本人の投稿は、その人には名指しにならない
-      const pending = listSignals.filter((x) => (!acked || comparePos(x, acked) > 0) && readerOfAddress(dir, t.dataSourceId, x.from, x.at) !== u);
+      const pending = pendingListSignalsFor(dir, t, u);
       if (pending.length === 0) continue;
       users.push(u);
       for (const x of pending) if (!latest || comparePos(x, latest) > 0) latest = x;
@@ -133,6 +156,43 @@ export function attentionOf(dir: Directory, t: Thread): Attention {
     if (latest) list = { userIds: users.sort(), signalId: latest.signalId, at: latest.at };
   }
   return { named, list };
+}
+
+/**
+ * 待っている相手（相手待ち）: 読者でないアドレスへの名指しのうち、こちらから送ったシグナルでの名指しが外れていないもの。
+ * 受信の CC に入っていただけの相手は、こちらが待っている相手ではない
+ */
+export function awaitingNamesOf(dir: Directory, t: Thread): Naming[] {
+  const ds = dir.dataSource(t.dataSourceId);
+  if (ds?.kind !== 'service') return [];
+  const sent = signalsOf(t).filter((x) => isOurs(dir, ds, x.from, x.at));
+  return t.attention.named.filter(
+    (n) =>
+      !isListAddress(ds, n.address) &&
+      readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) === null &&
+      sent.some((x) => x.to.some((r) => sameAddress(r, n.address)) && (!n.ackedThrough || comparePos(x, n.ackedThrough) > 0)),
+  );
+}
+
+/**
+ * 返事期待が続いているか（0038 の決定 6）。記録した送信の宛先のうち、読者でない相手（いなければ読者）の名指しが、
+ * その送信の分まで 1 つでも外れていなければ続く。社内の読者を CC に入れても、相手の名指しを外せば消える
+ */
+export function replyStateOf(dir: Directory, t: Thread): { replyExpectedBy: string | null; overdue: boolean } {
+  if (!t.replyExpectedSignalId || !t.replyExpectedBy) return { replyExpectedBy: null, overdue: false };
+  const ds = dir.dataSource(t.dataSourceId);
+  const sent = signalsOf(t).find((x) => x.signalId === t.replyExpectedSignalId);
+  if (!sent) return { replyExpectedBy: null, overdue: false };
+  const to = sent.to.filter((r) => !isListAddress(ds, r));
+  const outsiders = to.filter((r) => readerOfAddress(dir, t.dataSourceId, r, sent.at) === null);
+  const watch = outsiders.length > 0 ? outsiders : to;
+  const waiting =
+    watch.length === 0 ||
+    watch.some((r) => {
+      const n = t.attention.named.find((x) => sameAddress(x.address, r));
+      return !n?.ackedThrough || comparePos(n.ackedThrough, sent) < 0;
+    });
+  return waiting ? { replyExpectedBy: t.replyExpectedBy, overdue: t.overdue } : { replyExpectedBy: null, overdue: false };
 }
 
 /** どの見え方にも数えるか（片付けていない・ソースで完了していない） */
@@ -162,16 +222,16 @@ export function isTriage(dir: Directory, t: Thread): boolean {
   return isOpen(t) && listKindOf(dir, t.dataSourceId) === 'shared' && assigneeOf(dir, t) === null;
 }
 
-/** 相手待ち: 開いていて、読者でないアドレスへの名指しが残っている */
+/** 相手待ち: 開いていて、こちらから送ったシグナルで名指しした読者でない相手の名指しが残っている */
 export function isAwaiting(dir: Directory, t: Thread): boolean {
-  return isOpen(t) && attentionOf(dir, t).named.some((n) => n.userId === null);
+  return isOpen(t) && awaitingNamesOf(dir, t).length > 0;
 }
 
 /**
  * リンク先のスレッドから導出したボール（主に個人のメモのスレッドから見る。どのスレッドからでも同じ計算）。
  * 見えるリンク先だけを見る。片付けたリンク先は数えない
  * - my_turn: どれかが Viewer の番
- * - waiting: 全部が相手待ち（読者でないアドレスへの名指しが残っている）
+ * - waiting: 全部が相手待ち
  * - none: それ以外
  * 見えるリンクがなければ null（見えないリンクは、あることも出さない。0033 の 3）
  */

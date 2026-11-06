@@ -93,15 +93,24 @@ describe('deriveComm（H2・H8・0038）', () => {
     expect(deriveComm([signal(9, CAROL, [US]), dismissed(10), reopened(11)])).toMatchObject({ dismissed: false, activeSinceDismissed: false });
   });
 
-  it('H4 返事期待は記録した送信から。その送信の宛先の名指しが全部外れれば消え、期限超過も解消する', () => {
+  it('H4 返事期待は記録した送信から。期限超過は ReplyOverdue がその送信を指しているときだけ。続いているかはクエリ層（turn.test.ts）', () => {
     const sent = signal(9, US, [CAROL, DAVE], at(12));
     const late = overdue(13, sent.signalId!);
     expect(deriveComm([sent, late])).toMatchObject({ replyExpectedBy: at(12), replyExpectedSignalId: sent.signalId, overdue: true });
-    // 返事が来ただけでは消えない（名指しは本人か読者の操作で外れる）
-    expect(deriveComm([sent, late, signal(14, CAROL, [US])])).toMatchObject({ replyExpectedBy: at(12), overdue: true });
-    // 片方だけ外しても続く
-    expect(deriveComm([sent, late, ack(14, sent.signalId!, [CAROL])])).toMatchObject({ replyExpectedBy: at(12), overdue: true });
-    expect(deriveComm([sent, late, ack(14, sent.signalId!, [CAROL, DAVE])])).toMatchObject({ replyExpectedBy: null, replyExpectedSignalId: null, overdue: false });
+    // 新しい返事期待の送信で、前の超過は指さなくなる
+    const next = signal(14, US, [CAROL], at(20));
+    expect(deriveComm([sent, late, next])).toMatchObject({ replyExpectedBy: at(20), replyExpectedSignalId: next.signalId, overdue: false });
+    // 片付けたら超過は数えない
+    expect(deriveComm([sent, late, dismissed(14)]).overdue).toBe(false);
+  });
+
+  it('H8 外した位置は外したときのシグナルの位置で固定する。あとで移し替えても、手前の名指しは外れたまま（0038）', () => {
+    const a = signal(9, CAROL, [US]);
+    const b = signal(10, CAROL, [US]);
+    const acked: ThreadLogEntry = { ...ack(11, b.signalId!, [US]), untilAt: b.at, untilSeq: b.seq };
+    expect(pending(deriveComm([a, b, acked]))).toEqual([]);
+    // b を別のスレッドへ移した（ログから消えた）あとも、a までの名指しは外れたまま
+    expect(pending(deriveComm([a, acked]))).toEqual([]);
   });
 
   it('H2 メモ・リンク・属性は名指しを作らない', () => {

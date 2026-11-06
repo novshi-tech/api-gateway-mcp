@@ -6,6 +6,7 @@ import {
   isAwaiting,
   isTriage,
   lastActivityAt,
+  replyStateOf,
   sortLog,
   type AttributeValue,
   type Directory,
@@ -90,12 +91,13 @@ function attentionLabel(dir: Directory, p: Projections, t: Thread): string {
   return out.join(', ') || 'なし';
 }
 
-function flags(t: Thread): string {
+function flags(dir: Directory, t: Thread): string {
   const out: string[] = [];
+  const reply = replyStateOf(dir, t);
   if (t.dismissed) out.push(`片付け済み（${esc(t.dismissReason)}）`);
   if (t.closedAtSource) out.push('ソースで完了');
-  if (t.overdue) out.push('<b>期限超過</b>');
-  else if (t.replyExpectedBy) out.push(`返事期待 ${esc(t.replyExpectedBy)}`);
+  if (reply.overdue) out.push('<b>期限超過</b>');
+  else if (reply.replyExpectedBy) out.push(`返事期待 ${esc(reply.replyExpectedBy)}`);
   if (t.activeSinceDismissed) out.push('<b>片付けたあとに動きあり</b>');
   return out.join(' · ');
 }
@@ -176,7 +178,7 @@ export function renderAdminIndex(dir: Directory, p: Projections, href: Href): st
       return `<tr><td><a href="${esc(href(`/admin/lists/${l.id}`))}">${esc(ds?.name ?? l.dataSourceId)}</a><br><small>${esc(l.id)}</small></td>
 <td>${ds?.kind === 'notes' ? '個人のメモ' : esc(ds?.channel ?? '')}</td>
 <td>${dir.readersOfList(l.id).map((u) => esc(names(dir, p).user(u))).join(', ')}</td>
-<td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => t.overdue).length}</td></tr>`;
+<td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => replyStateOf(dir, t).overdue).length}</td></tr>`;
     })
     .join('\n');
   return page(
@@ -204,7 +206,7 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
 <td>担当: ${assigneeLabel(dir, p, t)}<br><small>名指し: ${attentionLabel(dir, p, t)}</small></td>
 <td>${t.links.map((l) => `<a href="${esc(href(`/admin/threads/${l.threadId}`))}">${esc(n.thread(l.threadId))}</a> <small>[${esc(l.route)}] ${esc(n.ds(p.threads[l.threadId]?.dataSourceId ?? ''))}</small>`).join('<br>')}</td>
 <td>${attrPairs(dir, t).map(([k, v]) => `${esc(k)}=${esc(v)}`).join('<br>')}</td>
-<td>${flags(t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
+<td>${flags(dir, t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
     )
     .join('\n');
   return page(
@@ -247,7 +249,7 @@ export function renderAdminThread(dir: Directory, p: Projections, threadId: stri
     `${t.title} — Murmur 管理`,
     `<nav><a href="${esc(href('/admin'))}">リスト一覧</a>${list ? ` › <a href="${esc(href(`/admin/lists/${list.id}`))}">${esc(n.ds(t.dataSourceId))}</a>` : ''}</nav>
 <h1>${esc(t.title)} <small>${esc(t.id)}</small></h1>
-<p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${isAwaiting(dir, t) ? ' · 相手待ち' : ''}${flags(t) ? ` · ${flags(t)}` : ''}</p>
+<p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${isAwaiting(dir, t) ? ' · 相手待ち' : ''}${flags(dir, t) ? ` · ${flags(dir, t)}` : ''}</p>
 <h3>結び</h3>${links ? `<ul>${links}</ul>` : '<p class="muted">なし</p>'}
 <h3>結び候補</h3>${candidates ? `<ul>${candidates}</ul>` : '<p class="muted">なし</p>'}
 ${attrs ? `<h3>属性</h3><ul>${attrs}</ul>` : ''}
@@ -266,7 +268,7 @@ export function renderTimeline(dir: Directory, p: Projections): string {
     .map(
       (t) => `<section class="thread${t.dismissed ? ' dismissed' : ''}">
   <h2>${esc(t.title)} <small>${esc(t.id)} · ${esc(n.ds(t.dataSourceId))}${t.dismissed ? ` · 片付け済み（${esc(t.dismissReason)}）` : ''}</small></h2>
-  <p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${t.replyExpectedBy ? ` · 返事期待 ${esc(t.replyExpectedBy)}` : ''}${t.overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(n.thread(l.threadId))).join(', ')}` : ''}</p>
+  <p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${replyStateOf(dir, t).replyExpectedBy ? ` · 返事期待 ${esc(replyStateOf(dir, t).replyExpectedBy)}` : ''}${replyStateOf(dir, t).overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(n.thread(l.threadId))).join(', ')}` : ''}</p>
   <ol>${t.log.map((l) => logEntry(dir, p, t, l)).join('')}</ol>
 </section>`,
     )

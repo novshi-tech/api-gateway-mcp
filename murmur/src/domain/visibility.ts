@@ -14,6 +14,7 @@ import {
   linkCandidates,
   linkedActiveSinceDismissed,
   myTurnOf,
+  replyStateOf,
   type Assignee,
   type Attention,
   type DerivedBall,
@@ -99,8 +100,7 @@ export function summarizeThread(dir: Directory, p: Projections, t: Thread): Thre
     dismissed: t.dismissed,
     dismissReason: t.dismissReason,
     activeSinceDismissed: t.activeSinceDismissed,
-    replyExpectedBy: t.replyExpectedBy,
-    overdue: t.overdue,
+    ...replyStateOf(dir, t),
     closedAtSource: t.closedAtSource,
     links: t.links,
     attributes: t.attributes,
@@ -148,7 +148,7 @@ export function listThreads(
     if (filter === 'open' && (t.dismissed || t.closedAtSource)) continue;
     if (filter === 'triage' && !isTriage(dir, t)) continue;
     if (filter === 'awaiting' && !isAwaiting(dir, t)) continue;
-    if (filter === 'overdue' && !t.overdue) continue;
+    if (filter === 'overdue' && !replyStateOf(dir, t).overdue) continue;
     if (filter === 'my_turn' && !isMyTurn(dir, viewer, t)) continue;
     if (filter === 'mine') {
       const ds = dir.dataSource(t.dataSourceId);

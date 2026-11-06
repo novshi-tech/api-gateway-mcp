@@ -5,7 +5,7 @@ import { DomainError } from './errors';
 import { AttributeValue, draft, type AddressRef, type Author, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
 import { addressKey, comparePos, isPending, sameAddress } from './comm';
-import { isListAddress, isStatefulSource, linkCandidates, listKindOf, readerOfAddress } from './turn';
+import { isListAddress, isStatefulSource, linkCandidates, listKindOf, pendingListSignalsFor, readerOfAddress } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // スタンド（＝ユーザー）が呼ぶ操作の判断部分。状態とコマンドを受けてイベントを返すだけの純関数。
@@ -213,10 +213,10 @@ export function acknowledgeAttention(
   const pendingNamed = t.attention.named.filter((n) => isPending(n) && upTo(n.last));
   if (input.addresses === undefined) {
     for (const n of pendingNamed) {
-      if (isListAddress(ds, n.address)) list = true;
-      else if (readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) === viewer.userId) addresses.push(n.address);
+      if (!isListAddress(ds, n.address) && readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) === viewer.userId) addresses.push(n.address);
     }
-    if (ds?.kind === 'service' && ds.group && t.attention.broadcasts.some((b) => upTo(b))) list = true;
+    // リスト宛て: 外した位置より後の、自分以外が送ったリスト宛てのシグナルがあるときだけ
+    list = pendingListSignalsFor(dir, t, viewer.userId).some((x) => upTo(x));
   } else {
     for (const r of input.addresses) {
       if (isListAddress(ds, r)) {

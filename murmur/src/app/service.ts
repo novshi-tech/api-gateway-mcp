@@ -245,7 +245,7 @@ export class MurmurService {
   /** 期限の見回り。返事期待の期限を過ぎたスレッドに ReplyOverdue を出す（冪等） */
   async checkOverdue(): Promise<number> {
     return this.run((p, ctx) => {
-      const events = planOverdue(p, ctx.now);
+      const events = planOverdue(ctx.dir, p, ctx.now);
       return { events, result: events.length };
     });
   }
@@ -410,7 +410,7 @@ export class MurmurService {
   async acknowledgeMany(userId: string, input: { threadIds: string[]; reason?: string }) {
     const { viewer } = await this.viewer(userId);
     const acknowledged = await this.run((p, ctx) => {
-      const events = input.threadIds.flatMap((threadId) => acknowledgeAttention(p, viewer, ctx.dir, { threadId, reason: input.reason }));
+      const events = [...new Set(input.threadIds)].flatMap((threadId) => acknowledgeAttention(p, viewer, ctx.dir, { threadId, reason: input.reason }));
       return { events, result: events.length };
     });
     return { acknowledged };

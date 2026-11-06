@@ -13,7 +13,7 @@ import type { AttentionState, CommState, LogPos, Naming, ThreadLogEntry } from '
  * - 担当する・引き継ぐ → その人。手放した → なし
  * - 片付けた・ソースの側で完了した → どの見え方にも数えない（名指しは畳んだまま。開き直せば効く）
  *
- * 返事期待: 記録した送信の期限が返事期待になり、その送信の宛先の名指しが全部外れれば消える（遅れて外せば期限超過も解消する）。
+ * 返事期待: 記録した送信の期限が返事期待になる。続いているか（宛先の名指しが外れたか）はクエリ層が決める。
  * 期限超過は ReplyOverdue がその送信を指しているときだけ
  */
 export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
@@ -32,7 +32,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
   const sorted = sortLog(entries);
   const named = new Map<string, Naming>();
   const positions = new Map<string, LogPos & { to: AddressRef[] }>();
-  const acks: { addresses: AddressRef[]; list: boolean; untilSignalId: string; userId: string }[] = [];
+  const acks: { addresses: AddressRef[]; list: boolean; until: LogPos | null; untilSignalId: string; userId: string }[] = [];
   let overdueSignalId: string | null = null;
 
   for (const e of sorted) {
@@ -56,7 +56,13 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
         break;
       }
       case 'acknowledged':
-        acks.push({ addresses: e.addresses ?? [], list: e.list ?? false, untilSignalId: e.untilSignalId!, userId: e.actorUserId! });
+        acks.push({
+          addresses: e.addresses ?? [],
+          list: e.list ?? false,
+          until: e.untilAt !== undefined && e.untilSeq !== undefined ? { signalId: e.untilSignalId!, at: e.untilAt, seq: e.untilSeq } : null,
+          untilSignalId: e.untilSignalId!,
+          userId: e.actorUserId!,
+        });
         break;
       case 'claimed':
         state.ownerUserId = e.userId ?? null;
@@ -89,9 +95,10 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
 
   // 外した位置は最後にまとめて当てる（外す操作はシグナルの位置で効く。ログの中の順番には依らない）
   for (const a of acks) {
-    const until = positions.get(a.untilSignalId);
-    if (!until) continue; // そのシグナルが移し替えられた
-    const at: LogPos = { signalId: until.signalId, at: until.at, seq: until.seq };
+    // 外したときのシグナルの位置（古いイベントで位置がなければ、いまのログのシグナルの位置）
+    const known = a.until ?? positions.get(a.untilSignalId);
+    if (!known) continue;
+    const at: LogPos = { signalId: known.signalId, at: known.at, seq: known.seq };
     for (const r of a.addresses) {
       const n = named.get(addressKey(r));
       if (n && (!n.ackedThrough || comparePos(at, n.ackedThrough) > 0)) n.ackedThrough = { ...at, userId: a.userId };
@@ -103,16 +110,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
   }
   state.attention.named = [...named.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([, n]) => n);
 
-  // 返事期待: その送信の宛先の名指しが 1 つでも残っていれば続く
-  if (state.replyExpectedSignalId) {
-    const sent = positions.get(state.replyExpectedSignalId);
-    const waiting = sent !== undefined && (sent.to.length === 0 || sent.to.some((r) => isPending(named.get(addressKey(r)), sent)));
-    if (!waiting) {
-      state.replyExpectedBy = null;
-      state.replyExpectedSignalId = null;
-      overdueSignalId = null;
-    }
-  }
+  // 返事期待が続いているか（宛先が読者かどうか）はマスタで決まるので、クエリ層（turn.ts の replyStateOf）が決める
   state.overdue = overdueSignalId !== null && !(state.dismissed || state.closedAtSource);
   return state;
 }

@@ -98,10 +98,13 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
     case 'AttentionAcknowledged': {
       const p = e.payload;
       const t = mustThread(s, p.threadId);
+      // 外した位置は、外したときのシグナルの位置で固定する（あとで移し替えても、手前の名指しは外れたまま）
+      const until = s.signals[p.untilSignalId];
       t.log.push({
         seq: e.seq,
         at: e.at,
         kind: 'acknowledged',
+        ...(until ? { untilAt: until.at, untilSeq: until.seq } : {}),
         addresses: p.addresses,
         list: p.list,
         untilSignalId: p.untilSignalId,

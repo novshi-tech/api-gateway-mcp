@@ -153,29 +153,31 @@ describe('期限の見回り', () => {
   it('H4 期限を過ぎたら ReplyOverdue を 1 回だけ出す。遅れて相手の名指しを外せば解消する。片付けたものは出さない', () => {
     const { log, ctx, cust } = world();
     push(log, ctx, T(9, 10), recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust, replyExpectedBy: T(12) })));
-    expect(planOverdue(log.state(), T(11))).toEqual([]);
-    const due = planOverdue(log.state(), T(13));
+    expect(planOverdue(dir, log.state(), T(11))).toEqual([]);
+    const due = planOverdue(dir, log.state(), T(13));
     expect(due).toHaveLength(1);
     log.push(due, T(13));
-    expect(log.state().threads[cust]).toMatchObject({ overdue: true });
-    expect(planOverdue(log.state(), T(14))).toEqual([]);
+    expect(view(log.state(), cust)).toMatchObject({ overdue: true });
+    expect(planOverdue(dir, log.state(), T(14))).toEqual([]);
     expect(listThreads(dir, alice, log.state(), { filter: 'overdue' }).map((t) => t.id)).toEqual([cust]);
     expect(getThreadView(dir, alice, log.state(), cust)!.timeline.at(-1)).toMatchObject({ kind: 'overdue', replyExpectedBy: T(12) });
 
     ctx.setNow(T(15));
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }));
-    expect(log.state().threads[cust]).toMatchObject({ overdue: true });
+    expect(view(log.state(), cust)).toMatchObject({ overdue: true });
     log.push(acknowledgeAttention(log.state(), bob, dir, { threadId: cust, addresses: [{ channel: 'email', value: 'carol@example.com' }] }), T(15, 5));
-    expect(log.state().threads[cust]).toMatchObject({ overdue: false, replyExpectedBy: null });
+    expect(view(log.state(), cust)).toMatchObject({ overdue: false, replyExpectedBy: null });
+    // 外したあとは期限超過を出さない
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
     expect(listThreads(dir, alice, log.state(), { filter: 'overdue' })).toEqual([]);
   });
 
   it('H4 返事期待のない送信・片付けたスレッドは期限超過にならない', () => {
     const { log, ctx, cust } = world();
     push(log, ctx, T(9, 10), recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust })));
-    expect(planOverdue(log.state(), T(23))).toEqual([]);
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
     push(log, ctx, T(9, 20), recordSent(log.state(), alice, ctx, sent({ sentRef: '<u9@ubs.example>', replyToThreadId: cust, replyExpectedBy: T(12) })));
     log.push([{ type: 'ThreadDismissed', payload: { threadId: cust, actorUserId: 'u_alice', reason: '済み' } }], T(10));
-    expect(planOverdue(log.state(), T(23))).toEqual([]);
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
   });
 });

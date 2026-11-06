@@ -5,6 +5,8 @@ import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoic
 import { defaultTitle, resolveAnchors, type SignalPayload } from './ingest';
 import { indexKey, type Projections } from './projections';
 import { directionOf, isOurs } from './sides';
+import { replyStateOf } from './turn';
+import type { Directory } from './directory';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // 送信の記録（0012）と期限の見回り。本体は外に何も書かない。送信・起票・コメントはスタンドがゲートウェイ経由で行い、
@@ -153,10 +155,14 @@ export function recordSent(
   }
 }
 
-/** 期限の見回り（Cron）。返事期待の期限を過ぎ、まだ超過になっていないスレッドに ReplyOverdue を出す。冪等 */
-export function planOverdue(p: Projections, now: string): DraftEvent[] {
+/** 期限の見回り（Cron）。返事期待が続いていて（相手の名指しが外れていない）期限を過ぎ、まだ超過になっていないスレッドに ReplyOverdue を出す。冪等 */
+export function planOverdue(dir: Directory, p: Projections, now: string): DraftEvent[] {
   return Object.values(p.threads)
-    .filter((t) => !t.dismissed && !t.closedAtSource && !t.overdue && t.replyExpectedBy !== null && t.replyExpectedSignalId !== null && t.replyExpectedBy < now)
+    .filter((t) => {
+      if (t.dismissed || t.closedAtSource || t.overdue || t.replyExpectedSignalId === null) return false;
+      const r = replyStateOf(dir, t);
+      return r.replyExpectedBy !== null && r.replyExpectedBy < now;
+    })
     .sort((a, b) => (a.id < b.id ? -1 : 1))
     .map((t) => draft('ReplyOverdue', { threadId: t.id, signalId: t.replyExpectedSignalId!, replyExpectedBy: t.replyExpectedBy! }));
 }

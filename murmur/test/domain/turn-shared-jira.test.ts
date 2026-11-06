@@ -92,14 +92,14 @@ function issue(key: string, holders: string[], from: string, needsResponse: bool
 }
 
 describe('Jira の共有リストで、読者でない担当者の課題が読者の番に回らない（SPW-2475 の再現。0038）', () => {
-  it('H8 H9 担当者が読者でない（Contact もない）課題は、その人が担当で名指しもその人。読者の番にはならず、相手待ちとして見える', () => {
+  it('H8 H9 担当者が読者でない（Contact もない）課題は、その人が担当で名指しもその人。読者の番にはならず、こちらが送っていないので相手待ちにもならない', () => {
     const { p, t } = issue('SPW-2475', [AIDA], YAMAMOTO, true);
     expect(t.source?.holders).toEqual([AIDA]);
     expect(assigneeOf(dir, t)).toEqual({ by: 'source', userIds: [], contactIds: [], addresses: [jira(AIDA)] });
     expect(attentionOf(dir, t)).toMatchObject({ named: [{ address: jira(AIDA), userId: null, contactId: null }], list: null });
     expect(myTurnOf(dir, naoki, t)).toEqual([]);
     expect(isTriage(dir, t)).toBe(false);
-    expect(isAwaiting(dir, t)).toBe(true);
+    expect(isAwaiting(dir, t)).toBe(false);
     expect(listThreads(dir, naoki, p, { filter: 'my_turn' })).toEqual([]);
   });
 

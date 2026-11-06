@@ -5,9 +5,9 @@ import type { Channel, ServiceDataSource } from './entities';
 import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type FileRef, type PayloadOf, type ThreadChoice, type ThreadedBy } from './events';
 import { indexKey, type Projections, type SignalRecord, type Thread } from './projections';
-import { addressKey, comparePos, isPending, sameAddress } from './comm';
+import { addressKey, comparePos, sameAddress } from './comm';
 import { commView, directionOf, isOurs } from './sides';
-import { isListAddress, readerOfAddress } from './turn';
+import { awaitingNamesOf } from './turn';
 
 // Ingest の判断部分（純関数）。AI の呼び出しそのものはシェル（src/ingest/）が行う。
 // 判断はスレッドの区切りと「返事や対応を求めているか」だけ（計画 v2 の Ingest）。業務の知識は使わない。
@@ -160,18 +160,17 @@ function withSameCounterpart(dir: Directory, p: Projections, ds: ServiceDataSour
 
 /**
  * 2. 同じ相手で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド（受信だけ）。
- * 返事を待っている = 読者でないアドレスへの名指しが残っていて、その相手がまだそのスレッドで発言していない（0038）。
+ * 返事を待っている = こちらから送ったシグナルで名指しした読者でない相手の名指しが残っていて、その相手がまだそのスレッドで発言していない（0038）。
  * 発言したかは区切りの判断にだけ使う（名指しは発言では外れない）。グループのチャネルはどの相手でも、ほかはその送り主への名指し
  */
 export function awaitingThread(dir: Directory, p: Projections, ds: ServiceDataSource, sig: SignalPayload, ours: boolean): Thread | null {
   if (ours) return null;
   const waiting = threadsOf(p, ds.id).filter((t) => {
     if (t.closedAtSource) return false;
-    const unanswered = t.attention.named.filter((n) => {
-      if (!isPending(n) || isListAddress(ds, n.address) || readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) !== null) return false;
-      // 名指しのあとに、その相手が発言していない
-      return !t.log.some((e) => e.kind === 'signal' && e.from !== undefined && sameAddress(e.from, n.address) && comparePos(e, n.last) > 0);
-    });
+    // こちらから送ったシグナルで待っている相手のうち、名指しのあとにまだ発言していない人
+    const unanswered = awaitingNamesOf(dir, t).filter(
+      (n) => !t.log.some((e) => e.kind === 'signal' && e.from !== undefined && sameAddress(e.from, n.address) && comparePos(e, n.last) > 0),
+    );
     if (ds.group) return unanswered.length > 0;
     return unanswered.some((n) => addressKey(n.address) === addressKey(sig.from));
   });
