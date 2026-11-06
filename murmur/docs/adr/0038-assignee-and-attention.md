@@ -132,3 +132,20 @@
 7. 状態を持つソースで、ソースが担当を持たないときの担当（PR が承認されてマージ待ちのとき。0031 の未決 3 と同じ）
 8. 担当が読者から外れたとき（0037 の未決 3）
 9. プロンプトから `needs_response` を外す（記録を取り直すとき）
+
+## 実装の記録（2026-11-06）
+
+決定のとおりに実装した。決定に書いていなかったことと、実装で決めたこと:
+
+- イベント `AttentionAcknowledged`（`threadId`・`untilSignalId`・`addresses`・`list`・`actorUserId`・`reason`）。`addresses` は外すアドレス、`list` はリスト宛ての名指しを外した User について外す。fold（`comm.ts`）はアドレスごとに最後に名指ししたシグナルと外した位置（いちばん後ろ）を持ち、宛先のないシグナル（`broadcasts`）とリスト宛ての外し（User ごと）を持つ。外す操作はシグナルの位置で効く（ログの中の順番には依らない）。移し替えでなくなったシグナルまでの外しは効かない
+- 状態を持つソースは、チャネルが `jira`・`bitbucket` のデータソース。個人リストは、個人のメモと、共有でない個人の資格情報の箱（Outlook）。個人リストの暗黙の担当は API に出さない（`assignee: null`。自分の番は名指しで決まる。担当を出すと開いているスレッドが全部自分の番になる）。個人リストでは `claim` を断る
+- 自分の番（`myTurn`）の理由は `assignee`・`named`・`list`。`filter=my_turn` はそのどれか。`filter=awaiting`（相手待ち）を足した
+- 返事期待は、その送信の宛先の名指しが全部外れれば消える（それまでは、その送り主以外のシグナルで消えていた）。返事が来ても、読んで相手の名指しを外すまで期限超過は残る
+- 取り込みの区切りの「返事を待っているスレッド」（`awaitingThread`）は、読者でない相手への名指しが残っていて、その相手が名指しのあとにそのスレッドで発言していないもの。発言したかは区切りの判断にだけ使う（名指しは発言では外れない）。名指しだけで見ると、返事をくれた相手の別件が古いスレッドに入ってしまう（シナリオ absence の s06・repair-estimate の s05 で見つけた）
+- `record_sent` に `acknowledge`（任意）。`true` なら、送ったスレッドの、送る前までの自分への名指しを一緒に外す（明示の指定。既定は外さない）
+- まとめて外す `POST /acknowledge`（`thread_ids`）。スレッドごとのイベントになる（決定 5）
+- Ingest: アンカーでスレッドが決まる受信（`fixed`）は AI を呼ばない。`SignalThreaded.needsResponse` は `null` を書き、fold は読まない（古いイベントの値も読まない）。プロンプトと構造化出力の `needs_response` は記録を取り直すまで残す（未決 9）
+- Jira のコメントの宛先は、メンションした人だけ（未決 3）
+- 保存された投影の形が古ければ（スレッドに `attention` がなければ）、読むときにイベントから作り直す（`isStaleProjections`）。動いているデプロイも、デプロイしたあとの最初の読みで作り直される
+- API: スレッドの `ball`・`turn`・`ownerUserId`・`unansweredSince` をやめ、`assignee`・`attention`・`myTurn`・`triage`・`awaiting` にした。シグナルの `needsResponse` と、`move_signal` の `needs_response` をやめた。スキルは heddleway 0.19.0
+- シナリオ: `record_sent` に `acknowledge: true` を付け、待っていた返事を読んで相手の名指しを外す手順（`acknowledge`）を absence・repair-estimate・complaint に足した。期待値は担当・名指し（`named`・`listReaders`）・`triage`・`awaiting` で書き直した。窓口宛ての通知（パイプライン・帳票など）は、読者全員の自分の番（リスト宛て）に出る。煩雑さは試用で見る
