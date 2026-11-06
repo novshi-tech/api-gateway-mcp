@@ -1,10 +1,12 @@
-import { visibleThreadOrThrow } from './commands';
+import { acknowledgeAttention, visibleThreadOrThrow } from './commands';
 import type { CoreContext } from './context';
 import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoice, type ThreadedBy } from './events';
 import { defaultTitle, resolveAnchors, type SignalPayload } from './ingest';
 import { indexKey, type Projections } from './projections';
 import { directionOf, isOurs } from './sides';
+import { replyStateOf } from './turn';
+import type { Directory } from './directory';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // 送信の記録（0012）と期限の見回り。本体は外に何も書かない。送信・起票・コメントはスタンドがゲートウェイ経由で行い、
@@ -30,6 +32,8 @@ export interface RecordSentInput {
   sourceThreadId?: string;
   /** UTC の ISO 8601（シェルがそろえる） */
   replyExpectedBy?: string;
+  /** 送ったスレッドの、送る前までの自分への名指し（自分のアドレスとリスト宛て）を一緒に外す（0038 の決定 3。明示の指定） */
+  acknowledge?: boolean;
 }
 
 /**
@@ -38,6 +42,7 @@ export interface RecordSentInput {
  * - 同じ sent_ref の観測された送信が先に届いていれば、そのシグナルに記録を重ねる（H5。reply_to が違えば移す）
  * - 同じ sent_ref の記録が既にあれば何もしない（冪等）
  * - source のスレッドがあれば経路 sent で結ぶ（Murmur が張るリンクの唯一の例外。スタンドの操作の一部）
+ * - acknowledge なら、送ったスレッドの自分への名指しを送る前の分まで外す
  */
 export function recordSent(
   p: Projections,
@@ -134,6 +139,10 @@ export function recordSent(
     threadId = choice.threadId;
   }
 
+  if (input.acknowledge && p.threads[threadId]) {
+    events.push(...acknowledgeAttention(p, viewer, ctx.dir, { threadId, reason: `返事を送った（${input.sentRef}）` }));
+  }
+
   if (source && source.id !== threadId && !source.links.some((l) => l.threadId === threadId)) {
     events.push(
       draft('ThreadLinked', { a: source.id, b: threadId, op: 'link', route: 'sent', actorUserId: viewer.userId, reason: `送信 ${input.sentRef}` }),
@@ -142,14 +151,18 @@ export function recordSent(
   return { events, threadId, signalId };
 
   function threaded(id: string, choice: ThreadChoice, by: ThreadedBy, reason: string): DraftEvent {
-    return draft('SignalThreaded', { signalId: id, thread: choice, by, confidence: 1, reason, needsResponse: null, actorUserId: viewer.userId });
+    return draft('SignalThreaded', { signalId: id, thread: choice, by, confidence: 1, reason, actorUserId: viewer.userId });
   }
 }
 
-/** 期限の見回り（Cron）。返事期待の期限を過ぎ、まだ超過になっていないスレッドに ReplyOverdue を出す。冪等 */
-export function planOverdue(p: Projections, now: string): DraftEvent[] {
+/** 期限の見回り（Cron）。返事期待が続いていて（相手の名指しが外れていない）期限を過ぎ、まだ超過になっていないスレッドに ReplyOverdue を出す。冪等 */
+export function planOverdue(dir: Directory, p: Projections, now: string): DraftEvent[] {
   return Object.values(p.threads)
-    .filter((t) => !t.dismissed && !t.closedAtSource && !t.overdue && t.replyExpectedBy !== null && t.replyExpectedSignalId !== null && t.replyExpectedBy < now)
+    .filter((t) => {
+      if (t.dismissed || t.closedAtSource || t.overdue || t.replyExpectedSignalId === null) return false;
+      const r = replyStateOf(dir, t);
+      return r.replyExpectedBy !== null && r.replyExpectedBy < now;
+    })
     .sort((a, b) => (a.id < b.id ? -1 : 1))
     .map((t) => draft('ReplyOverdue', { threadId: t.id, signalId: t.replyExpectedSignalId!, replyExpectedBy: t.replyExpectedBy! }));
 }

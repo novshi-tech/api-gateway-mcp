@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { addNote, claimThread, derivedBall, dismissThread, draft, getThreadView, linkCandidates, linkThreads, listThreads, turnOf } from '../../src/domain';
-import { alice, answer, bob, dir, email, EventLog, ingestPure, line, makeCtx } from '../helpers/world';
+import {
+  acknowledgeAttention,
+  addNote,
+  assigneeOf,
+  claimThread,
+  derivedBall,
+  dismissThread,
+  draft,
+  getThreadView,
+  isAwaiting,
+  isTriage,
+  linkCandidates,
+  linkThreads,
+  listThreads,
+  myTurnOf,
+  planOverdue,
+  recordSent,
+} from '../../src/domain';
+import { alice, answer, bob, dir, email, EventLog, ingestPure, line, makeCtx, view } from '../helpers/world';
 
 // クエリ層の「誰の番か」・リンク先から導出したボール・結び候補・タイムライン（H2・H8）
 
@@ -18,37 +35,63 @@ function world() {
   return { log, ctx, shared: shared.outcome!.threadId, addressed: addressed.outcome!.threadId, line: lineThread.outcome!.threadId };
 }
 
-describe('誰の番か（turnOf）', () => {
-  it('H8 構造で決まる: 読者が 1 人ならその人、宛先に読者がいればその人、どれでもなければ仕分け待ち', () => {
+describe('誰の番か（担当と名指し。0038）', () => {
+  it('H8 構造で決まる: 窓口宛ては読者全員へのリスト宛て、CC に読者がいればその人への名指し。共有リストで担当がいなければ仕分け待ち', () => {
     const { log, shared, addressed, line: l } = world();
     const p = log.state();
-    expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'triage' });
-    expect(turnOf(dir, p, p.threads[addressed]!)).toEqual({ kind: 'user', userIds: ['u_alice'], by: 'addressed' });
-    expect(turnOf(dir, p, p.threads[l]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'reader' });
-    expect(listThreads(dir, alice, p, { filter: 'my_turn' }).map((t) => t.id)).toEqual([addressed]);
-    expect(listThreads(dir, bob, p, { filter: 'my_turn' }).map((t) => t.id)).toEqual([l]);
-    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(myTurnOf(dir, alice, p.threads[shared]!)).toEqual(['list']);
+    expect(myTurnOf(dir, bob, p.threads[shared]!)).toEqual(['list']);
+    expect(myTurnOf(dir, alice, p.threads[addressed]!)).toEqual(['named', 'list']);
+    expect(myTurnOf(dir, bob, p.threads[addressed]!)).toEqual(['list']);
+    // LINE 公式アカウントは読者が 1 人でも共有リスト（組織の資格情報）。「読者が 1 人」で番を決めない
+    expect(myTurnOf(dir, bob, p.threads[l]!)).toEqual(['list']);
+    expect([shared, addressed, l].map((id) => isTriage(dir, p.threads[id]!))).toEqual([true, true, true]);
+    expect(listThreads(dir, alice, p, { filter: 'my_turn' }).map((t) => t.id).sort()).toEqual([addressed, shared].sort());
+    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id).sort()).toEqual([addressed, l, shared].sort());
   });
 
-  it('H8 持ち主の操作が構造より優先する。手放すと仕分け待ちに戻る', () => {
+  it('H8 名指しは本人が外すまで残る。外せばその人の番から外れ、ほかの読者には残る', () => {
+    const { log, shared } = world();
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: shared }), '2026-10-16T10:00:00.000Z');
+    const p = log.state();
+    expect(myTurnOf(dir, alice, p.threads[shared]!)).toEqual([]);
+    expect(myTurnOf(dir, bob, p.threads[shared]!)).toEqual(['list']);
+    // 外すものがなければ何もしない
+    expect(acknowledgeAttention(p, alice, dir, { threadId: shared })).toEqual([]);
+  });
+
+  it('H8 担当する操作が担当を決める。担当がいれば仕分け待ちでない。手放すと仕分け待ちに戻る', () => {
     const { log, shared } = world();
     log.push(claimThread(log.state(), bob, dir, { threadId: shared, userId: 'u_bob' }), '2026-10-16T10:00:00.000Z');
     let p = log.state();
-    expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'owner' });
-    expect(listThreads(dir, alice, p, { filter: 'triage' })).toEqual([]);
-    expect(listThreads(dir, bob, p, { filter: 'my_turn' }).map((t) => t.id)).toContain(shared);
+    expect(assigneeOf(dir, p.threads[shared]!)).toEqual({ by: 'claim', userIds: ['u_bob'], contactIds: [], addresses: [] });
+    expect(myTurnOf(dir, bob, p.threads[shared]!)).toEqual(['assignee', 'list']);
+    expect(listThreads(dir, alice, p, { filter: 'triage' }).map((t) => t.id)).not.toContain(shared);
     log.push(claimThread(p, bob, dir, { threadId: shared, userId: null }), '2026-10-16T11:00:00.000Z');
     p = log.state();
-    expect(listThreads(dir, alice, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, alice, p, { filter: 'triage' }).map((t) => t.id)).toContain(shared);
   });
 
-  it('H8 相手待ち・なし・片付けたスレッドは誰の番でもない', () => {
+  it('H8 返信で相手が名指しされて相手待ち。片付けたスレッドはどの見え方にも出ない', () => {
     const { log, ctx, shared } = world();
     ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     const p = log.state();
-    expect(turnOf(dir, p, p.threads[shared]!)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
+    expect(isAwaiting(dir, p.threads[shared]!)).toBe(true);
+    expect(listThreads(dir, alice, p, { filter: 'awaiting' }).map((t) => t.id)).toEqual([shared]);
     log.push(dismissThread(p, alice, { threadId: shared, reason: 'x' }), '2026-10-16T10:00:00.000Z');
-    expect(turnOf(dir, log.state(), log.state().threads[shared]!)).toEqual({ kind: 'none' });
+    const q = log.state();
+    expect([isAwaiting(dir, q.threads[shared]!), isTriage(dir, q.threads[shared]!), myTurnOf(dir, bob, q.threads[shared]!)]).toEqual([false, false, []]);
+  });
+
+  it('H8 読者でないアドレスの名指しは読者なら誰でも外せる。読者のアドレスの名指しは本人だけ', () => {
+    const { log, ctx, addressed } = world();
+    ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['info@dave.example'], sourceRef: 'o2', anchors: { threadKey: 'UBS-7' } }));
+    let p = log.state();
+    expect(() => acknowledgeAttention(p, bob, dir, { threadId: addressed, addresses: [{ channel: 'email', value: 'alice@ubs.example' }] })).toThrow(/only that reader/);
+    log.push(acknowledgeAttention(p, bob, dir, { threadId: addressed, addresses: [{ channel: 'email', value: 'info@dave.example' }] }), '2026-10-16T10:00:00.000Z');
+    p = log.state();
+    expect(isAwaiting(dir, p.threads[addressed]!)).toBe(false);
+    expect(myTurnOf(dir, alice, p.threads[addressed]!)).toEqual(['named', 'list']);
   });
 });
 
@@ -81,19 +124,21 @@ describe('リンク先から導出したボール（derivedBall）', () => {
     log.push(n.events, '2026-10-16T10:00:00.000Z');
     expect(derivedBall(dir, alice, log.state(), log.state().threads[n.threadId]!)).toBeNull();
 
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: shared }), '2026-10-16T10:00:30.000Z');
     log.push(linkThreads(log.state(), alice, { threadId: n.threadId, otherThreadId: shared }), '2026-10-16T10:01:00.000Z');
     expect(derivedBall(dir, alice, log.state(), log.state().threads[n.threadId]!)).toEqual({ kind: 'none' });
     log.push(linkThreads(log.state(), alice, { threadId: n.threadId, otherThreadId: addressed }), '2026-10-16T10:02:00.000Z');
     expect(derivedBall(dir, alice, log.state(), log.state().threads[n.threadId]!)).toEqual({ kind: 'my_turn', threadIds: [addressed] });
 
-    // 両方に返事を送ると相手待ち
+    // 両方に返事を送り、自分への名指しを外すと相手待ち
     ctx.setNow('2026-10-16T11:00:00.000Z');
     ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
     ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['info@dave.example'], sourceRef: 'o2', anchors: { threadKey: 'UBS-7' } }));
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: addressed }), '2026-10-16T11:01:00.000Z');
     const p = log.state();
     expect(derivedBall(dir, alice, p, p.threads[n.threadId]!)).toEqual({ kind: 'waiting', threadIds: [addressed, shared].sort() });
-    // メモのスレッド自身のボールは動かない（本人の側の状態を Murmur は変えない）
-    expect(p.threads[n.threadId]!.ball).toEqual({ kind: 'none' });
+    // メモのスレッド自身の名指しは動かない（本人の側の状態を Murmur は変えない）
+    expect(p.threads[n.threadId]!.attention.named).toEqual([]);
   });
 
   it('H2 閉じたメモのスレッドに結ばれた先が動いても開き直さず、linkedActiveSinceDismissed で知らせるだけ', () => {
@@ -183,5 +228,88 @@ describe('タイムライン（getThreadView）', () => {
     expect(aliceView.linked).toEqual([expect.objectContaining({ threadId: n.threadId, visible: true, dataSourceId: 'ds_notes_alice' })]);
     expect(aliceView.timeline.map((e) => e.kind)).toContain('linked');
     expect(getThreadView(dir, bob, log.state(), n.threadId)).toBeNull();
+  });
+});
+
+describe('名指しの細部（0038 のレビューで見つけたもの）', () => {
+  const T = (h: number, m = 0) => `2026-10-16T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+
+  it('H6 H8 受信の CC に入っていただけの相手は「こちらが待っている相手」ではない。その人の別件は古いスレッドに入らない', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const first = ingestPure(log, ctx, email({ dataSourceId: 'ds_alice', from: 'carol@example.com', to: ['alice@ubs.example', 'info@dave.example'], sourceRef: 'p1' }), () =>
+      answer({ title: '雨漏り' }),
+    );
+    expect(isAwaiting(dir, log.state().threads[first.outcome!.threadId]!)).toBe(false);
+    ctx.setNow(T(10));
+    const other = ingestPure(log, ctx, email({ dataSourceId: 'ds_alice', from: 'info@dave.example', to: ['alice@ubs.example'], sourceRef: 'p2' }), () =>
+      answer({ title: '別件' }),
+    );
+    expect(other.outcome).toMatchObject({ newThread: true, by: 'no_match' });
+  });
+
+  it('H8 外したあとでシグナルを移し替えても、手前の名指しは外れたまま', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const a = ingestPure(log, ctx, email({ dataSourceId: 'ds_alice', from: 'carol@example.com', to: ['alice@ubs.example'], sourceRef: 'p1', anchors: { messageId: '<a>' } }), () =>
+      answer({ title: '件' }),
+    );
+    ctx.setNow(T(10));
+    const b = ingestPure(log, ctx, email({ dataSourceId: 'ds_alice', from: 'carol@example.com', to: ['alice@ubs.example'], sourceRef: 'p2', anchors: { inReplyTo: '<a>' } }));
+    const id = a.outcome!.threadId;
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: id }), T(11));
+    expect(myTurnOf(dir, alice, log.state().threads[id]!)).toEqual([]);
+    log.push(
+      [draft('SignalThreaded', { signalId: b.signalId!, thread: { kind: 'new', threadId: 'thr_moved', title: '別件' }, by: 'human', confidence: 1, reason: '別の話', actorUserId: 'u_alice' })],
+      T(12),
+    );
+    expect(myTurnOf(dir, alice, log.state().threads[id]!)).toEqual([]);
+    expect(myTurnOf(dir, alice, log.state().threads.thr_moved!)).toEqual(['named']);
+  });
+
+  it('H8 リスト宛ての名指しはシグナルごと。本人が窓口を CC に入れて返信しても、本人のリスト宛ては外れない（発言では外れない）', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const r = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }), () => answer({ title: '雨漏り' }));
+    const id = r.outcome!.threadId;
+    ctx.setNow(T(10));
+    ingestPure(log, ctx, email({ from: 'alice@ubs.example', to: ['carol@example.com', 'support@ubs.example'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
+    const t = log.state().threads[id]!;
+    expect(myTurnOf(dir, alice, t)).toEqual(['list']);
+    expect(myTurnOf(dir, bob, t)).toEqual(['list']);
+  });
+
+  it('H4 返事期待は読者でない相手の名指しで決まる。社内の読者を CC に入れても、相手の名指しを外せば消える', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const r = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }), () => answer({ title: '雨漏り' }));
+    const id = r.outcome!.threadId;
+    const sent = recordSent(log.state(), bob, ctx, {
+      dataSourceId: 'ds_support',
+      to: ['carol@example.com', 'alice@ubs.example'],
+      toContactIds: [],
+      body: '調査します',
+      sentRef: '<u1@ubs.example>',
+      replyToThreadId: id,
+      replyExpectedBy: T(12),
+    });
+    log.push(sent.events, T(9, 30));
+    log.push(planOverdue(dir, log.state(), T(13)), T(13));
+    expect(view(log.state(), id)).toMatchObject({ overdue: true, replyExpectedBy: T(12) });
+    log.push(acknowledgeAttention(log.state(), bob, dir, { threadId: id, addresses: [{ channel: 'email', value: 'carol@example.com' }] }), T(14));
+    expect(view(log.state(), id)).toMatchObject({ overdue: false, replyExpectedBy: null });
+    // Alice（読者）への名指しは Alice のもの
+    expect(myTurnOf(dir, alice, log.state().threads[id]!)).toContain('named');
+  });
+
+  it('H8 個人リストにエイリアスや配布リスト宛てで届いた受信は、本人へのリスト宛て。相手待ちにはならない', () => {
+    const log = new EventLog();
+    const ctx = makeCtx(T(9));
+    const r = ingestPure(log, ctx, email({ dataSourceId: 'ds_alice', from: 'carol@example.com', to: ['all@ubs.example'], sourceRef: 'p1' }), () => answer({ title: 'お知らせ' }));
+    const t = log.state().threads[r.outcome!.threadId]!;
+    expect(myTurnOf(dir, alice, t)).toEqual(['list']);
+    expect(isAwaiting(dir, t)).toBe(false);
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: t.id }), T(10));
+    expect(myTurnOf(dir, alice, log.state().threads[t.id]!)).toEqual([]);
   });
 });

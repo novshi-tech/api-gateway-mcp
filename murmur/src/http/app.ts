@@ -12,6 +12,8 @@ import {
   IdentityBody,
   MergeContactBody,
   RenameBody,
+  AcknowledgeBody,
+  AcknowledgeManyBody,
   ClaimBody,
   ConnectJiraBody, ConnectOutlookBody, ConnectTeamsBody,
   DismissBody,
@@ -179,6 +181,23 @@ export function createApp(opts: HttpOptions) {
     return c.json(await c.var.service.claimThread(c.var.userId, { threadId: c.req.param('id'), userId, reason: b.reason }));
   });
 
+  api.post('/threads/:id/acknowledge', async (c) => {
+    const b = AcknowledgeBody.parse(await json(c));
+    return c.json(
+      await c.var.service.acknowledge(c.var.userId, {
+        threadId: c.req.param('id'),
+        untilSignalId: b.until_signal_id,
+        addresses: b.addresses,
+        reason: b.reason,
+      }),
+    );
+  });
+
+  api.post('/acknowledge', async (c) => {
+    const b = AcknowledgeManyBody.parse(await json(c));
+    return c.json(await c.var.service.acknowledgeMany(c.var.userId, { threadIds: b.thread_ids, reason: b.reason }));
+  });
+
   api.post('/threads/:id/links', async (c) => {
     const b = LinkBody.parse(await json(c));
     return c.json(await c.var.service.linkThreads(c.var.userId, { threadId: c.req.param('id'), otherThreadId: b.thread_id, reason: b.reason }));
@@ -212,6 +231,7 @@ export function createApp(opts: HttpOptions) {
         replyToThreadId: b.reply_to_thread_id,
         sourceThreadId: b.source_thread_id,
         replyExpectedBy: b.reply_expected_by,
+        acknowledge: b.acknowledge,
       }),
     );
   });
@@ -235,7 +255,7 @@ export function createApp(opts: HttpOptions) {
     const b = MoveSignalBody.parse(await json(c));
     const to = b.thread_id !== undefined ? { kind: 'existing' as const, threadId: b.thread_id } : { kind: 'new' as const, title: b.new_thread_title! };
     return c.json(
-      await c.var.service.moveSignal(c.var.userId, { signalId: c.req.param('id'), to, needsResponse: b.needs_response, reason: b.reason }),
+      await c.var.service.moveSignal(c.var.userId, { signalId: c.req.param('id'), to, reason: b.reason }),
     );
   });
 

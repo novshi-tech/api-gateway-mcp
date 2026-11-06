@@ -27,9 +27,9 @@ describe('可視性', () => {
     expect(listThreads(dir, mallory, p, { filter: 'all' })).toEqual([]);
   });
 
-  it('H3 仕分け待ちはボールがこちらで片付けていないもの。open は片付けていないもの', () => {
+  it('H3 仕分け待ちは共有リストで担当のいない開いているもの。open は開いているもの', () => {
     const { p, shared, line: l } = world();
-    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id)).toEqual([shared]);
+    expect(listThreads(dir, bob, p, { filter: 'triage' }).map((t) => t.id)).toEqual([l, shared]);
     expect(listThreads(dir, bob, p, { filter: 'open' }).map((t) => t.id)).toEqual([l, shared]);
   });
 

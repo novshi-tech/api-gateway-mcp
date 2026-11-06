@@ -4,7 +4,7 @@ import type { SourceState } from '../../src/connectors/graph/state';
 import { isAllowed } from '../../src/connectors/jira/api';
 import { deltaJql, planJiraMaintenance, webhookFilter } from '../../src/connectors/jira/plan';
 import { JiraSync } from '../../src/connectors/jira/sync';
-import { connectJiraProject, Directory, planMasterEdit, turnOf, type SharedSpacePlan } from '../../src/domain';
+import { connectJiraProject, Directory, planMasterEdit, assigneeOf, type SharedSpacePlan } from '../../src/domain';
 import { MemoryConnectorState } from '../../src/store/connector-state';
 import { FakeJira } from '../helpers/fake-jira';
 import { counterIds, makeService } from '../helpers/service';
@@ -191,7 +191,7 @@ describe('H9 H5 Jira の同期（偽の Jira）', () => {
     const dir = await ctx.service.directory();
     const spw1 = ts.find((t) => t.sourceKey === 'SPW-1')!;
     expect(p.signals[spw1.signalIds[0]!]!.body).toBe('確認お願いします');
-    expect(turnOf(dir, p, spw1)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'holder' });
+    expect(assigneeOf(dir, spw1)).toEqual({ by: 'source', userIds: ['u_bob'], contactIds: [], addresses: [] });
     expect(await state.source(ctx.ds.id)).toMatchObject({ jira: { syncedUntil: at(5) }, lastSyncAt: at(5) });
 
     // 次の差分は重なりで同じ課題をもう一度読むが、二重にならない

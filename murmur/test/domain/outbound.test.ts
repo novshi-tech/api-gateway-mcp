@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNote, commView, directionOf, getThreadView, listThreads, planOverdue, recordSent, type RecordSentInput } from '../../src/domain';
+import { acknowledgeAttention, addNote, commView, directionOf, getThreadView, listThreads, myTurnOf, planOverdue, recordSent, type RecordSentInput } from '../../src/domain';
 import { alice, answer, bob, dir, view, email, eve, EventLog, ingestPure, line, makeCtx } from '../helpers/world';
 
 // 送信の記録（record_sent）・期限の見回り・観測された送信の統合（H4・H5）
@@ -28,15 +28,17 @@ function push(log: EventLog, ctx: ReturnType<typeof makeCtx>, at: string, r: { e
 }
 
 describe('record_sent', () => {
-  it('H4 返事をしているスレッドに入れ、ボールは相手へ。返事期待が載り、返事が来れば消える', () => {
+  it('H4 返事をしているスレッドに入れ、相手が名指しされる。acknowledge なら自分への名指しも外す。返事期待は相手の名指しを外せば消える', () => {
     const { log, ctx, cust } = world();
     ctx.setNow(T(9, 10));
-    const r = recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust, replyExpectedBy: T(12) }));
+    const r = recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust, replyExpectedBy: T(12), acknowledge: true }));
     expect(r.threadId).toBe(cust);
-    expect(r.events.map((e) => e.type)).toEqual(['OutboundRecorded', 'SignalThreaded']);
+    expect(r.events.map((e) => e.type)).toEqual(['OutboundRecorded', 'SignalThreaded', 'AttentionAcknowledged']);
     push(log, ctx, T(9, 10), r);
     let t = view(log.state(), cust);
-    expect(t).toMatchObject({ ball: { kind: 'contact', contactIds: ['p_carol'] }, replyExpectedBy: T(12), replyExpectedSignalId: r.signalId, overdue: false });
+    expect(t).toMatchObject({ awaiting: true, replyExpectedBy: T(12), replyExpectedSignalId: r.signalId, overdue: false });
+    expect(myTurnOf(dir, alice, log.state().threads[cust]!)).toEqual([]);
+    expect(myTurnOf(dir, bob, log.state().threads[cust]!)).toEqual(['list']);
     expect(directionOf(dir, log.state().signals[r.signalId]!)).toBe('outbound');
     expect(log.state().signals[r.signalId]).toMatchObject({
       threadedBy: 'self',
@@ -44,9 +46,13 @@ describe('record_sent', () => {
       recorded: { actorUserId: 'u_alice', replyExpectedBy: T(12), sourceThreadId: null },
     });
     ctx.setNow(T(10));
-    ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }), () => answer({ thread: null }));
+    const reply = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }));
+    expect(view(log.state(), cust)).toMatchObject({ awaiting: true, replyExpectedBy: T(12) });
+    expect(myTurnOf(dir, alice, log.state().threads[cust]!)).toEqual(['list']);
+    ctx.setNow(T(10, 5));
+    log.push(acknowledgeAttention(log.state(), alice, dir, { threadId: cust, untilSignalId: reply.signalId, addresses: [{ channel: 'email', value: 'carol@example.com' }] }), T(10, 5));
     t = view(log.state(), cust);
-    expect(t).toMatchObject({ ball: { kind: 'us' }, replyExpectedBy: null, overdue: false });
+    expect(t).toMatchObject({ awaiting: false, replyExpectedBy: null, overdue: false });
   });
 
   it('H4 元のスレッドが別のデータソース（個人のメモ）なら、新しいスレッドに入れて経路 sent で結ぶ', () => {
@@ -58,7 +64,8 @@ describe('record_sent', () => {
     push(log, ctx, T(9, 10), r);
     const p = log.state();
     expect(r.threadId).not.toBe(cust);
-    expect(view(p, r.threadId)).toMatchObject({ title: '見積依頼', ball: { kind: 'contact', contactIds: ['p_dave'] }, links: [{ threadId: note.threadId, route: 'sent' }] });
+    expect(view(p, r.threadId)).toMatchObject({ title: '見積依頼', awaiting: true, links: [{ threadId: note.threadId, route: 'sent' }] });
+    expect(view(p, r.threadId).attention.named).toMatchObject([{ contactId: 'p_dave', userId: null }]);
     expect(p.threads[note.threadId]!.links).toMatchObject([{ threadId: r.threadId, route: 'sent' }]);
     // 返事は送信元（support@）に戻り、送ったスレッドに入る
     ingestPure(log, ctx, email({ from: 'info@dave.example', sourceRef: 'r3', anchors: { inReplyTo: '<u2@ubs.example>' } }), () => answer({ thread: null }));
@@ -100,7 +107,7 @@ describe('観測された送信の統合（H5）', () => {
     expect(log.state()).toEqual(before);
   });
 
-  it('H5 観測 → 記録の順: 記録は観測のシグナルに重なり、ボールは二重に動かず、返事期待だけが載る', () => {
+  it('H5 観測 → 記録の順: 記録は観測のシグナルに重なり、名指しは二重にならず、返事期待だけが載る', () => {
     const { log, ctx, cust } = world();
     ctx.setNow(T(9, 10));
     const obs = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'email:<u1@ubs.example>', anchors: { messageId: '<u1@ubs.example>', inReplyTo: '<m1>' } }));
@@ -112,8 +119,8 @@ describe('観測された送信の統合（H5）', () => {
     push(log, ctx, T(9, 15), r);
     const t = log.state().threads[cust]!;
     expect(t.signalIds).toEqual(before.signalIds);
-    expect(t).toMatchObject({ ball: before.ball, replyExpectedBy: T(12) });
-    expect(commView(dir, log.state(), t).lastOutboundAt).toBe(commView(dir, log.state(), before).lastOutboundAt);
+    expect(t).toMatchObject({ attention: { named: before.attention.named }, replyExpectedBy: T(12) });
+    expect(commView(dir, t).lastOutboundAt).toBe(commView(dir, before).lastOutboundAt);
     expect(Object.keys(log.state().signals)).toHaveLength(2);
   });
 
@@ -143,30 +150,34 @@ describe('観測された送信の統合（H5）', () => {
 });
 
 describe('期限の見回り', () => {
-  it('H4 期限を過ぎたら ReplyOverdue を 1 回だけ出す。遅れて返事が来れば解消する。片付けたものは出さない', () => {
+  it('H4 期限を過ぎたら ReplyOverdue を 1 回だけ出す。遅れて相手の名指しを外せば解消する。片付けたものは出さない', () => {
     const { log, ctx, cust } = world();
     push(log, ctx, T(9, 10), recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust, replyExpectedBy: T(12) })));
-    expect(planOverdue(log.state(), T(11))).toEqual([]);
-    const due = planOverdue(log.state(), T(13));
+    expect(planOverdue(dir, log.state(), T(11))).toEqual([]);
+    const due = planOverdue(dir, log.state(), T(13));
     expect(due).toHaveLength(1);
     log.push(due, T(13));
-    expect(log.state().threads[cust]).toMatchObject({ overdue: true });
-    expect(planOverdue(log.state(), T(14))).toEqual([]);
+    expect(view(log.state(), cust)).toMatchObject({ overdue: true });
+    expect(planOverdue(dir, log.state(), T(14))).toEqual([]);
     expect(listThreads(dir, alice, log.state(), { filter: 'overdue' }).map((t) => t.id)).toEqual([cust]);
     expect(getThreadView(dir, alice, log.state(), cust)!.timeline.at(-1)).toMatchObject({ kind: 'overdue', replyExpectedBy: T(12) });
 
     ctx.setNow(T(15));
-    ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }), () => answer({ thread: null }));
-    expect(log.state().threads[cust]).toMatchObject({ overdue: false, replyExpectedBy: null });
+    ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<u1@ubs.example>' } }));
+    expect(view(log.state(), cust)).toMatchObject({ overdue: true });
+    log.push(acknowledgeAttention(log.state(), bob, dir, { threadId: cust, addresses: [{ channel: 'email', value: 'carol@example.com' }] }), T(15, 5));
+    expect(view(log.state(), cust)).toMatchObject({ overdue: false, replyExpectedBy: null });
+    // 外したあとは期限超過を出さない
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
     expect(listThreads(dir, alice, log.state(), { filter: 'overdue' })).toEqual([]);
   });
 
   it('H4 返事期待のない送信・片付けたスレッドは期限超過にならない', () => {
     const { log, ctx, cust } = world();
     push(log, ctx, T(9, 10), recordSent(log.state(), alice, ctx, sent({ replyToThreadId: cust })));
-    expect(planOverdue(log.state(), T(23))).toEqual([]);
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
     push(log, ctx, T(9, 20), recordSent(log.state(), alice, ctx, sent({ sentRef: '<u9@ubs.example>', replyToThreadId: cust, replyExpectedBy: T(12) })));
     log.push([{ type: 'ThreadDismissed', payload: { threadId: cust, actorUserId: 'u_alice', reason: '済み' } }], T(10));
-    expect(planOverdue(log.state(), T(23))).toEqual([]);
+    expect(planOverdue(dir, log.state(), T(23))).toEqual([]);
   });
 });

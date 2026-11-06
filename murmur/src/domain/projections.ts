@@ -1,70 +1,69 @@
 import type { AddressRef, Anchors, AttributeValue, Author, FileRef, LinkRoute, MirrorFields, ThreadedBy } from './events';
 import type { Channel } from './entities';
 
-/**
- * 返事や対応を求めたシグナル（0030）。fold はアドレスだけで畳み、どちら側の求めかはクエリ層が決める（sides.ts）
- * - holders: ボールを持っているアドレス（求めたシグナルの宛先）
- * - except: 宛先のないシグナル（グループのチャネル）。「チャネルの中で except 以外」がボールを持つ
- * - requestedBy: 求めたシグナルの送り主
- * - since: 同じ送り主が求め続けている最初の時刻
- */
-export interface Request {
-  holders: AddressRef[];
-  except: AddressRef | null;
-  requestedBy: AddressRef;
-  since: string;
+/** スレッドのログの位置（時刻・seq の順。sortLog と同じ） */
+export interface LogPos {
   signalId: string;
+  at: string;
+  seq: number;
 }
 
 /**
- * fold が持つボール（0030）。スレッドのイベントだけから決まる（fold は 1 段、マスタを読まない）
- * - request: 求めたシグナルの保持者がボールを持つ（どちら側かはクエリ層）
- * - claimed: 持った・引き継いだ（userId）、手放した（null = こちら）
- * - none: 誰の番でもない
+ * アドレスへの名指し（0038 の決定 2）。アドレスごとに、最後に名指しされたシグナルと、外した位置を持つ。
+ * fold はアドレスだけで畳む（マスタを読まない）。リスト宛て（窓口のアドレス）かどうか・読者かどうかはクエリ層が決める
  */
-export type FoldedBall = { kind: 'request'; request: Request } | { kind: 'claimed'; userId: string | null } | { kind: 'none' };
+export interface Naming {
+  address: AddressRef;
+  /** 最後に名指ししたシグナル */
+  last: LogPos;
+  /** 名指しした送り主（最後のシグナルの） */
+  from: AddressRef;
+  /** 外した位置（いちばん後ろ）と外した User。last がこれより後ろなら、名指しが残っている */
+  ackedThrough: (LogPos & { userId: string }) | null;
+}
 
-/**
- * クエリ層で解決したボールの所在（API と一覧の形。sides.ts の resolveBall）
- * - us: こちら（チーム）。持ち主がいない。構造で誰の番かが決まらなければ仕分け待ち（turn.ts）
- * - user: 持ち主
- * - contact: 相手（こちらが返事を待っている）
- * - none: 誰の番でもない
- */
-/**
- * クエリ層で解決したボール（0030）。相手側は、Contact に解決できた保持者（contactIds）と、
- * 解決できなかった保持者のアドレス（addresses。名寄せすると contactIds に移る）
- */
-export type Ball =
-  | { kind: 'us' }
-  | { kind: 'user'; userId: string }
-  | { kind: 'contact'; contactIds: string[]; addresses: AddressRef[] }
-  | { kind: 'none' };
+/** 名指しの状態（0038）。スレッドのログだけから決まる */
+export interface AttentionState {
+  /** アドレスごとの名指し（アドレスの順） */
+  named: Naming[];
+  /** 宛先のないシグナル（グループのチャネルではリスト宛て。クエリ層が決める） */
+  broadcasts: (LogPos & { from: AddressRef })[];
+  /** リスト宛ての名指しを外した位置（User ごと） */
+  listAcks: Record<string, LogPos>;
+}
 
-/** 通信状態。綴じたシグナルのアドレス・「返事や対応を求めているか」・持ち主・片付けだけから導出される（comm.ts） */
+/** 通信状態。綴じたシグナルのアドレス・担当する操作・名指しを外す操作・片付けだけから導出される（comm.ts） */
 export interface CommState {
-  ball: FoldedBall;
-  /** 最後に求めたシグナル（片付け・持ち主の操作のあとも残る。応えた・閉じたら null） */
-  request: Request | null;
+  attention: AttentionState;
   dismissed: boolean;
   dismissedAt: string | null;
   dismissReason: string | null;
   /** 片付けたあとにシグナルが来た（Murmur は自動で開き直さない。事実だけ返す） */
   activeSinceDismissed: boolean;
-  /** 持ち主（ThreadClaimed）。手放せば null */
+  /** 担当する操作（ThreadClaimed）の担当。手放せば null。状態を持つソースでは使わない（0038 の決定 1） */
   ownerUserId: string | null;
-  /** 返事期待（記録した送信だけが持つ）。その送り主以外からシグナルが来れば消える */
+  /** 返事期待（記録した送信だけが持つ）。続いているかは、その送信の宛先の名指しからクエリ層が決める（turn.ts の replyStateOf。0038） */
   replyExpectedBy: string | null;
   replyExpectedSignalId: string | null;
-  replyExpectedFrom: AddressRef | null;
-  /** 返事期待の期限を過ぎた（ReplyOverdue）。返事期待が消えれば解消する */
+  /** 返事期待の期限を過ぎた（ReplyOverdue がいまの返事期待を指している）。返事期待が続いているかはクエリ層が決める */
   overdue: boolean;
-  /** ソースの側で完了している（写しの closed）。片付けと同じくボールは「なし」 */
+  /** ソースの側で完了している（写しの closed）。片付けと同じく、どの見え方にも数えない */
   closedAtSource: boolean;
 }
 
-/** signal = データソースのシグナル、note = 個人のメモ（ボールを動かさない）、mirrored = 状態の写し */
-export type ThreadLogKind = 'signal' | 'note' | 'dismissed' | 'reopened' | 'claimed' | 'linked' | 'unlinked' | 'attribute' | 'mirrored' | 'overdue';
+/** signal = データソースのシグナル、note = 個人のメモ（名指しを作らない）、mirrored = 状態の写し、acknowledged = 名指しを外した */
+export type ThreadLogKind =
+  | 'signal'
+  | 'note'
+  | 'dismissed'
+  | 'reopened'
+  | 'claimed'
+  | 'linked'
+  | 'unlinked'
+  | 'attribute'
+  | 'mirrored'
+  | 'overdue'
+  | 'acknowledged';
 
 /** スレッドに綴じたもの（シグナル・メモと、人とスタンドの操作）。通信状態の導出とタイムラインの入力 */
 export interface ThreadLogEntry {
@@ -75,7 +74,6 @@ export interface ThreadLogEntry {
   /** signal / note: 送り主と宛先 */
   from?: AddressRef;
   to?: AddressRef[];
-  needsResponse?: boolean | null;
   /** signal（送信の記録）: 返事期待の期限 */
   replyExpectedBy?: string | null;
   reason?: string;
@@ -91,11 +89,18 @@ export interface ThreadLogEntry {
   value?: AttributeValue | null;
   /** mirrored: 変わった写しの項目 */
   fields?: MirrorFields;
+  /** acknowledged: 外したアドレス・リスト宛てか・どのシグナルまでか */
+  addresses?: AddressRef[];
+  list?: boolean;
+  untilSignalId?: string;
+  /** acknowledged: 外した位置（外したときのシグナルの時刻と seq。あとでシグナルを移し替えても位置は変わらない） */
+  untilAt?: string;
+  untilSeq?: number;
 }
 
 /** 写しのうち、スレッドの他の項目に入らないもの（0031 の 6） */
 export interface SourceState {
-  /** ソースの上でボールを持っているアカウント（アドレスの値） */
+  /** ソースの担当（アカウントのアドレスの値。0031 の 6。状態を持つソースの担当。0038 の決定 1） */
   holders: string[];
   statusLabel: string | null;
   due: string | null;
@@ -149,7 +154,6 @@ export interface SignalRecord {
   /** 最新の SignalThreaded で置かれたスレッド */
   threadId: string | null;
   threadedBy: ThreadedBy | null;
-  needsResponse: boolean | null;
 }
 
 export interface Projections {

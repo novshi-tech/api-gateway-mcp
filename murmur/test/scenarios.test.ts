@@ -73,9 +73,9 @@ describe.each(names)('シナリオ %s', (name) => {
     const p = await run.service.state();
     const events = await run.repo.events.read();
     for (const t of Object.values(p.threads)) {
-      // スレッドのログだけからボールが同じに導出できる
-      const { ball, dismissed, request } = deriveComm(t.log);
-      expect({ ball, dismissed, request }).toEqual({ ball: t.ball, dismissed: t.dismissed, request: t.request });
+      // スレッドのログだけから名指しと担当する操作が同じに導出できる（0038）
+      const { attention, dismissed, ownerUserId } = deriveComm(t.log);
+      expect({ attention, dismissed, ownerUserId }).toEqual({ attention: t.attention, dismissed: t.dismissed, ownerUserId: t.ownerUserId });
       // 他のスレッドだけに関わるイベントを抜いて畳んでも、このスレッドの投影は変わらない
       // （seq は抜けがあってよい。単調であればよい）
       const mine = events.filter((e) => touches(e, t.id, events));
@@ -110,6 +110,7 @@ function touches(e: DomainEvent, threadId: string, all: readonly DomainEvent[]):
     case 'ThreadAttributeSet':
     case 'ThreadMirrored':
     case 'ReplyOverdue':
+    case 'AttentionAcknowledged':
       return e.payload.threadId === threadId;
     case 'ThreadLinked':
       return e.payload.a === threadId || e.payload.b === threadId;

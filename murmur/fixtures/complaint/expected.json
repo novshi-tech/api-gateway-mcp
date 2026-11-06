@@ -1,20 +1,28 @@
 {
   "ingest": {
-    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
-    "o02": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
-    "s02": { "thread": "$partnerThread", "needsResponse": false, "by": "anchor" },
-    "o03": { "thread": "$compThread", "needsResponse": null, "by": "anchor" },
-    "s03": { "thread": "$compThread", "needsResponse": false, "by": "anchor" },
-    "s04": { "thread": "$compThread", "needsResponse": true, "by": "anchor" }
+    "s01": { "thread": "new", "by": "no_match" },
+    "o02": { "thread": "$compThread", "by": "anchor" },
+    "s02": { "thread": "$partnerThread", "by": "anchor" },
+    "o03": { "thread": "$compThread", "by": "anchor" },
+    "s03": { "thread": "$compThread", "by": "anchor" },
+    "s04": { "thread": "$compThread", "by": "anchor" }
   },
   "checkpoints": [
     {
       "after": "a00",
-      "threads": { "$compThread": { "ball": { "kind": "user", "userId": "u_sato" }, "ownerUserId": "u_sato" } },
+      "threads": {
+        "$compThread": {
+          "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+          "named": [],
+          "listReaders": ["u_sato", "u_suzuki"],
+          "triage": false,
+          "awaiting": false
+        }
+      },
       "views": [
         { "as": "u_sato", "threads": { "filter": "my_turn" }, "expect": ["$compThread"] },
         { "as": "u_suzuki", "threads": { "filter": "triage" }, "expect": [] },
-        { "as": "u_suzuki", "threads": { "filter": "my_turn" }, "expect": [] }
+        { "as": "u_suzuki", "threads": { "filter": "my_turn" }, "expect": ["$compThread"] }
       ]
     },
     {
@@ -23,9 +31,13 @@
         "$noteThread": {
           "dataSourceId": "ds_notes_sato",
           "title": "田中ビル エントランス床のクレーム",
-          "ball": { "kind": "none" },
           "signalCount": 1,
-          "links": { "$compThread": "manual" }
+          "links": { "$compThread": "manual" },
+          "assignee": null,
+          "named": [],
+          "listReaders": [],
+          "triage": false,
+          "awaiting": false
         }
       },
       "views": [
@@ -38,16 +50,31 @@
       "after": "o01",
       "threads": {
         "$partnerThread": {
-          "ball": { "kind": "contact", "contactIds": ["p_cleanco"], "addresses": [] },
           "replyExpectedBy": "2026-10-16T13:00:00.000Z",
           "overdue": false,
-          "links": { "$compThread": "sent" }
+          "links": { "$compThread": "sent" },
+          "assignee": null,
+          "named": ["ops@clean-toto.example"],
+          "listReaders": [],
+          "triage": true,
+          "awaiting": true
         },
         "$compThread": { "links": { "$partnerThread": "sent" } }
       }
     },
     { "after": "c_o01", "threads": { "$partnerThread": { "signalCount": 1 } } },
-    { "after": "o02", "threads": { "$compThread": { "ball": { "kind": "contact", "contactIds": ["p_tanaka"], "addresses": [] } } } },
+    {
+      "after": "o02",
+      "threads": {
+        "$compThread": {
+          "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+          "named": ["owner@tanaka-bldg.example"],
+          "listReaders": ["u_sato", "u_suzuki"],
+          "triage": false,
+          "awaiting": true
+        }
+      }
+    },
     {
       "after": "o02",
       "threads": {},
@@ -57,13 +84,15 @@
           "thread": "$noteThread",
           "access": "full",
           "mustContain": ["原因を調査しております", "乾拭き・乾燥確認"],
-          "item": { "derivedBall": { "kind": "waiting", "threadIds": ["$compThread", "$partnerThread"] } }
+          "item": { "derivedBall": { "kind": "my_turn", "threadIds": ["$compThread"] } }
         }
       ]
     },
     {
       "after": "c_due",
-      "threads": { "$partnerThread": { "overdue": true, "ball": { "kind": "contact", "contactIds": ["p_cleanco"], "addresses": [] } } },
+      "threads": {
+        "$partnerThread": { "overdue": true, "assignee": null, "named": ["ops@clean-toto.example"], "listReaders": [], "triage": true, "awaiting": true }
+      },
       "views": [
         { "as": "u_sato", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] },
         { "as": "u_suzuki", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] }
@@ -71,25 +100,70 @@
     },
     {
       "after": "s02",
-      "threads": { "$partnerThread": { "ball": { "kind": "none" }, "overdue": false, "replyExpectedBy": null } },
-      "views": [{ "as": "u_sato", "threads": { "filter": "overdue" }, "expect": [] }]
+      "threads": {
+        "$partnerThread": {
+          "overdue": true,
+          "replyExpectedBy": "2026-10-16T13:00:00.000Z",
+          "assignee": null,
+          "named": ["ops@clean-toto.example"],
+          "listReaders": ["u_sato", "u_suzuki"],
+          "triage": true,
+          "awaiting": true
+        }
+      },
+      "views": [{ "as": "u_sato", "threads": { "filter": "overdue" }, "expect": ["$partnerThread"] }]
+    },
+    {
+      "after": "k02",
+      "threads": { "$partnerThread": { "overdue": false, "replyExpectedBy": null, "awaiting": false, "named": [], "listReaders": ["u_suzuki"] } }
     },
     {
       "after": "r03",
-      "threads": { "$compThread": { "replyExpectedBy": "2026-10-18T09:00:00.000Z", "signalCount": 3, "ball": { "kind": "contact", "contactIds": ["p_tanaka"], "addresses": [] } } }
+      "threads": {
+        "$compThread": {
+          "replyExpectedBy": "2026-10-18T09:00:00.000Z",
+          "signalCount": 3,
+          "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+          "named": ["owner@tanaka-bldg.example"],
+          "listReaders": ["u_suzuki"],
+          "triage": false,
+          "awaiting": true
+        }
+      }
     },
-    { "after": "s03", "threads": { "$compThread": { "ball": { "kind": "none" }, "signalCount": 4 } } },
+    {
+      "after": "s03",
+      "threads": {
+        "$compThread": {
+          "signalCount": 4,
+          "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+          "named": ["owner@tanaka-bldg.example"],
+          "listReaders": ["u_sato", "u_suzuki"],
+          "triage": false,
+          "awaiting": true
+        }
+      }
+    },
     { "after": "a01", "threads": { "$compThread": { "dismissed": true, "activeSinceDismissed": false } } },
     {
       "after": "a07",
-      "threads": { "$noteThread": { "dismissed": true, "ball": { "kind": "none" } } },
+      "threads": { "$noteThread": { "dismissed": true, "assignee": null, "named": [], "listReaders": [], "triage": false, "awaiting": false } },
       "views": [{ "as": "u_sato", "thread": "$noteThread", "access": "full", "item": { "linkedActiveSinceDismissed": false } }]
     },
     {
       "after": "s04",
       "threads": {
-        "$compThread": { "ball": { "kind": "none" }, "dismissed": true, "activeSinceDismissed": true, "signalCount": 5 },
-        "$noteThread": { "dismissed": true, "ball": { "kind": "none" } }
+        "$compThread": {
+          "dismissed": true,
+          "activeSinceDismissed": true,
+          "signalCount": 5,
+          "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+          "named": [],
+          "listReaders": ["u_sato", "u_suzuki"],
+          "triage": false,
+          "awaiting": false
+        },
+        "$noteThread": { "dismissed": true, "assignee": null, "named": [], "listReaders": [], "triage": false, "awaiting": false }
       },
       "views": [
         { "as": "u_sato", "thread": "$noteThread", "access": "full", "item": { "dismissed": true, "linkedActiveSinceDismissed": true } },
@@ -100,31 +174,52 @@
   "final": {
     "threads": {
       "$compThread": {
-        "ball": { "kind": "none" },
         "dismissed": true,
         "activeSinceDismissed": false,
         "counterpartContactIds": ["p_tanaka"],
         "signalCount": 4,
-        "ownerUserId": "u_sato",
         "links": { "$noteThread": "manual", "$partnerThread": "sent" },
-        "replyExpectedBy": null
+        "replyExpectedBy": null,
+        "assignee": { "addresses": [], "by": "claim", "contactIds": [], "userIds": ["u_sato"] },
+        "named": [],
+        "listReaders": ["u_sato", "u_suzuki"],
+        "triage": false,
+        "awaiting": false
       },
       "$partnerThread": {
-        "ball": { "kind": "none" },
         "counterpartContactIds": ["p_cleanco"],
         "signalCount": 2,
         "links": { "$noteThread": "manual", "$compThread": "sent" },
-        "overdue": false
+        "overdue": false,
+        "assignee": null,
+        "named": [],
+        "listReaders": ["u_suzuki"],
+        "triage": true,
+        "awaiting": false
       },
-      "$billingThread": { "dataSourceId": "ds_support", "title": "請求書の送付先変更", "ball": { "kind": "us" }, "counterpartContactIds": ["p_tanaka"], "signalCount": 1 },
+      "$billingThread": {
+        "dataSourceId": "ds_support",
+        "title": "請求書の送付先変更",
+        "counterpartContactIds": ["p_tanaka"],
+        "signalCount": 1,
+        "assignee": null,
+        "named": [],
+        "listReaders": ["u_sato", "u_suzuki"],
+        "triage": true,
+        "awaiting": false
+      },
       "$noteThread": {
         "dataSourceId": "ds_notes_sato",
-        "ball": { "kind": "none" },
         "dismissed": true,
         "signalCount": 1,
         "counterpartContactIds": [],
         "attributes": { "priority": "高" },
-        "links": { "$compThread": "manual", "$partnerThread": "manual" }
+        "links": { "$compThread": "manual", "$partnerThread": "manual" },
+        "assignee": null,
+        "named": [],
+        "listReaders": [],
+        "triage": false,
+        "awaiting": false
       }
     },
     "threadCount": 4,
@@ -146,7 +241,7 @@
     { "as": "u_nvt", "thread": "$compThread", "access": null },
     { "as": "u_sato", "signals": 8 },
     { "as": "u_nvt", "signals": 0 },
-    { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$billingThread"] },
+    { "as": "u_sato", "threads": { "filter": "triage" }, "expect": ["$billingThread", "$partnerThread"] },
     { "as": "u_suzuki", "threads": { "filter": "all" }, "expect": ["$compThread", "$partnerThread", "$billingThread"] },
     { "ghostContact": "p_tanaka" },
     { "as": "u_suzuki", "signals": 7 },
@@ -156,9 +251,14 @@
       "access": "full",
       "mustContain": [],
       "mustNotContain": ["$noteThread", "協力会社に作業報告を求め"],
-      "item": { "ownerUserId": "u_sato" }
+      "item": { "assignee": { "by": "claim", "userIds": ["u_sato"], "contactIds": [], "addresses": [] } }
     },
-    { "as": "u_sato", "thread": "$noteThread", "access": "full", "item": { "dismissed": true, "linkedActiveSinceDismissed": false, "derivedBall": { "kind": "none" } } },
+    {
+      "as": "u_sato",
+      "thread": "$noteThread",
+      "access": "full",
+      "item": { "dismissed": true, "linkedActiveSinceDismissed": false, "derivedBall": { "kind": "none" } }
+    },
     { "as": "u_suzuki", "threads": { "filter": "mine" }, "expect": [] },
     { "as": "u_nvt", "thread": "$noteThread", "access": null }
   ]

@@ -2,9 +2,25 @@ import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
 import type { AddressRef, AttributeValue, Author, MirrorFields } from './events';
 import { sortLog } from './comm';
-import type { Ball, Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
+import type { Projections, SignalRecord, SourceState, Thread, ThreadLink, ThreadLogEntry } from './projections';
 import { commView, directionOf } from './sides';
-import { derivedBall, isMyTurn, linkCandidates, linkedActiveSinceDismissed, turnOf, type DerivedBall, type LinkCandidate, type Turn } from './turn';
+import {
+  assigneeOf,
+  attentionOf,
+  derivedBall,
+  isAwaiting,
+  isMyTurn,
+  isTriage,
+  linkCandidates,
+  linkedActiveSinceDismissed,
+  myTurnOf,
+  replyStateOf,
+  type Assignee,
+  type Attention,
+  type DerivedBall,
+  type LinkCandidate,
+  type MyTurnReason,
+} from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // クエリ層の可視性。投影のスナップショットと Viewer から「見えるもの」だけを返す純関数。
@@ -13,33 +29,38 @@ import { canReadDataSource, type Viewer } from './viewer';
 // - Contact のない User は 0 件、ゴースト Contact は Viewer になれない
 
 /**
- * - my_turn: Viewer の番（持ち主・読者が 1 人・宛先）で、片付けていないもの
+ * - my_turn: Viewer の番（自分が担当・自分への名指し・リスト宛ての名指しが残っている。0038）で、開いているもの
  * - mine: Viewer の個人のメモのスレッド（閉じたものも）
- * - open: 片付けていないもの
+ * - open: 開いているもの（片付けていない・ソースで完了していない）
+ * - awaiting: 相手待ち（読者でないアドレスへの名指しが残っている）で、開いているもの
  * - overdue: 返事期待の期限を過ぎたもの
- * - triage: 仕分け待ち（こちらで、誰の番かが決まらず、片付けていない）
+ * - triage: 仕分け待ち（共有リストで、開いていて、担当がいない）
  * - all: 全部
  *
  * since を渡せば、それより後に動いたものだけ（スレッド自身か、見えるリンク先の updatedAt。メモのスレッドの導出したボールはリンク先で変わるため）
  */
-export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'overdue' | 'triage' | 'all';
+export type ThreadFilter = 'my_turn' | 'mine' | 'open' | 'awaiting' | 'overdue' | 'triage' | 'all';
 
 export interface ThreadSummary {
   id: string;
   dataSourceId: string;
   title: string;
-  /** クエリ時のマスタで解決したボール（0030） */
-  ball: Ball;
+  /** 担当（0038 の決定 1）。個人リストと、担当のいないスレッドは null */
+  assignee: Assignee | null;
+  /** 残っている名指し（0038 の決定 2〜4） */
+  attention: Attention;
+  /** 仕分け待ち（共有リストで、開いていて、担当がいない） */
+  triage: boolean;
+  /** 相手待ち（読者でないアドレスへの名指しが残っている） */
+  awaiting: boolean;
   counterpartContactIds: string[];
   /** 相手のうち、Contact に解決できなかったアドレス（0030） */
   counterpartAddresses: AddressRef[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
-  unansweredSince: string | null;
   dismissed: boolean;
   dismissReason: string | null;
   activeSinceDismissed: boolean;
-  ownerUserId: string | null;
   replyExpectedBy: string | null;
   overdue: boolean;
   closedAtSource: boolean;
@@ -50,11 +71,12 @@ export interface ThreadSummary {
   updatedAt: string;
 }
 
-/** 一覧と詳細で返すスレッド。投影の要約に、クエリ層で導出したもの（誰の番か・リンク先から導出したボール・結び候補）を足す */
+/** 一覧と詳細で返すスレッド。投影の要約に、Viewer から見たもの（自分の番か・リンク先から導出したボール・結び候補）を足す */
 export interface ThreadItem extends ThreadSummary {
   /** 自分か、見える結んだ先のうち一番新しい更新（一覧の並び。0031 の 5） */
   lastActivityAt: string;
-  turn: Turn;
+  /** Viewer の番の理由（担当・名指し・リスト宛て）。空なら Viewer の番ではない */
+  myTurn: MyTurnReason[];
   derivedBall: DerivedBall | null;
   /** 閉じたスレッドに結ばれた先で、閉じたあとにシグナルが来た */
   linkedActiveSinceDismissed: boolean;
@@ -62,23 +84,23 @@ export interface ThreadItem extends ThreadSummary {
 }
 
 export function summarizeThread(dir: Directory, p: Projections, t: Thread): ThreadSummary {
-  const comm = commView(dir, p, t);
+  const comm = commView(dir, t);
   return {
     id: t.id,
     dataSourceId: t.dataSourceId,
     title: t.title,
-    ball: comm.ball,
+    assignee: assigneeOf(dir, t),
+    attention: attentionOf(dir, t),
+    triage: isTriage(dir, t),
+    awaiting: isAwaiting(dir, t),
     counterpartContactIds: comm.counterpartContactIds,
     counterpartAddresses: comm.counterpartAddresses,
     lastInboundAt: comm.lastInboundAt,
     lastOutboundAt: comm.lastOutboundAt,
-    unansweredSince: comm.unansweredSince,
     dismissed: t.dismissed,
     dismissReason: t.dismissReason,
     activeSinceDismissed: t.activeSinceDismissed,
-    ownerUserId: t.ownerUserId,
-    replyExpectedBy: t.replyExpectedBy,
-    overdue: t.overdue,
+    ...replyStateOf(dir, t),
     closedAtSource: t.closedAtSource,
     links: t.links,
     attributes: t.attributes,
@@ -104,16 +126,11 @@ export function threadItem(dir: Directory, viewer: Viewer, p: Projections, t: Th
     ...summarizeThread(dir, p, t),
     links: visibleLinks(viewer, p, t),
     lastActivityAt: lastActivityAt(viewer, p, t),
-    turn: turnOf(dir, p, t),
+    myTurn: myTurnOf(dir, viewer, t),
     derivedBall: derivedBall(dir, viewer, p, t),
     linkedActiveSinceDismissed: linkedActiveSinceDismissed(viewer, p, t),
     linkCandidates: linkCandidates(viewer, p, t),
   };
-}
-
-/** 仕分け待ち: こちら（組織）で、持ち主も構造で決まる人もなく、片付けていないスレッド */
-export function isTriage(dir: Directory, p: Projections, t: Thread): boolean {
-  return !t.dismissed && turnOf(dir, p, t).kind === 'triage';
 }
 
 /** Viewer に見えるスレッド（読者になっているデータソースのもの） */
@@ -129,9 +146,10 @@ export function listThreads(
     if (!canReadDataSource(viewer, t.dataSourceId)) continue;
     if (opts.dataSourceId && t.dataSourceId !== opts.dataSourceId) continue;
     if (filter === 'open' && (t.dismissed || t.closedAtSource)) continue;
-    if (filter === 'triage' && !isTriage(dir, p, t)) continue;
-    if (filter === 'overdue' && !t.overdue) continue;
-    if (filter === 'my_turn' && (t.dismissed || !isMyTurn(turnOf(dir, p, t), viewer))) continue;
+    if (filter === 'triage' && !isTriage(dir, t)) continue;
+    if (filter === 'awaiting' && !isAwaiting(dir, t)) continue;
+    if (filter === 'overdue' && !replyStateOf(dir, t).overdue) continue;
+    if (filter === 'my_turn' && !isMyTurn(dir, viewer, t)) continue;
     if (filter === 'mine') {
       const ds = dir.dataSource(t.dataSourceId);
       if (ds?.kind !== 'notes' || ds.ownerUserId !== viewer.userId) continue;
@@ -161,7 +179,7 @@ function movedSince(viewer: Viewer, p: Projections, t: Thread, since: string): b
 
 export type SignalView = { direction: 'inbound' | 'outbound'; author?: Author } & Pick<
   SignalRecord,
-  'signalId' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'needsResponse' | 'recorded'
+  'signalId' | 'channel' | 'from' | 'to' | 'subject' | 'body' | 'attachments' | 'anchors' | 'at' | 'threadedBy' | 'recorded'
 >;
 
 function signalView(dir: Directory, s: SignalRecord): SignalView {
@@ -177,7 +195,6 @@ function signalView(dir: Directory, s: SignalRecord): SignalView {
     anchors: s.anchors,
     at: s.at,
     threadedBy: s.threadedBy,
-    needsResponse: s.needsResponse,
     recorded: s.recorded,
     // 書き手の印より前のメモは本人が書いたもの
     ...(s.channel === 'note' ? { author: s.author ?? { kind: 'user' as const } } : {}),
@@ -199,6 +216,10 @@ export interface TimelineEntry {
   value?: AttributeValue | null;
   fields?: MirrorFields;
   replyExpectedBy?: string | null;
+  /** acknowledged: 外したアドレス・リスト宛てか・どのシグナルまでか */
+  addresses?: AddressRef[];
+  list?: boolean;
+  untilSignalId?: string;
 }
 
 /** 結んだ先。両端を読めるものだけ返す（0033 の 3）。visible は互換のために残し、いつも true */
@@ -206,7 +227,9 @@ export interface LinkView extends ThreadLink {
   visible: true;
   title: string;
   dataSourceId: string;
-  turn: Turn;
+  /** Viewer の番の理由（空なら Viewer の番ではない） */
+  myTurn: MyTurnReason[];
+  awaiting: boolean;
   dismissed: boolean;
 }
 
@@ -233,7 +256,15 @@ export function getThreadView(
   const ds = dir.dataSource(t.dataSourceId);
   const linked: LinkView[] = visibleLinks(viewer, p, t).map((l) => {
     const u = p.threads[l.threadId]!;
-    return { ...l, visible: true, title: u.title, dataSourceId: u.dataSourceId, turn: turnOf(dir, p, u), dismissed: u.dismissed };
+    return {
+      ...l,
+      visible: true,
+      title: u.title,
+      dataSourceId: u.dataSourceId,
+      myTurn: myTurnOf(dir, viewer, u),
+      awaiting: isAwaiting(dir, u),
+      dismissed: u.dismissed,
+    };
   });
   // 見えないスレッドとの「結んだ・外した」は出さない（0033 の 3）
   const readable = (id: string) => {
@@ -260,6 +291,11 @@ export function getThreadView(
       if (e.value !== undefined) entry.value = e.value;
       if (e.fields !== undefined) entry.fields = e.fields;
       if (e.kind === 'overdue' && e.replyExpectedBy !== undefined) entry.replyExpectedBy = e.replyExpectedBy;
+      if (e.kind === 'acknowledged') {
+        entry.addresses = e.addresses ?? [];
+        entry.list = e.list ?? false;
+        if (e.untilSignalId !== undefined) entry.untilSignalId = e.untilSignalId;
+      }
       return entry;
     });
   return {

@@ -1,25 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assigneeOf,
+  attentionOf,
   deriveViewer,
   Directory,
-  isMyTurn,
+  isAwaiting,
+  isTriage,
   listThreads,
+  myTurnOf,
   planMirror,
   Seed,
-  turnOf,
   type CoreContext,
   type InboundMirror,
   type InboundSignal,
 } from '../../src/domain';
 import { EventLog, ingestPure } from '../helpers/world';
 
-// 再現: Jira の共有リスト（読者は直樹だけ）で、担当者でも起票者でもない読者の「自分の番」に回る（2026-11-06 の実測。SPW-2475）。
+// 再現: Jira の共有リスト（読者は直樹だけ）で、担当者でも起票者でもない読者の「自分の番」に回った件（2026-11-06 の実測。SPW-2475）。
 // - 担当者（会田さん）と起票者（山本さん）の accountId は Contact に結ばれていない
-// - 起票のシグナル（山本さん → 会田さん）を AI が needs_response=true と判定すると、ボールは「こちら」になり、
-//   holders が解決できないので holderTurn が効かず、「読者が 1 人」で直樹の番（by: reader）になる
-// 期待: 自分の番になるのは、自分が holder・自分宛て・自分が持った（claim）もののいずれかだけ（H8・H9）
-// 修正は docs/adr/0038（案）の採用後。それまでは今の挙動で失敗することを it.fails で示す。0038 を実装したら、
-// 期待値を新しい形（担当・名指し）に書き直して it に戻す
+// - 0038 の前は、起票のシグナルを AI が needs_response=true と判定するとボールが「こちら」になり、holders が解決できないので
+//   担当者の写しが効かず、「読者が 1 人」で直樹の番（by: reader）になっていた
+// 0038 から: 自分の番になるのは、自分が担当・自分への名指し・リスト宛ての名指しが残っているもの（H8・H9）
 
 const NAOKI = '5b44424e141cd45ff0698a68';
 const AIDA = '712020:a9769c40-7345-4c70-8abe-7b57675aac93';
@@ -90,30 +91,35 @@ function issue(key: string, holders: string[], from: string, needsResponse: bool
   return { p, t: p.threads[plan.threadId]! };
 }
 
-describe('Jira の共有リストで、読者でない担当者の課題が読者の番に回らない（SPW-2475 の再現）', () => {
-  it.fails('H8 H9 担当者が読者でない（Contact に解決できない）課題は、起票のシグナルが「求めている」でも、読者の番にしない', () => {
+describe('Jira の共有リストで、読者でない担当者の課題が読者の番に回らない（SPW-2475 の再現。0038）', () => {
+  it('H8 H9 担当者が読者でない（Contact もない）課題は、その人が担当で名指しもその人。読者の番にはならず、こちらが送っていないので相手待ちにもならない', () => {
     const { p, t } = issue('SPW-2475', [AIDA], YAMAMOTO, true);
-    // 前提（今の挙動の入力）: ボールはこちら、holders は会田さん
     expect(t.source?.holders).toEqual([AIDA]);
-    const turn = turnOf(dir, p, t);
-    expect(isMyTurn(turn, naoki)).toBe(false);
-    expect(turn).toEqual({ kind: 'contact', contactIds: [], addresses: [jira(AIDA)] });
+    expect(assigneeOf(dir, t)).toEqual({ by: 'source', userIds: [], contactIds: [], addresses: [jira(AIDA)] });
+    expect(attentionOf(dir, t)).toMatchObject({ named: [{ address: jira(AIDA), userId: null, contactId: null }], list: null });
+    expect(myTurnOf(dir, naoki, t)).toEqual([]);
+    expect(isTriage(dir, t)).toBe(false);
+    expect(isAwaiting(dir, t)).toBe(false);
     expect(listThreads(dir, naoki, p, { filter: 'my_turn' })).toEqual([]);
   });
 
-  it.fails('H8 H9 同じ形で AI が needs_response=false と判定した課題（SPW-2470 相当）と、誰の番が同じになる（AI の判定に依らない）', () => {
+  it('H8 H9 同じ形で AI が needs_response=false と判定した課題（SPW-2470 相当）と、誰の番が同じになる（AI の判定に依らない）', () => {
     const a = issue('SPW-2475', [AIDA], YAMAMOTO, true);
     const b = issue('SPW-2470', [AIDA], YAMAMOTO, false);
-    expect(turnOf(dir, a.p, a.t)).toEqual(turnOf(dir, b.p, b.t));
+    const shape = (x: typeof a) => [assigneeOf(dir, x.t), attentionOf(dir, x.t).named.map((n) => n.address), myTurnOf(dir, naoki, x.t)];
+    expect(shape(a)).toEqual(shape(b));
   });
 
-  it('H8 H9 担当者が読者なら、その人の番（BO-2093 相当。今も通る）', () => {
+  it('H8 H9 担当者が読者なら、その人の担当で、起票の名指しもその人（BO-2093 相当）', () => {
     const { p, t } = issue('BO-2093', [NAOKI], YAMAMOTO, true);
-    expect(turnOf(dir, p, t)).toEqual({ kind: 'user', userIds: ['u_naoki'], by: 'holder' });
+    expect(assigneeOf(dir, t)).toEqual({ by: 'source', userIds: ['u_naoki'], contactIds: [], addresses: [] });
+    expect(myTurnOf(dir, naoki, t)).toEqual(['assignee', 'named']);
+    expect(listThreads(dir, naoki, p, { filter: 'my_turn' }).map((x) => x.id)).toEqual([t.id]);
   });
 
-  it.fails('H8 共有リストでは「読者が 1 人」を理由に番を決めない。担当者のいない課題の求めは仕分け待ち', () => {
-    const { p, t } = issue('SPW-2483', [], YAMAMOTO, true);
-    expect(turnOf(dir, p, t)).toEqual({ kind: 'triage' });
+  it('H8 共有リストでは「読者が 1 人」を理由に番を決めない。担当者のいない課題は仕分け待ち', () => {
+    const { t } = issue('SPW-2483', [], YAMAMOTO, true);
+    expect(isTriage(dir, t)).toBe(true);
+    expect(myTurnOf(dir, naoki, t)).toEqual([]);
   });
 });

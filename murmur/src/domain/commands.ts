@@ -2,10 +2,10 @@ import type { CoreContext } from './context';
 import type { Directory } from './directory';
 import type { AttributeDef, DataSource } from './entities';
 import { DomainError } from './errors';
-import { AttributeValue, draft, type Author, type DraftEvent, type ThreadChoice } from './events';
+import { AttributeValue, draft, type AddressRef, type Author, type DraftEvent, type ThreadChoice } from './events';
 import type { Projections, SignalRecord, Thread } from './projections';
-import { directionOf } from './sides';
-import { linkCandidates } from './turn';
+import { addressKey, comparePos, isPending, sameAddress } from './comm';
+import { isListAddress, isStatefulSource, linkCandidates, listKindOf, pendingListSignalsFor, readerOfAddress } from './turn';
 import { canReadDataSource, type Viewer } from './viewer';
 
 // スタンド（＝ユーザー）が呼ぶ操作の判断部分。状態とコマンドを受けてイベントを返すだけの純関数。
@@ -47,14 +47,14 @@ export function reopenThread(p: Projections, viewer: Viewer, input: { threadId: 
 export type MoveTarget = { kind: 'existing'; threadId: string } | { kind: 'new'; title: string };
 
 /**
- * シグナルを別のスレッド（同じデータソースの既存のスレッドか、新しいスレッド）へ移す。
- * 「返事や対応を求めているか」も同時に直せる（省略すれば今の値のまま）。元の判断は消さない（追記）。
+ * シグナルを別のスレッド（同じデータソースの既存のスレッドか、新しいスレッド）へ移す。元の判断は消さない（追記）。
+ * 「返事や対応を求めているか」は 0038 でやめた（名指しは宛先で決まる）
  */
 export function moveSignal(
   p: Projections,
   viewer: Viewer,
   ctx: CoreContext,
-  input: { signalId: string; to: MoveTarget; needsResponse?: boolean; reason: string },
+  input: { signalId: string; to: MoveTarget; reason: string },
 ): { events: DraftEvent[]; threadId: string } {
   const sig = visibleSignalOrThrow(p, viewer, input.signalId);
   if (!input.reason.trim()) throw new DomainError('invalid', 'reason is required');
@@ -70,12 +70,7 @@ export function moveSignal(
     if (!input.to.title.trim()) throw new DomainError('invalid', 'title is required');
     choice = { kind: 'new', threadId: ctx.newId('thr'), title: input.to.title };
   }
-  const ours = directionOf(ctx.dir, sig) === 'outbound';
-  if (ours && input.needsResponse !== undefined) {
-    throw new DomainError('invalid', 'needs_response is not judged for outbound signals');
-  }
-  const needsResponse = ours ? null : (input.needsResponse ?? sig.needsResponse ?? true);
-  if (choice.kind === 'existing' && choice.threadId === sig.threadId && needsResponse === sig.needsResponse) {
+  if (choice.kind === 'existing' && choice.threadId === sig.threadId) {
     return { events: [], threadId: choice.threadId };
   }
   return {
@@ -87,7 +82,6 @@ export function moveSignal(
         by: 'human',
         confidence: 1,
         reason: input.reason,
-        needsResponse,
         actorUserId: viewer.userId,
       }),
     ],
@@ -151,7 +145,6 @@ export function addNote(
         by: 'self',
         confidence: 1,
         reason: choice.kind === 'new' ? '本人が新しい件として書いた' : '本人が置き先を指定した',
-        needsResponse: null,
         actorUserId: viewer.userId,
       }),
     ],
@@ -166,8 +159,9 @@ function firstLine(body: string): string {
 // ---- 持ち主（ThreadClaimed） ----
 
 /**
- * 持つ・手放す（userId: null）・引き継ぐ。持てるのはそのデータソースの読者（User を持つ Contact）だけ。
- * 個人のメモのスレッドは持ち主を持たない（本人のもの。ボールはリンク先から導出する）
+ * 担当する・手放す（userId: null）・引き継ぐ（0038 の決定 1）。担当できるのはそのデータソースの読者だけ。
+ * 状態を持つソース（Jira・PR）の担当はソースの担当者なので断る（担当はソースで移す）。
+ * 個人リスト（個人のメモ・個人の箱）は本人が暗黙の担当なので断る
  */
 export function claimThread(
   p: Projections,
@@ -177,7 +171,9 @@ export function claimThread(
 ): DraftEvent[] {
   const t = visibleThreadOrThrow(p, viewer, input.threadId);
   const ds = dir.dataSource(t.dataSourceId);
-  if (ds?.kind === 'notes') throw new DomainError('invalid', 'a notes thread has no owner');
+  if (ds?.kind === 'notes') throw new DomainError('invalid', 'a notes thread has no assignee');
+  if (isStatefulSource(ds)) throw new DomainError('invalid', `the assignee of thread ${t.id} is mirrored from ${ds?.name ?? t.dataSourceId}; change it at the source`);
+  if (listKindOf(dir, t.dataSourceId) === 'personal') throw new DomainError('invalid', `thread ${t.id} is in a personal list; its reader is the assignee`);
   if (input.userId !== null) {
     const list = dir.listOfDataSource(t.dataSourceId);
     const readers = list ? dir.readersOfList(list.id) : [];
@@ -187,6 +183,70 @@ export function claimThread(
   }
   if (t.ownerUserId === input.userId) return [];
   return [draft('ThreadClaimed', { threadId: t.id, userId: input.userId, actorUserId: viewer.userId, reason: input.reason })];
+}
+
+// ---- 名指しを外す（AttentionAcknowledged。0038 の決定 3・4） ----
+
+/**
+ * 名指しを外す。untilSignalId（省けばスレッドの最新のシグナル）までの名指しを外す。
+ * - addresses を省けば、自分への名指し（自分のアドレスと、リスト宛て）を外す
+ * - addresses を渡せば、そのアドレスの名指しを外す。自分のアドレスか、このリストの読者でないアドレスだけ。
+ *   リスト宛てのアドレス（窓口）は、自分についてのリスト宛てとして外す
+ * 外すものがなければ何もしない
+ */
+export function acknowledgeAttention(
+  p: Projections,
+  viewer: Viewer,
+  dir: Directory,
+  input: { threadId: string; untilSignalId?: string; addresses?: AddressRef[]; reason?: string },
+): DraftEvent[] {
+  const t = visibleThreadOrThrow(p, viewer, input.threadId);
+  const ds = dir.dataSource(t.dataSourceId);
+  const signals = t.log.filter((l) => l.kind === 'signal');
+  const until = input.untilSignalId ? signals.find((l) => l.signalId === input.untilSignalId) : signals[signals.length - 1];
+  if (input.untilSignalId && !until) throw new DomainError('invalid', `signal ${input.untilSignalId} is not in thread ${t.id}`);
+  if (!until) return [];
+  const upTo = (pos: { at: string; seq: number }) => comparePos(pos, until) <= 0;
+
+  const addresses: AddressRef[] = [];
+  let list = false;
+  const pendingNamed = t.attention.named.filter((n) => isPending(n) && upTo(n.last));
+  if (input.addresses === undefined) {
+    for (const n of pendingNamed) {
+      if (!isListAddress(ds, n.address) && readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) === viewer.userId) addresses.push(n.address);
+    }
+    // リスト宛て: 外した位置より後の、自分以外が送ったリスト宛てのシグナルがあるときだけ
+    list = pendingListSignalsFor(dir, t, viewer.userId).some((x) => upTo(x));
+  } else {
+    for (const r of input.addresses) {
+      if (isListAddress(ds, r)) {
+        list = true;
+        continue;
+      }
+      const n = t.attention.named.find((x) => addressKey(x.address) === addressKey(r));
+      if (!n) throw new DomainError('invalid', `${r.channel}:${r.value} is not named in thread ${t.id}`);
+      const owner = readerOfAddress(dir, t.dataSourceId, r, n.last.at);
+      if (owner !== null && owner !== viewer.userId) {
+        throw new DomainError('forbidden', `${r.channel}:${r.value} belongs to reader ${owner}; only that reader can acknowledge it`);
+      }
+      if (isPending(n) && upTo(n.last) && !addresses.some((a) => sameAddress(a, r))) addresses.push(n.address);
+    }
+  }
+  if (list) {
+    const acked = t.attention.listAcks[viewer.userId];
+    if (acked && comparePos(acked, until) >= 0) list = false;
+  }
+  if (addresses.length === 0 && !list) return [];
+  return [
+    draft('AttentionAcknowledged', {
+      threadId: t.id,
+      untilSignalId: until.signalId!,
+      addresses,
+      list,
+      actorUserId: viewer.userId,
+      reason: input.reason,
+    }),
+  ];
 }
 
 // ---- リンク（ThreadLinked） ----

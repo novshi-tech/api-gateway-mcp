@@ -7,7 +7,7 @@ import { planLifecycle, planMaintenance } from '../../src/connectors/graph/subsc
 import { GraphMailSync } from '../../src/connectors/graph/sync';
 import { GraphMessage } from '../../src/connectors/graph/message';
 import { sha256Hex } from '../../src/connectors/secrets';
-import { connectMailbox, directionOf, Directory, planMasterEdit, resolveBall, type MailboxPlan, type ServiceDataSource } from '../../src/domain';
+import { connectMailbox, directionOf, Directory, planMasterEdit, attentionOf, type MailboxPlan, type ServiceDataSource } from '../../src/domain';
 import { MemoryConnectorState } from '../../src/store/connector-state';
 import { counterIds, makeService } from '../helpers/service';
 import { FakeGraph, mail } from '../helpers/fake-graph';
@@ -226,8 +226,12 @@ describe('H5 H6 個人の箱の同期（偽の Graph）', () => {
     const p = await ctx.service.state();
     const dir = await ctx.service.directory();
     expect(thread!.signalIds.map((id) => directionOf(dir, p.signals[id]!))).toEqual(['inbound', 'outbound']);
-    // 送信でボールは相手へ（保持者のアドレスを、クエリ層で Contact に解決する。0030）
-    expect(resolveBall(dir, p, thread!)).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
+    // 送信で相手が名指しされる（アドレスを、クエリ層で Contact に解決する。0030・0038）
+    // 受信の宛先の本人（Bob）への名指しは、本人が外すまで残る
+    expect(attentionOf(dir, thread!).named.map((n) => [n.address.value, n.userId, n.contactId])).toEqual([
+      ['bob@ubs.example', 'u_bob', null],
+      ['carol@example.com', null, 'p_carol'],
+    ]);
   });
 
   it('記録した送信（下書きの internetMessageId）があとで送信済みに現れても 1 本のまま（H5）', async () => {

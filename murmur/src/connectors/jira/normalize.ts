@@ -49,13 +49,11 @@ export function createdSignal(dataSourceId: string, issue: JiraIssue): InboundSi
   };
 }
 
-/** コメント → シグナル。宛先はメンションした人、いなければ担当者、それもいなければ起票した人（書いた本人は除く） */
+/** コメント → シグナル。宛先はメンションした人だけ（書いた本人は除く）。メンションがなければ宛先なし（0038 の未決 3） */
 export function commentSignal(dataSourceId: string, issue: JiraIssue, comment: JiraComment): InboundSignal | null {
   if (!comment.author) return null;
   const author = comment.author.accountId;
-  const mentioned = mentions(comment.body).filter((id) => id !== author);
-  const fallback = [issue.fields.assignee?.accountId, issue.fields.reporter?.accountId].find((id) => id !== undefined && id !== author);
-  const to = mentioned.length > 0 ? mentioned : fallback ? [fallback] : [];
+  const to = mentions(comment.body).filter((id) => id !== author);
   const body = adfText(comment.body).trim();
   const ref = `${issue.key}#c${comment.id}`;
   return {

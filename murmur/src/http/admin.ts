@@ -1,4 +1,20 @@
-import { commView, directionOf, getThreadView, lastActivityAt, resolveBall, sortLog, turnOf, type AttributeValue, type Directory, type MirrorFields, type Projections, type Thread, type Turn, type Viewer } from '../domain';
+import {
+  assigneeOf,
+  attentionOf,
+  directionOf,
+  getThreadView,
+  isAwaiting,
+  isTriage,
+  lastActivityAt,
+  replyStateOf,
+  sortLog,
+  type AttributeValue,
+  type Directory,
+  type MirrorFields,
+  type Projections,
+  type Thread,
+  type Viewer,
+} from '../domain';
 
 // 参照専用の管理画面（ステップ 5）とタイムライン。どれも純関数（マスタ・投影 → HTML 文字列）。
 // 運用者向けで、TIMELINE_TOKEN を知っている人には全データソースが見える。スタンドの可視性（H3）とは別の入口
@@ -43,7 +59,7 @@ function holderName(dir: Directory, dataSourceId: string, value: string): string
 function mirrorPairs(dir: Directory, dataSourceId: string, f: MirrorFields): [string, string][] {
   const out: [string, string][] = [];
   if (f.closed !== undefined) out.push(['完了', f.closed ? 'はい' : 'いいえ']);
-  if (f.holders !== undefined) out.push(['ボールを持つ人', f.holders.length ? f.holders.map((h) => holderName(dir, dataSourceId, h)).join(', ') : '(なし)']);
+  if (f.holders !== undefined) out.push(['担当者', f.holders.length ? f.holders.map((h) => holderName(dir, dataSourceId, h)).join(', ') : '(なし)']);
   if (f.title !== undefined) out.push(['件名', f.title]);
   if (f.statusLabel !== undefined) out.push(['ステータス', f.statusLabel ?? '(空)']);
   if (f.due !== undefined) out.push(['期日', f.due ?? '(空)']);
@@ -57,39 +73,31 @@ function attrPairs(dir: Directory, t: Thread): [string, string][] {
   return out;
 }
 
-function ballLabel(dir: Directory, p: Projections, t: Thread): string {
+/** 担当（0038 の決定 1） */
+function assigneeLabel(dir: Directory, p: Projections, t: Thread): string {
   const n = names(dir, p);
-  const b = resolveBall(dir, p, t);
-  return b.kind === 'us'
-    ? 'こちら'
-    : b.kind === 'user'
-      ? `持ち主: ${esc(n.user(b.userId))}`
-      : b.kind === 'contact'
-        ? `相手: ${[...b.contactIds.map((id) => esc(n.contact(id))), ...b.addresses.map((a) => esc(a.value))].join(', ') || '(不明)'}`
-        : 'なし';
+  const a = assigneeOf(dir, t);
+  if (!a) return isTriage(dir, t) ? '仕分け待ち' : 'なし';
+  const who = [...a.userIds.map((u) => esc(n.user(u))), ...a.contactIds.map((c) => `${esc(n.contact(c))}（読者でない）`), ...a.addresses.map((r) => `${esc(r.value)}（読者でない）`)];
+  return `${who.join(', ')}（${a.by === 'source' ? 'ソースの担当者' : '担当する'}）`;
 }
 
-function turnLabel(dir: Directory, p: Projections, t: Turn): string {
+/** 残っている名指し（0038 の決定 2〜4） */
+function attentionLabel(dir: Directory, p: Projections, t: Thread): string {
   const n = names(dir, p);
-  const by = { owner: '持ち主', holder: 'ソースでボールを持つ', reader: '読者が 1 人', addressed: '宛先' } as const;
-  switch (t.kind) {
-    case 'user':
-      return `${t.userIds.map((id) => esc(n.user(id))).join(', ')}（${by[t.by]}）`;
-    case 'triage':
-      return '仕分け待ち';
-    case 'contact':
-      return `相手待ち: ${[...t.contactIds.map((id) => esc(n.contact(id))), ...t.addresses.map((a) => esc(a.value))].join(', ') || '(不明)'}`;
-    case 'none':
-      return 'なし';
-  }
+  const a = attentionOf(dir, t);
+  const out = a.named.map((x) => (x.userId ? esc(n.user(x.userId)) : `${esc(x.contactId ? n.contact(x.contactId) : x.address.value)}（読者でない）`));
+  if (a.list) out.push(`リスト宛て: ${a.list.userIds.map((u) => esc(n.user(u))).join(', ')}`);
+  return out.join(', ') || 'なし';
 }
 
-function flags(t: Thread): string {
+function flags(dir: Directory, t: Thread): string {
   const out: string[] = [];
+  const reply = replyStateOf(dir, t);
   if (t.dismissed) out.push(`片付け済み（${esc(t.dismissReason)}）`);
   if (t.closedAtSource) out.push('ソースで完了');
-  if (t.overdue) out.push('<b>期限超過</b>');
-  else if (t.replyExpectedBy) out.push(`返事期待 ${esc(t.replyExpectedBy)}`);
+  if (reply.overdue) out.push('<b>期限超過</b>');
+  else if (reply.replyExpectedBy) out.push(`返事期待 ${esc(reply.replyExpectedBy)}`);
   if (t.activeSinceDismissed) out.push('<b>片付けたあとに動きあり</b>');
   return out.join(' · ');
 }
@@ -104,7 +112,9 @@ function logEntry(dir: Directory, p: Projections, t: Thread, l: Thread['log'][nu
     case 'reopened':
       return `${head('開き直し', l.kind)}${esc(l.reason ?? '')}</li>`;
     case 'claimed':
-      return `${head('持ち主', l.kind)}${l.userId ? `→ ${esc(n.user(l.userId))}` : '手放した'} ${esc(l.reason ?? '')}</li>`;
+      return `${head('担当', l.kind)}${l.userId ? `→ ${esc(n.user(l.userId))}` : '手放した'} ${esc(l.reason ?? '')}</li>`;
+    case 'acknowledged':
+      return `${head('名指しを外した', l.kind)}${esc(n.user(l.actorUserId ?? ''))}: ${[...(l.addresses ?? []).map((r) => esc(r.value)), ...(l.list ? ['リスト宛て'] : [])].join(', ')}（${esc(l.untilSignalId)} まで） ${esc(l.reason ?? '')}</li>`;
     case 'linked':
     case 'unlinked':
       return `${head(l.kind === 'linked' ? '結んだ' : '外した', l.kind)}${esc(n.thread(l.otherThreadId!))} [${esc(l.route)}] ${esc(l.reason ?? '')}</li>`;
@@ -123,7 +133,6 @@ function logEntry(dir: Directory, p: Projections, t: Thread, l: Thread['log'][nu
     case 'signal': {
       const s = p.signals[l.signalId!];
       const nr =
-        (s?.needsResponse === true ? ' · 求めている' : s?.needsResponse === false ? ' · 求めていない' : '') +
         (s?.recorded ? ` · 記録 ${esc(n.user(s.recorded.actorUserId))}${s.recorded.replyExpectedBy ? ` · 返事期待 ${esc(s.recorded.replyExpectedBy)}` : ''}` : '');
       const direction = s ? directionOf(dir, s) : '';
       return `${head(direction === 'inbound' ? '受信' : '送信', direction)}${esc(s?.from.value)}: ${esc(s?.subject ?? '')} — ${esc(s?.body.slice(0, 140))} <small>[${esc(s?.threadedBy)}${nr}]</small>${origin}</li>`;
@@ -165,11 +174,11 @@ export function renderAdminIndex(dir: Directory, p: Projections, href: Href): st
     .map((l) => {
       const ds = dir.dataSource(l.dataSourceId);
       const ts = threads.filter((t) => t.dataSourceId === l.dataSourceId);
-      const triage = ts.filter((t) => !t.dismissed && turnOf(dir, p, t).kind === 'triage').length;
+      const triage = ts.filter((t) => isTriage(dir, t)).length;
       return `<tr><td><a href="${esc(href(`/admin/lists/${l.id}`))}">${esc(ds?.name ?? l.dataSourceId)}</a><br><small>${esc(l.id)}</small></td>
 <td>${ds?.kind === 'notes' ? '個人のメモ' : esc(ds?.channel ?? '')}</td>
 <td>${dir.readersOfList(l.id).map((u) => esc(names(dir, p).user(u))).join(', ')}</td>
-<td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => t.overdue).length}</td></tr>`;
+<td>${ts.filter((t) => !t.dismissed).length} / ${ts.length}</td><td>${triage}</td><td>${ts.filter((t) => replyStateOf(dir, t).overdue).length}</td></tr>`;
     })
     .join('\n');
   return page(
@@ -194,10 +203,10 @@ export function renderAdminList(dir: Directory, p: Projections, listId: string, 
     .map(({ t }) => t)
     .map(
       (t) => `<tr class="${t.dismissed ? 'dismissed' : ''}"><td><a href="${esc(href(`/admin/threads/${t.id}`))}">${esc(t.title)}</a><br><small>${esc(t.id)} · ${t.signalIds.length} 件</small></td>
-<td>${turnLabel(dir, p, turnOf(dir, p, t))}<br><small>ボール: ${ballLabel(dir, p, t)}</small></td>
+<td>担当: ${assigneeLabel(dir, p, t)}<br><small>名指し: ${attentionLabel(dir, p, t)}</small></td>
 <td>${t.links.map((l) => `<a href="${esc(href(`/admin/threads/${l.threadId}`))}">${esc(n.thread(l.threadId))}</a> <small>[${esc(l.route)}] ${esc(n.ds(p.threads[l.threadId]?.dataSourceId ?? ''))}</small>`).join('<br>')}</td>
 <td>${attrPairs(dir, t).map(([k, v]) => `${esc(k)}=${esc(v)}`).join('<br>')}</td>
-<td>${flags(t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
+<td>${flags(dir, t)}</td><td><time>${esc(lastActivityAt(operator(dir), p, t))}</time></td></tr>`,
     )
     .join('\n');
   return page(
@@ -240,7 +249,7 @@ export function renderAdminThread(dir: Directory, p: Projections, threadId: stri
     `${t.title} — Murmur 管理`,
     `<nav><a href="${esc(href('/admin'))}">リスト一覧</a>${list ? ` › <a href="${esc(href(`/admin/lists/${list.id}`))}">${esc(n.ds(t.dataSourceId))}</a>` : ''}</nav>
 <h1>${esc(t.title)} <small>${esc(t.id)}</small></h1>
-<p class="comm">誰の番: ${turnLabel(dir, p, view.thread.turn)} · ボール: ${ballLabel(dir, p, t)}${t.ownerUserId ? ` · 持ち主 ${esc(n.user(t.ownerUserId))}` : ''}${view.thread.unansweredSince ? ` · 未応答 ${esc(view.thread.unansweredSince)}〜` : ''}${flags(t) ? ` · ${flags(t)}` : ''}</p>
+<p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${isAwaiting(dir, t) ? ' · 相手待ち' : ''}${flags(dir, t) ? ` · ${flags(dir, t)}` : ''}</p>
 <h3>結び</h3>${links ? `<ul>${links}</ul>` : '<p class="muted">なし</p>'}
 <h3>結び候補</h3>${candidates ? `<ul>${candidates}</ul>` : '<p class="muted">なし</p>'}
 ${attrs ? `<h3>属性</h3><ul>${attrs}</ul>` : ''}
@@ -259,7 +268,7 @@ export function renderTimeline(dir: Directory, p: Projections): string {
     .map(
       (t) => `<section class="thread${t.dismissed ? ' dismissed' : ''}">
   <h2>${esc(t.title)} <small>${esc(t.id)} · ${esc(n.ds(t.dataSourceId))}${t.dismissed ? ` · 片付け済み（${esc(t.dismissReason)}）` : ''}</small></h2>
-  <p class="comm">ボール: ${ballLabel(dir, p, t)}${commView(dir, p, t).unansweredSince ? ` · 未応答 ${esc(commView(dir, p, t).unansweredSince!)}〜` : ''}${t.replyExpectedBy ? ` · 返事期待 ${esc(t.replyExpectedBy)}` : ''}${t.overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(n.thread(l.threadId))).join(', ')}` : ''}</p>
+  <p class="comm">担当: ${assigneeLabel(dir, p, t)} · 名指し: ${attentionLabel(dir, p, t)}${replyStateOf(dir, t).replyExpectedBy ? ` · 返事期待 ${esc(replyStateOf(dir, t).replyExpectedBy)}` : ''}${replyStateOf(dir, t).overdue ? ' · <b>期限超過</b>' : ''}${t.activeSinceDismissed ? ' · <b>片付けたあとに動きあり</b>' : ''}${t.links.length ? ` · 結び: ${t.links.map((l) => esc(n.thread(l.threadId))).join(', ')}` : ''}</p>
   <ol>${t.log.map((l) => logEntry(dir, p, t, l)).join('')}</ol>
 </section>`,
     )
