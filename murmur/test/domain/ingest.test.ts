@@ -50,19 +50,16 @@ describe('prepareInbound', () => {
 });
 
 describe('区切り（H6）', () => {
-  it('H6 1. アンカー（In-Reply-To）は同じデータソースの中だけで解決し、AI は「求めているか」だけ判断する', () => {
+  it('H6 1. アンカー（In-Reply-To）は同じデータソースの中だけで解決し、AI を呼ばない（0038）', () => {
     const log = new EventLog();
     const ctx = makeCtx();
     const first = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }), () => answer({ title: '雨漏り' }));
-    expect(first.outcome).toEqual({ threadId: 'thr_2', newThread: true, by: 'no_match', needsResponse: true });
+    expect(first.outcome).toEqual({ threadId: 'thr_2', newThread: true, by: 'no_match' });
     expect(first.request?.mode).toBe('new');
 
-    const reply = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }), (req) => {
-      expect(req.mode).toBe('fixed');
-      expect(req.thread?.threadId).toBe('thr_2');
-      return answer({ thread: null, needs_response: false, confidence: 0.95 });
-    });
-    expect(reply.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'anchor', needsResponse: false });
+    const reply = ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
+    expect(reply.request).toBeUndefined();
+    expect(reply.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'anchor' });
     expect(log.state().signals[reply.signalId!]!.threadedBy).toBe('anchor');
 
     // 別のデータソースに同じ Message-ID への返信が来ても、そのデータソースのスレッドには入らない
@@ -79,7 +76,7 @@ describe('区切り（H6）', () => {
     const log = new EventLog();
     const ctx = makeCtx();
     ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l1', anchors: { messageId: 'm1' } }), () => answer());
-    const quoted = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l2', anchors: { messageId: 'm2', quotedMessageId: 'm1' } }), () => answer({ thread: null }));
+    const quoted = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l2', anchors: { messageId: 'm2', quotedMessageId: 'm1' } }));
     expect(quoted.outcome).toMatchObject({ threadId: 'thr_2', by: 'anchor' });
 
     const slack = new EventLog();
@@ -94,11 +91,11 @@ describe('区切り（H6）', () => {
       sourceRef,
     });
     ingestPure(slack, sctx, msg('a', { messageId: 'C/1.0' }), () => answer());
-    const inThread = ingestPure(slack, sctx, msg('b', { messageId: 'C/2.0', threadTs: 'C/1.0' }), () => answer({ thread: null }));
+    const inThread = ingestPure(slack, sctx, msg('b', { messageId: 'C/2.0', threadTs: 'C/1.0' }));
     expect(inThread.outcome).toMatchObject({ threadId: 'thr_2', by: 'anchor' });
   });
 
-  it('H6 1. ソースの区切り（threadKey）は一致すればそのスレッド、一致しなければ新しいスレッドに決まる（AI は区切らない）', () => {
+  it('H6 1. ソースの区切り（threadKey）は一致すればそのスレッド、一致しなければ新しいスレッドに決まる（AI は件名だけ）', () => {
     const log = new EventLog();
     const ctx = makeCtx();
     const k = (sourceRef: string, threadKey: string) => email({ from: 'jira@x', sourceRef, anchors: { threadKey } });
@@ -106,14 +103,14 @@ describe('区切り（H6）', () => {
       expect(req.mode).toBe('new');
       return answer({ needs_response: false, confidence: 0.9 });
     });
-    expect(a.outcome).toMatchObject({ newThread: true, by: 'anchor', needsResponse: false });
+    expect(a.outcome).toMatchObject({ newThread: true, by: 'anchor' });
     // 同じ送り主の直近のスレッドがあっても、別のキーなら新しいスレッド
     const b = ingestPure(log, ctx, k('j2', 'DEV-30'), (req) => {
       expect(req.mode).toBe('new');
       return answer({ needs_response: false, confidence: 0.9 });
     });
     expect(b.outcome).toMatchObject({ newThread: true, by: 'anchor' });
-    const c = ingestPure(log, ctx, k('j3', 'DEV-12'), () => answer({ thread: null, needs_response: false, confidence: 0.9 }));
+    const c = ingestPure(log, ctx, k('j3', 'DEV-12'));
     expect(c.outcome).toMatchObject({ threadId: a.outcome!.threadId, by: 'anchor' });
   });
 
@@ -123,16 +120,13 @@ describe('区切り（H6）', () => {
     // 欠勤の連絡と、別の人への打診
     const abs = ingestPure(log, ctx, line({ from: 'U_carol', sourceRef: 'l1' }), () => answer({ title: '欠勤' }));
     const ask = ingestPure(log, ctx, line({ from: '@ubs', to: 'U_dave', sourceRef: 'l2', body: '代わりに入れますか？' }));
-    expect(ask.outcome).toMatchObject({ newThread: true, by: 'no_match', needsResponse: null });
-    // U_dave は Contact に解決できないので、アドレスのまま相手に載る（0030）
-    expect(view(log.state(), ask.outcome!.threadId).ball).toEqual({ kind: 'contact', contactIds: [], addresses: [{ channel: 'line', value: 'U_dave' }] });
+    expect(ask.outcome).toMatchObject({ newThread: true, by: 'no_match' });
+    // U_dave は Contact に解決できないので、アドレスのまま名指しに載る（0030・0038）
+    expect(view(log.state(), ask.outcome!.threadId).attention.named).toMatchObject([{ address: { channel: 'line', value: 'U_dave' }, userId: null, contactId: null }]);
 
     // Dave（未知のアドレス）の返事は、Dave を待っている打診のスレッドに入る
-    const yes = ingestPure(log, ctx, line({ from: 'U_dave', sourceRef: 'l3', body: '入れます' }), (req) => {
-      expect(req.mode).toBe('fixed');
-      return answer({ thread: null, needs_response: false, confidence: 0.9 });
-    });
-    expect(yes.outcome).toMatchObject({ threadId: ask.outcome!.threadId, by: 'awaiting', needsResponse: false });
+    const yes = ingestPure(log, ctx, line({ from: 'U_dave', sourceRef: 'l3', body: '入れます' }));
+    expect(yes.outcome).toMatchObject({ threadId: ask.outcome!.threadId, by: 'awaiting' });
     expect(log.state().threads[abs.outcome!.threadId]!.signalIds).toHaveLength(1);
   });
 
@@ -172,7 +166,7 @@ describe('区切り（H6）', () => {
     expect(other.outcome).toMatchObject({ by: 'no_match', newThread: true });
 
     // 片付けたスレッドは候補から外れる。直近の順に並ぶ
-    const threads = Object.values(log.state().threads).filter((x) => commView(dir, log.state(), x).counterpartContactIds.includes('p_carol'));
+    const threads = Object.values(log.state().threads).filter((x) => commView(dir, x).counterpartContactIds.includes('p_carol'));
     log.push([draft('ThreadDismissed', { threadId: threads.at(-1)!.id, actorUserId: 'u_alice', reason: 'x' })], t(6));
     ctx.setNow(t(7));
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'c9' }), (req) => {
@@ -200,19 +194,19 @@ describe('区切り（H6）', () => {
     });
   });
 
-  it('H6 観測された送信は「求めているか」を判断しない。構造で決まれば AI を呼ばない', () => {
+  it('H6 観測された送信は構造で決まれば AI を呼ばない。候補があれば区切りだけ AI に聞く', () => {
     const log = new EventLog();
     const ctx = makeCtx();
     ingestPure(log, ctx, email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }), () => answer());
     const reply = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'r2', anchors: { inReplyTo: '<m1>' } }));
-    expect(reply.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'anchor', needsResponse: null });
+    expect(reply.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'anchor' });
     // 候補があれば区切りだけ AI に聞き、返事の needs_response は捨てる
     const more = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'r3' }), (req) => {
       expect(req.mode).toBe('choose');
       expect(buildIngestPrompt(req)).toContain('"direction": "sent_by_us"');
       return answer({ thread: 'existing', thread_id: 'thr_2', needs_response: true });
     });
-    expect(more.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'ai', needsResponse: null });
+    expect(more.outcome).toEqual({ threadId: 'thr_2', newThread: false, by: 'ai' });
   });
 });
 
@@ -235,16 +229,12 @@ describe('finalizeIngest（AI 出力の検証）', () => {
     expect(e.type === 'SignalThreaded' && e.payload.reason).toMatch(/候補外/);
   });
 
-  it('H6 「求めているか」は confidence に関係なく答えをそのまま使い、答えがなければ「求めている」に倒す', () => {
+  it('H6 「求めているか」（needs_response）の答えは使わない。null を書く（0038）', () => {
     const req = capture();
     const low = finalizeIngest(ctx, req, answer({ needs_response: false, confidence: 0.3 }), 'ai');
-    expect(low.outcome.needsResponse).toBe(false);
     const e = low.events[0]!;
-    expect(e.type === 'SignalThreaded' && e.payload.confidence).toBe(0.3);
-    expect(finalizeIngest(ctx, req, answer({ needs_response: true, confidence: 0.3 }), 'ai').outcome.needsResponse).toBe(true);
-    const none = finalizeIngest(ctx, req, answer({ needs_response: null }), 'ai');
-    expect(none.outcome.needsResponse).toBe(true);
-    expect(none.events[0]!.type === 'SignalThreaded' && none.events[0]!.payload.reason).toMatch(/判断がない/);
+    expect(e.type === 'SignalThreaded' && e.payload).toMatchObject({ confidence: 0.3, needsResponse: null });
+    expect(low.outcome).not.toHaveProperty('needsResponse');
   });
 
   it('H6 件名は AI の title、なければ件名か本文の先頭', () => {

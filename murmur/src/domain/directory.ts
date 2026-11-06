@@ -1,4 +1,4 @@
-import type { Address, AttributeDef, Channel, DataSource, List, Contact, Seed, User } from './entities';
+import type { Address, AttributeDef, Channel, CredentialRef, DataSource, List, Contact, Seed, User } from './entities';
 import type { AddressRef } from './events';
 
 /**
@@ -20,6 +20,10 @@ export class Directory {
 
   list(listId: string): List | undefined {
     return this.seed.lists.find((l) => l.id === listId);
+  }
+
+  credentialRef(credentialRefId: string): CredentialRef | undefined {
+    return this.seed.credentialRefs.find((c) => c.id === credentialRefId);
   }
 
   listOfDataSource(dataSourceId: string): List | undefined {

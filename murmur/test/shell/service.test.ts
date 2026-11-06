@@ -9,14 +9,14 @@ describe('MurmurService.ingest', () => {
   it('H6 受信 → 区切り → スレッド。同じ source_ref は duplicate。観測された送信は構造で決まれば AI を呼ばない', async () => {
     const { service, decider } = await makeService(seed, { decide: () => answer({ title: '雨漏り' }) });
     const r = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
-    expect(r).toEqual({ status: 'threaded', signalId: 'sig_1', threadId: 'thr_2', newThread: true, by: 'no_match', needsResponse: true });
+    expect(r).toEqual({ status: 'threaded', signalId: 'sig_1', threadId: 'thr_2', newThread: true, by: 'no_match' });
     expect(decider.requests.map((q) => q.mode)).toEqual(['new']);
     expect(await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1' }))).toEqual({ status: 'duplicate', signalId: 'sig_1' });
 
     const sent = await service.ingest(email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
-    expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor', needsResponse: null });
+    expect(sent).toMatchObject({ status: 'threaded', threadId: 'thr_2', by: 'anchor' });
     expect(decider.requests).toHaveLength(1);
-    expect(view(await service.state(), 'thr_2').ball).toEqual({ kind: 'contact', contactIds: ['p_carol'], addresses: [] });
+    expect(view(await service.state(), 'thr_2').awaiting).toBe(true);
   });
 
   it('H3 データソースのない取り込みは invalid', async () => {
@@ -48,7 +48,7 @@ describe('スタンドの操作', () => {
     expect(t!.signalCount).toBe(2);
 
     const dismissed = await service.dismissThread('u_bob', { threadId: t!.id, reason: '対応済み' });
-    expect(dismissed.thread).toMatchObject({ dismissed: true, ball: { kind: 'none' } });
+    expect(dismissed.thread).toMatchObject({ dismissed: true, triage: false, myTurn: [] });
     expect(await service.listThreads('u_bob', { filter: 'triage' })).toEqual([]);
     expect((await service.reopenThread('u_alice', { threadId: t!.id })).thread.dismissed).toBe(false);
 

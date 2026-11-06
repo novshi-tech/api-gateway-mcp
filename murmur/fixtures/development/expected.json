@@ -1,18 +1,18 @@
 {
   "ingest": {
-    "s01": { "thread": "new", "needsResponse": true, "by": "no_match" },
-    "s02": { "thread": "$clientThread", "needsResponse": true, "by": "anchor" },
-    "o01": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
-    "s03": { "thread": "new", "needsResponse": false, "by": "anchor" },
-    "s04": { "thread": "new", "needsResponse": true, "by": "anchor" },
-    "s05": { "thread": "$prThread", "needsResponse": false, "by": "anchor" },
-    "s06": { "thread": "$issueThread", "needsResponse": false, "by": "anchor" },
-    "s07": { "thread": "new", "needsResponse": false, "title": "main のパイプライン #881 成功" },
-    "s08": { "thread": "new", "needsResponse": false, "by": "anchor" },
-    "o02": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
-    "s09": { "thread": "$clientThread", "needsResponse": false, "by": "anchor" },
-    "o03": { "thread": "$clientThread", "needsResponse": null, "by": "anchor" },
-    "o05": { "thread": "$regThread", "needsResponse": null, "by": "anchor" }
+    "s01": { "thread": "new", "by": "no_match" },
+    "s02": { "thread": "$clientThread", "by": "anchor" },
+    "o01": { "thread": "$clientThread", "by": "anchor" },
+    "s03": { "thread": "new", "by": "anchor" },
+    "s04": { "thread": "new", "by": "anchor" },
+    "s05": { "thread": "$prThread", "by": "anchor" },
+    "s06": { "thread": "$issueThread", "by": "anchor" },
+    "s07": { "thread": "new", "title": "main のパイプライン #881 成功" },
+    "s08": { "thread": "new", "by": "anchor" },
+    "o02": { "thread": "$clientThread", "by": "anchor" },
+    "s09": { "thread": "$clientThread", "by": "anchor" },
+    "o03": { "thread": "$clientThread", "by": "anchor" },
+    "o05": { "thread": "$regThread", "by": "anchor" }
   },
   "checkpoints": [
     {
@@ -20,14 +20,20 @@
       "threads": {},
       "views": [
         { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$clientThread"] },
-        { "as": "u_nose", "thread": "$clientThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_nose"], "by": "reader" } } }
+        { "as": "u_nose", "thread": "$clientThread", "access": "full", "item": { "myTurn": ["named"] } }
       ]
     },
-    { "after": "s02", "threads": { "$clientThread": { "ball": { "kind": "us" }, "signalCount": 2 } } },
-    { "after": "o01", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] } } } },
+    {
+      "after": "s02",
+      "threads": { "$clientThread": { "signalCount": 2, "assignee": null, "named": ["T_NVT/U_NOSE"], "listReaders": [], "triage": false, "awaiting": false } }
+    },
+    {
+      "after": "o01",
+      "threads": { "$clientThread": { "assignee": null, "named": ["T_CLIENT/U_MORI", "T_NVT/U_NOSE"], "listReaders": [], "triage": false, "awaiting": true } }
+    },
     {
       "after": "s04",
-      "threads": { "$prThread": { "ball": { "kind": "us" } } },
+      "threads": { "$prThread": { "assignee": null, "named": [], "listReaders": ["u_kato", "u_nose"], "triage": true, "awaiting": false } },
       "views": [
         { "as": "u_nose", "thread": "$issueThread", "access": "full", "candidates": ["$prThread"] },
         { "as": "u_kato", "thread": "$prThread", "access": "full", "candidates": ["$issueThread"] }
@@ -35,33 +41,70 @@
     },
     {
       "after": "m01",
-      "threads": { "$issueThread": { "ball": { "kind": "none" }, "source": { "holders": ["acct-kato"], "statusLabel": "未着手", "due": null }, "closedAtSource": false } },
+      "threads": {
+        "$issueThread": {
+          "source": { "holders": ["acct-kato"], "statusLabel": "未着手", "due": null },
+          "closedAtSource": false,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": [],
+          "listReaders": ["u_kato", "u_nose"],
+          "triage": false,
+          "awaiting": false
+        }
+      },
       "views": [
-        { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "holder" } } },
+        { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "myTurn": ["assignee", "list"] } },
         { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$issueThread"] },
-        { "as": "u_nose", "threads": { "filter": "my_turn", "dataSource": "ds_jira" }, "expect": [] }
+        { "as": "u_nose", "threads": { "filter": "my_turn", "dataSource": "ds_jira" }, "expect": ["$issueThread"] }
       ]
     },
     { "after": "m02", "threads": { "$issueThread": { "source": { "holders": ["acct-kato"], "statusLabel": "進行中", "due": null } } } },
-    { "after": "s05", "threads": { "$prThread": { "ball": { "kind": "us" } } } },
-    { "after": "s06", "threads": { "$issueThread": { "ball": { "kind": "none" }, "signalCount": 2 } } },
+    { "after": "s05", "threads": { "$prThread": { "assignee": null, "named": [], "listReaders": ["u_kato", "u_nose"], "triage": true, "awaiting": false } } },
+    {
+      "after": "s06",
+      "threads": {
+        "$issueThread": {
+          "signalCount": 2,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": [],
+          "listReaders": ["u_kato", "u_nose"],
+          "triage": false,
+          "awaiting": false
+        }
+      }
+    },
     {
       "after": "m03",
-      "threads": { "$issueThread": { "ball": { "kind": "none" }, "closedAtSource": true, "dismissed": false } },
+      "threads": {
+        "$issueThread": {
+          "closedAtSource": true,
+          "dismissed": false,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": [],
+          "listReaders": ["u_kato", "u_nose"],
+          "triage": false,
+          "awaiting": false
+        }
+      },
       "views": [
-        { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "turn": { "kind": "none" } } },
-        { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": [] }
+        { "as": "u_kato", "thread": "$issueThread", "access": "full", "item": { "myTurn": [] } },
+        { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$prThread"] }
       ]
     },
     {
       "after": "m04",
       "threads": { "$docThread": { "source": { "holders": ["acct-nose"], "statusLabel": "未着手", "due": null } } },
-      "views": [{ "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] }]
+      "views": [{ "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$pipelineThread", "$docThread", "$clientThread", "$prThread"] }]
     },
-    { "after": "o02", "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] } } } },
+    {
+      "after": "o02",
+      "threads": { "$clientThread": { "assignee": null, "named": ["T_CLIENT/U_MORI", "T_NVT/U_NOSE"], "listReaders": [], "triage": false, "awaiting": true } }
+    },
     {
       "after": "o03",
-      "threads": { "$clientThread": { "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] }, "links": {} } },
+      "threads": {
+        "$clientThread": { "links": {}, "assignee": null, "named": ["T_CLIENT/U_MORI", "T_NVT/U_NOSE"], "listReaders": [], "triage": false, "awaiting": true }
+      },
       "views": [{ "as": "u_nose", "thread": "$clientThread", "access": "full", "candidates": ["$issueThread", "$prThread", "$docThread"] }]
     },
     {
@@ -76,7 +119,17 @@
     {
       "after": "o04",
       "threads": {
-        "$regThread": { "dataSourceId": "ds_jira", "title": "ログインの回帰テストを追加", "ball": { "kind": "contact", "contactIds": ["p_kato"], "addresses": [] }, "signalCount": 1, "links": { "$clientThread": "sent" } },
+        "$regThread": {
+          "dataSourceId": "ds_jira",
+          "title": "ログインの回帰テストを追加",
+          "signalCount": 1,
+          "links": { "$clientThread": "sent" },
+          "assignee": null,
+          "named": ["acct-kato"],
+          "listReaders": [],
+          "triage": true,
+          "awaiting": false
+        },
         "$clientThread": { "links": { "$issueThread": "anchor", "$regThread": "sent" } }
       }
     },
@@ -85,53 +138,124 @@
       "after": "m05",
       "threads": { "$regThread": { "source": { "holders": ["acct-kato"], "statusLabel": "未着手", "due": null } } },
       "views": [
-        { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$regThread"] },
-        { "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "holder" } } },
+        { "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$pipelineThread", "$docThread", "$regThread"] },
+        { "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "myTurn": ["assignee", "named"] } },
         { "as": "u_nose", "thread": "$clientThread", "access": "full", "mustContain": ["ログインの回帰テストを追加"] }
       ]
     },
     {
       "after": "o05",
-      "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_nose"], "addresses": [] }, "signalCount": 2 } },
-      "views": [{ "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_kato"], "by": "holder" } } }]
+      "threads": {
+        "$regThread": {
+          "signalCount": 2,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": ["acct-kato", "acct-nose"],
+          "listReaders": [],
+          "triage": false,
+          "awaiting": false
+        }
+      },
+      "views": [{ "as": "u_kato", "thread": "$regThread", "access": "full", "item": { "myTurn": ["assignee", "named"] } }]
     },
-    { "after": "c02", "threads": { "$regThread": { "ball": { "kind": "contact", "contactIds": ["p_kato"], "addresses": [] }, "signalCount": 3 } } },
+    {
+      "after": "c02",
+      "threads": {
+        "$regThread": {
+          "signalCount": 3,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": ["acct-kato"],
+          "listReaders": [],
+          "triage": false,
+          "awaiting": false
+        }
+      }
+    },
     {
       "after": "m06",
-      "threads": { "$regThread": { "ball": { "kind": "none" }, "closedAtSource": true } },
-      "views": [{ "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": [] }]
+      "threads": {
+        "$regThread": {
+          "closedAtSource": true,
+          "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+          "named": ["acct-kato"],
+          "listReaders": [],
+          "triage": false,
+          "awaiting": false
+        }
+      },
+      "views": [{ "as": "u_kato", "threads": { "filter": "my_turn" }, "expect": ["$pipelineThread", "$docThread"] }]
     }
   ],
   "final": {
     "threads": {
       "$clientThread": {
         "dataSourceId": "ds_slack_client",
-        "ball": { "kind": "contact", "contactIds": ["p_mori"], "addresses": [] },
         "counterpartContactIds": ["p_mori"],
         "signalCount": 6,
-        "unansweredSince": null,
-        "links": { "$issueThread": "anchor", "$regThread": "sent" }
+        "links": { "$issueThread": "anchor", "$regThread": "sent" },
+        "assignee": null,
+        "named": ["T_CLIENT/U_MORI", "T_NVT/U_NOSE"],
+        "listReaders": [],
+        "triage": false,
+        "awaiting": true
       },
       "$issueThread": {
         "dataSourceId": "ds_jira",
-        "ball": { "kind": "none" },
         "counterpartContactIds": ["p_jira"],
         "signalCount": 2,
         "closedAtSource": true,
-        "source": { "holders": ["acct-kato"], "statusLabel": "完了", "due": null }, "attributes": {},
-        "links": { "$clientThread": "anchor", "$prThread": "anchor" }
+        "source": { "holders": ["acct-kato"], "statusLabel": "完了", "due": null },
+        "attributes": {},
+        "links": { "$clientThread": "anchor", "$prThread": "anchor" },
+        "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+        "named": [],
+        "listReaders": ["u_kato", "u_nose"],
+        "triage": false,
+        "awaiting": false
       },
-      "$prThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "dismissed": true, "signalCount": 2, "links": { "$issueThread": "anchor" } },
-      "$pipelineThread": { "dataSourceId": "ds_bitbucket", "ball": { "kind": "none" }, "signalCount": 1 },
-      "$docThread": { "dataSourceId": "ds_jira", "ball": { "kind": "none" }, "signalCount": 1, "links": {}, "closedAtSource": false },
+      "$prThread": {
+        "dataSourceId": "ds_bitbucket",
+        "dismissed": true,
+        "signalCount": 2,
+        "links": { "$issueThread": "anchor" },
+        "assignee": null,
+        "named": [],
+        "listReaders": ["u_kato", "u_nose"],
+        "triage": false,
+        "awaiting": false
+      },
+      "$pipelineThread": {
+        "dataSourceId": "ds_bitbucket",
+        "signalCount": 1,
+        "assignee": null,
+        "named": [],
+        "listReaders": ["u_kato", "u_nose"],
+        "triage": true,
+        "awaiting": false
+      },
+      "$docThread": {
+        "dataSourceId": "ds_jira",
+        "signalCount": 1,
+        "links": {},
+        "closedAtSource": false,
+        "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_nose"] },
+        "named": [],
+        "listReaders": ["u_kato", "u_nose"],
+        "triage": false,
+        "awaiting": false
+      },
       "$regThread": {
         "dataSourceId": "ds_jira",
-        "ball": { "kind": "none" },
         "closedAtSource": true,
         "signalCount": 3,
         "counterpartContactIds": ["p_kato", "p_nose"],
-        "source": { "holders": ["acct-kato"], "statusLabel": "完了", "due": null }, "attributes": {},
-        "links": { "$clientThread": "sent" }
+        "source": { "holders": ["acct-kato"], "statusLabel": "完了", "due": null },
+        "attributes": {},
+        "links": { "$clientThread": "sent" },
+        "assignee": { "addresses": [], "by": "source", "contactIds": [], "userIds": ["u_kato"] },
+        "named": ["acct-kato"],
+        "listReaders": [],
+        "triage": false,
+        "awaiting": false
       }
     },
     "threadCount": 6,
@@ -147,12 +271,12 @@
     { "as": "u_ubs_only", "signals": 0 },
     { "as": "u_kato", "threads": { "filter": "open" }, "expect": ["$pipelineThread", "$docThread"] },
     { "as": "u_kato", "threads": { "filter": "all", "dataSource": "ds_jira" }, "expect": ["$issueThread", "$docThread", "$regThread"] },
-    { "as": "u_nose", "threads": { "filter": "triage" }, "expect": [] },
+    { "as": "u_nose", "threads": { "filter": "triage" }, "expect": ["$pipelineThread"] },
     { "as": "u_nose", "threads": { "filter": "all", "dataSource": "ds_bitbucket" }, "expect": ["$prThread", "$pipelineThread"] },
     { "ghostContact": "p_mori" },
     { "as": "u_nose", "thread": "$docThread", "access": "full", "candidates": ["$clientThread"] },
     { "as": "u_kato", "thread": "$docThread", "access": "full", "candidates": [] },
-    { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$docThread"] },
-    { "as": "u_nose", "thread": "$docThread", "access": "full", "item": { "turn": { "kind": "user", "userIds": ["u_nose"], "by": "holder" } } }
+    { "as": "u_nose", "threads": { "filter": "my_turn" }, "expect": ["$pipelineThread", "$docThread", "$clientThread"] },
+    { "as": "u_nose", "thread": "$docThread", "access": "full", "item": { "myTurn": ["assignee", "list"] } }
   ]
 }

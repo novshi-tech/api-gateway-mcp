@@ -121,7 +121,7 @@ describe('HTTP API', () => {
 
     const moved = await call('POST', `/api/signals/${r2.signalId}/move`, 'u_alice', { new_thread_title: '別件', reason: '別の話題' });
     expect(moved.body.thread).toMatchObject({ title: '別件', signalCount: 1 });
-    const back = await call('POST', `/api/signals/${r2.signalId}/move`, 'u_alice', { thread_id: threadId, needs_response: false, reason: '戻す' });
+    const back = await call('POST', `/api/signals/${r2.signalId}/move`, 'u_alice', { thread_id: threadId, reason: '戻す' });
     expect(back.body.thread.signalCount).toBe(2);
     expect((await call('POST', `/api/signals/${r2.signalId}/move`, 'u_eve', { thread_id: threadId, reason: 'x' })).status).toBe(404);
 
@@ -132,19 +132,27 @@ describe('HTTP API', () => {
     expect((await call('GET', '/api/lists/l_alice', 'u_bob')).status).toBe(404);
   });
 
-  it('H8 メモ・持ち主・リンク・属性・自分の番・タイムラインの since の一通り', async () => {
+  it('H8 メモ・担当・名指し・リンク・属性・自分の番・タイムラインの since の一通り', async () => {
     const { call, service, clock } = await app();
     const r1 = await service.ingest(email({ from: 'carol@example.com', sourceRef: 'r1', anchors: { messageId: '<m1>' } }));
     const threadId = r1.status === 'threaded' ? r1.threadId : '';
     expect((await call('GET', '/api/threads?filter=triage', 'u_bob')).body).toHaveLength(1);
 
     const claimed = await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { reason: '自分で持つ' });
-    expect(claimed.body.thread).toMatchObject({ ownerUserId: 'u_alice', ball: { kind: 'user', userId: 'u_alice' }, turn: { kind: 'user', userIds: ['u_alice'], by: 'owner' } });
+    expect(claimed.body.thread).toMatchObject({ assignee: { by: 'claim', userIds: ['u_alice'] }, triage: false, myTurn: ['assignee', 'list'] });
     expect((await call('GET', '/api/threads?filter=triage', 'u_bob')).body).toEqual([]);
     expect((await call('GET', '/api/threads?filter=my_turn', 'u_alice')).body.map((t: { id: string }) => t.id)).toEqual([threadId]);
+    // Bob はリスト宛ての名指しを外すと自分の番から外れる
+    expect((await call('GET', '/api/threads?filter=my_turn', 'u_bob')).body.map((t: { id: string }) => t.id)).toEqual([threadId]);
+    const acked = await call('POST', `/api/threads/${threadId}/acknowledge`, 'u_bob', { reason: '目を通した' });
+    expect(acked.body.thread.myTurn).toEqual([]);
+    expect(acked.body.timeline.at(-1)).toMatchObject({ kind: 'acknowledged', list: true, actorUserId: 'u_bob', untilSignalId: r1.signalId });
+    expect((await call('GET', '/api/threads?filter=my_turn', 'u_bob')).body).toEqual([]);
+    expect((await call('POST', `/api/threads/${threadId}/acknowledge`, 'u_bob', { until_signal_id: 'nope' })).status).toBe(400);
+    expect((await call('POST', '/api/acknowledge', 'u_alice', { thread_ids: [threadId] })).body).toEqual({ acknowledged: 1 });
     expect((await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { user_id: 'u_eve' })).status).toBe(400);
     const handed = await call('POST', `/api/threads/${threadId}/claim`, 'u_alice', { user_id: 'u_bob', reason: '引き継ぎ' });
-    expect(handed.body.thread.ownerUserId).toBe('u_bob');
+    expect(handed.body.thread.assignee.userIds).toEqual(['u_bob']);
 
     clock.set('2026-10-16T10:00:00.000Z');
     const note = await call('POST', '/api/notes', 'u_alice', { body: 'Carol さんの雨漏りの件\n電話で状況を聞いた' });
@@ -198,7 +206,7 @@ describe('HTTP API', () => {
       reply_expected_by: '2026-10-16T21:00:00+09:00',
     });
     expect(res.status).toBe(200);
-    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', ball: { kind: 'contact', contactIds: ['p_carol'] } });
+    expect(res.body.thread).toMatchObject({ id: threadId, replyExpectedBy: '2026-10-16T12:00:00.000Z', awaiting: true });
     expect((await call('POST', '/api/sent', 'u_eve', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's' })).status).toBe(404);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', body: 'b', sent_ref: 's' })).status).toBe(400);
     expect((await call('POST', '/api/sent', 'u_alice', { data_source: 'ds_support', to: ['x'], body: 'b', sent_ref: 's', reply_expected_by: '明日' })).status).toBe(400);

@@ -91,9 +91,10 @@ export const SignalThreaded = z.object({
   confidence: z.number().min(0).max(1),
   reason: z.string().min(1),
   /**
-   * 返事や対応を求めているか。null は判断していない（こちらからのシグナル・AI の答えがない）で、fold は「求めている」として畳む（0030）
+   * 返事や対応を求めているか。0038 でやめた（誰の番は宛先と明示的な操作で決まる）。新しいイベントは null を書き、fold は読まない。
+   * 古いイベントに残る値も読まない
    */
-  needsResponse: z.boolean().nullable(),
+  needsResponse: z.boolean().nullable().default(null),
   /** 人の訂正のとき、訂正した User */
   actorUserId: z.string().optional(),
 });
@@ -103,8 +104,8 @@ export const ThreadDismissed = z.object({ threadId: z.string(), actorUserId: z.s
 export const ThreadReopened = z.object({ threadId: z.string(), actorUserId: z.string(), reason: z.string().optional() });
 
 /**
- * 持ち主（0013 の 3）。ボールを特定のユーザーへ明示の操作で動かす。
- * userId が null なら手放す（ボールは「こちら」= 組織に戻る）、別の人なら引き継ぐ
+ * 担当する（0013 の 3・0038 の決定 1）。状態を持たない共有リストで、担当を明示の操作で決める。
+ * userId が null なら手放す（仕分け待ちに戻る）、別の人なら引き継ぐ
  */
 export const ThreadClaimed = z.object({
   threadId: z.string(),
@@ -200,6 +201,20 @@ export const OutboundRecorded = z.object({
   actorUserId: z.string(),
 });
 
+/**
+ * 名指しを外す（0038 の決定 3・4）。untilSignalId までの名指しを外す。それより後に名指しされれば、また残る。
+ * - addresses: 外すアドレス（自分のアドレスか、このリストの読者でないアドレス。権利はコマンドが確かめる）
+ * - list: リスト宛て（窓口のアドレス・グループのチャネルの宛先のない投稿）の名指しを、actorUserId について外す
+ */
+export const AttentionAcknowledged = z.object({
+  threadId: z.string(),
+  untilSignalId: z.string(),
+  addresses: z.array(AddressRef).default([]),
+  list: z.boolean().default(false),
+  actorUserId: z.string(),
+  reason: z.string().optional(),
+});
+
 /** 返事期待の期限超過（Cron の見回り）。冪等: 同じ送信に 1 回だけ */
 export const ReplyOverdue = z.object({ threadId: z.string(), signalId: z.string(), replyExpectedBy: z.string() });
 
@@ -214,6 +229,7 @@ export const EventPayloads = {
   ThreadMirrored,
   OutboundRecorded,
   ReplyOverdue,
+  AttentionAcknowledged,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

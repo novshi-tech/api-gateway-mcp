@@ -58,6 +58,7 @@ export const Tool = z.enum([
   'unlink_threads',
   'set_attribute',
   'record_sent',
+  'acknowledge',
 ]);
 export type Tool = z.infer<typeof Tool>;
 
@@ -94,13 +95,13 @@ export type Step = z.infer<typeof Step>;
 
 /**
  * シグナルごとの正解ラベル（H6）。thread は "new"（新しいスレッド）か "$<束縛名>"（既存のスレッド）。
- * needsResponse は「返事や対応を求めているか」（観測された送信は null）。by を書けば区切りの根拠も確かめる
+ * by を書けば区切りの根拠も確かめる。needsResponse（返事や対応を求めているか）は 0038 でやめた。残っていても読まない
  */
 export const Label = z.union([
   z.object({ duplicate: z.literal(true) }),
   z.object({
     thread: z.string(),
-    needsResponse: z.boolean().nullable(),
+    needsResponse: z.boolean().nullable().optional(),
     by: ThreadedBy.optional(),
     title: z.string().optional(),
   }),
@@ -109,17 +110,22 @@ export type Label = z.infer<typeof Label>;
 
 const ThreadExpectation = z
   .object({
-    ball: z.unknown(),
+    /** 担当（0038。summarizeThread の assignee） */
+    assignee: z.unknown(),
+    /** 名指しが残っているアドレスの値（リスト宛ては含めない） */
+    named: z.array(z.string()),
+    /** リスト宛ての名指しが残っている読者 */
+    listReaders: z.array(z.string()),
+    triage: z.boolean(),
+    awaiting: z.boolean(),
     dismissed: z.boolean(),
     dataSourceId: z.string(),
     title: z.string(),
     counterpartContactIds: z.array(z.string()),
     lastInboundAt: z.string().nullable(),
     lastOutboundAt: z.string().nullable(),
-    unansweredSince: z.string().nullable(),
     activeSinceDismissed: z.boolean(),
     signalCount: z.number(),
-    ownerUserId: z.string().nullable(),
     replyExpectedBy: z.string().nullable(),
     overdue: z.boolean(),
     closedAtSource: z.boolean(),
@@ -138,7 +144,7 @@ const VisibilityCheck = z.union([
     access: z.enum(['full']).nullable(),
     mustContain: z.array(z.string()).default([]),
     mustNotContain: z.array(z.string()).default([]),
-    /** Viewer から見たクエリ層の導出（turn・derivedBall・linkedActiveSinceDismissed など）。"$<束縛名>" は置き換える */
+    /** Viewer から見たクエリ層の導出（myTurn・derivedBall・linkedActiveSinceDismissed など）。"$<束縛名>" は置き換える */
     item: z.record(z.string(), z.unknown()).optional(),
     /** 結び候補のスレッド（"$<束縛名>"） */
     candidates: z.array(z.string()).optional(),
@@ -146,7 +152,10 @@ const VisibilityCheck = z.union([
   z.object({ as: z.string(), signals: z.number() }),
   z.object({
     as: z.string(),
-    threads: z.object({ filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'), dataSource: z.string().optional() }),
+    threads: z.object({
+      filter: z.enum(['my_turn', 'mine', 'open', 'awaiting', 'overdue', 'triage', 'all']).default('open'),
+      dataSource: z.string().optional(),
+    }),
     expect: z.array(z.string()),
   }),
   z.object({ ghostContact: z.string() }),
@@ -247,7 +256,7 @@ class HintDecider implements Decider {
   async decide(req: IngestRequest): Promise<{ raw: AiIngestDecision; by: 'human' }> {
     const label = this.current.label;
     if (!label || 'duplicate' in label) throw new Error(`step ${this.current.stepId}: AI 判断が必要だが expected.json に正解ラベルがない`);
-    const base = { reason: `fixture hint (${this.current.stepId})`, confidence: 1, needs_response: label.needsResponse };
+    const base = { reason: `fixture hint (${this.current.stepId})`, confidence: 1, needs_response: null };
     if (req.mode === 'fixed') return { raw: { ...base, thread: null, thread_id: null, title: null }, by: 'human' };
     if (req.mode === 'new' || label.thread === 'new') {
       return { raw: { ...base, thread: 'new', thread_id: null, title: label.title ?? null }, by: 'human' };
@@ -379,7 +388,7 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
     move_signal: () => [
       'POST',
       `/api/signals/${enc(String(input.signal_id))}/move`,
-      { thread_id: input.thread_id, new_thread_title: input.new_thread_title, needs_response: input.needs_response, reason: input.reason },
+      { thread_id: input.thread_id, new_thread_title: input.new_thread_title, reason: input.reason },
     ],
     get_list: () => ['GET', `/api/lists/${enc(String(input.list_id))}`],
     add_note: () => ['POST', '/api/notes', { thread_id: input.thread_id, title: input.title, body: input.body, author: input.author }],
@@ -388,6 +397,11 @@ async function callTool(http: ReturnType<typeof createApp>, tool: Tool, as: stri
     unlink_threads: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/unlink`, { thread_id: input.other_thread_id, reason: input.reason }],
     set_attribute: () => ['POST', `/api/threads/${enc(String(input.thread_id))}/attributes`, { name: input.name, value: input.value }],
     record_sent: () => ['POST', '/api/sent', input],
+    acknowledge: () => [
+      'POST',
+      `/api/threads/${enc(String(input.thread_id))}/acknowledge`,
+      { until_signal_id: input.until_signal_id, addresses: input.addresses, reason: input.reason },
+    ],
   };
   const [method, path, body] = route[tool]();
   const res = await http.request(path, {
@@ -417,7 +431,10 @@ function compareThreads(
       errors.push(`${where}: thread ${alias} (${id}) がない`);
       continue;
     }
-    const actual = summarizeThread(dir, p, t) as unknown as Record<string, unknown>;
+    const summary = summarizeThread(dir, p, t);
+    const actual = summary as unknown as Record<string, unknown>;
+    actual.named = summary.attention.named.map((n) => n.address.value).sort();
+    actual.listReaders = summary.attention.list?.userIds ?? [];
     actual.links = Object.fromEntries(t.links.map((l) => [l.threadId, l.route]));
     for (const [k, raw] of Object.entries(exp)) {
       const v = k === 'links' ? Object.fromEntries(Object.entries(raw as Record<string, string>).map(([a, r]) => [resolve(a), r])) : raw;
@@ -493,19 +510,17 @@ export interface IngestMetrics extends Bucket {
   structural: Bucket;
   /** 区切りを AI（再生）か正解ラベル（ヒント実行）が選んだもの */
   ai: Bucket;
-  /** 受信の「返事や対応を求めているか」 */
-  needsResponse: Bucket;
   mismatches: string[];
   confidences: number[];
 }
 
 export function emptyMetrics(): IngestMetrics {
   const b = () => ({ total: 0, correct: 0 });
-  return { ...b(), structural: b(), ai: b(), needsResponse: b(), mismatches: [], confidences: [] };
+  return { ...b(), structural: b(), ai: b(), mismatches: [], confidences: [] };
 }
 
 export function addMetrics(into: IngestMetrics, m: IngestMetrics): void {
-  for (const k of ['structural', 'ai', 'needsResponse'] as const) {
+  for (const k of ['structural', 'ai'] as const) {
     into[k].total += m[k].total;
     into[k].correct += m[k].correct;
   }
@@ -515,7 +530,7 @@ export function addMetrics(into: IngestMetrics, m: IngestMetrics): void {
   into.confidences.push(...m.confidences);
 }
 
-/** H6: 区切りと「返事や対応を求めているか」の、正解ラベルとの一致率 */
+/** H6: 区切りの、正解ラベルとの一致率（「返事や対応を求めているか」は 0038 でやめた） */
 export function ingestMetrics(run: Run): IngestMetrics {
   const m = emptyMetrics();
   const resolve = (s: string) => (s.startsWith('$') ? (run.bindings[s.slice(1)] ?? s) : s);
@@ -535,17 +550,12 @@ export function ingestMetrics(run: Run): IngestMetrics {
     }
     const threadOk = label.thread === 'new' ? r.newThread : !r.newThread && r.threadId === resolve(label.thread);
     const byOk = label.by === undefined || label.by === r.by;
-    const nrOk = r.needsResponse === label.needsResponse;
-    const ok = threadOk && byOk && nrOk;
+    const ok = threadOk && byOk;
     if (ok) m.correct++;
     else m.mismatches.push(`${rec.step.id}: 期待 ${canonicalJson(label)}、実際 ${canonicalJson(r)}`);
     const bucket = r.by === 'anchor' || r.by === 'awaiting' || r.by === 'no_match' ? m.structural : m.ai;
     bucket.total++;
     if (threadOk && byOk) bucket.correct++;
-    if (label.needsResponse !== null) {
-      m.needsResponse.total++;
-      if (nrOk) m.needsResponse.correct++;
-    }
     if (rec.confidence !== undefined) m.confidences.push(rec.confidence);
   }
   return m;

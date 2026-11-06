@@ -168,7 +168,7 @@ export function line(over: Omit<Partial<InboundSignal>, 'from' | 'to'> & { from:
   };
 }
 
-/** AI の代わりの答え。needs_response だけ指定すれば fixed / new でも使える */
+/** AI の代わりの答え（needs_response は 0038 から使わない） */
 export const answer = (over: Partial<AiIngestDecision> = {}): AiIngestDecision => ({
   thread: 'new',
   thread_id: null,

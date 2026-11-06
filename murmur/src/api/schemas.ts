@@ -8,7 +8,7 @@ import { AddressRef, Anchors, Author, Channel, FileRef, MirrorFields } from '../
 export const Instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s).toISOString());
 
 export const ListThreadsQuery = z.object({
-  filter: z.enum(['my_turn', 'mine', 'open', 'overdue', 'triage', 'all']).default('open'),
+  filter: z.enum(['my_turn', 'mine', 'open', 'awaiting', 'overdue', 'triage', 'all']).default('open'),
   data_source: z.string().optional(),
   /** 前回見た時刻。それより後に動いたスレッドだけ */
   since: Instant.optional(),
@@ -28,13 +28,28 @@ export const AddNoteBody = z.object({
 
 export const ClaimBody = z
   .object({
-    /** 持たせる User。省略すれば自分、null なら手放す */
+    /** 担当させる User。省略すれば自分、null なら手放す（状態を持つソースと個人リストでは断る。0038 の決定 1） */
     user_id: z.string().nullable().optional(),
     reason: z.string().optional(),
   })
   .default({});
 
 export const LinkBody = z.object({ thread_id: z.string(), reason: z.string().optional() });
+
+/**
+ * 名指しを外す（0038 の決定 3・4）。until_signal_id までの名指しを外す（省けばスレッドの最新のシグナルまで）。
+ * addresses を省けば自分への名指し（自分のアドレスとリスト宛て）。渡せば、自分のアドレスか、このリストの読者でないアドレス
+ */
+export const AcknowledgeBody = z
+  .object({
+    until_signal_id: z.string().min(1).optional(),
+    addresses: z.array(AddressRef).optional(),
+    reason: z.string().optional(),
+  })
+  .default({});
+
+/** 複数のスレッドの自分への名指しをまとめて外す（参加したときなど。スレッドごとのイベントになる） */
+export const AcknowledgeManyBody = z.object({ thread_ids: z.array(z.string().min(1)).min(1).max(500), reason: z.string().optional() });
 
 export const RecordSentBody = z
   .object({
@@ -60,6 +75,8 @@ export const RecordSentBody = z
     reply_to_thread_id: z.string().optional(),
     source_thread_id: z.string().optional(),
     reply_expected_by: Instant.optional(),
+    /** 送ったスレッドの、送る前までの自分への名指しを一緒に外す（0038） */
+    acknowledge: z.boolean().optional(),
   })
   .refine((b) => b.to.length + b.to_contact_ids.length > 0, { message: 'to か to_contact_ids のどちらかが要る' });
 
@@ -106,7 +123,6 @@ export const MoveSignalBody = z
     /** 移し先の既存のスレッド。省略して new_thread_title を渡せば新しいスレッド */
     thread_id: z.string().optional(),
     new_thread_title: z.string().min(1).optional(),
-    needs_response: z.boolean().optional(),
     reason: z.string().min(1),
   })
   .refine((b) => (b.thread_id === undefined) !== (b.new_thread_title === undefined), {

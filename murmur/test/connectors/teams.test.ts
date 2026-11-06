@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeChannelMessage, messageText } from '../../src/connectors/teams/normalize';
 import { ChannelMessage } from '../../src/connectors/teams/message';
-import { connectTeamsChannel, Directory, planMasterEdit, seedProblems, turnOf, type SharedSpacePlan } from '../../src/domain';
+import { connectTeamsChannel, deriveViewer, Directory, myTurnOf, planMasterEdit, seedProblems, type SharedSpacePlan } from '../../src/domain';
 import { answer, makeCtx, seed } from '../helpers/world';
 import { makeService } from '../helpers/service';
 
@@ -101,7 +101,7 @@ describe('H3 H8 Teams のチャネルの共有リスト', () => {
     await made.service.ingest(n1.signal);
     let p = await made.service.state();
     const [thread] = Object.values(p.threads).filter((t) => t.dataSourceId === ds.id);
-    expect(turnOf(await made.service.directory(), p, thread!)).toMatchObject({ kind: 'user', userIds: ['u_bob'] });
+    expect(myTurnOf(await made.service.directory(), deriveViewer(await made.service.directory(), 'u_bob'), thread!)).toEqual(['named']);
 
     expect(await made.service.ingest(n2.signal)).toMatchObject({ status: 'threaded', threadId: thread!.id });
     p = await made.service.state();

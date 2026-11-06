@@ -1,92 +1,177 @@
+import { comparePos, isPending, sameAddress } from './comm';
 import type { Directory } from './directory';
+import type { DataSource } from './entities';
 import type { AddressRef } from './events';
-import type { Projections, Thread } from './projections';
-import { contactsOf, requestIsOurs, resolveBall } from './sides';
+import type { LogPos, Projections, Thread } from './projections';
 import { canReadDataSource, type Viewer } from './viewer';
 
-// クエリ層の「誰の番か」と結び（0014 の 3）。投影のスナップショットとマスタから計算する純関数で、
+// クエリ層の「誰の番か」（0038）と結び（0014 の 3）。投影のスナップショットとマスタから計算する純関数で、
 // fold には持ち込まない（fold は 1 段）。Murmur は候補を出すだけで、自分ではリンクを張らない。
+//
+// 誰の番は 2 つの軸で決まる（0038）:
+// - 担当: 誰がタスクを進めるか。出所はデータソースの種類で 1 つ（状態を持つソースは写しの holders、それ以外の共有リストは担当する操作）
+// - 名指し: 誰に読んでほしいか。シグナルの宛先から溜まり、明示的な操作（acknowledge）だけで外れる
+// マスタで決めるのは「このリストの読者のアドレスか」「リスト宛てか」だけ。相手の Contact は名前を出すためだけに使い、番の種類は変えない
 
-/**
- * 誰の番か。スレッドのボールに、構造（写しの holders・読者が 1 人のデータソース・宛先）を合わせたもの。
- * - user: 特定のユーザーの番（by: owner = 持ち主、holder = ソースの上でボールを持っている、reader = 読者が 1 人、
- *   addressed = 宛先・メンション。相手の求めの宛先に読者がいるか、こちらから同じリストの読者にボールを渡したとき）
- * - triage: こちら（組織）で、誰の番かが決まらない（仕分け待ち）
- * - contact / none: ボールのまま
- */
-export type Turn =
-  | { kind: 'user'; userIds: string[]; by: 'owner' | 'holder' | 'reader' | 'addressed' }
-  | { kind: 'triage' }
-  /** 相手の番。addresses は Contact に解決できなかった保持者（0030。名寄せすると contactIds に移る） */
-  | { kind: 'contact'; contactIds: string[]; addresses: AddressRef[] }
-  | { kind: 'none' };
+/** リストの種類。個人リストは読者が本人だけ（個人のメモ・個人の資格情報の箱）。ほかは共有リスト（0037） */
+export type ListKind = 'personal' | 'shared';
 
-export function turnOf(dir: Directory, p: Projections, t: Thread): Turn {
-  const ball = resolveBall(dir, p, t);
-  if (ball.kind === 'user') return { kind: 'user', userIds: [ball.userId], by: 'owner' };
-  const held = holderTurn(dir, t);
-  if (held) return held;
-  const list = dir.listOfDataSource(t.dataSourceId);
-  if (ball.kind === 'contact') {
-    // 共有リストの中の頼みごと（0036 の決定 4）: ボールを持つ相手が同じリストの読者なら、その人の番（宛先・メンション）
-    const readerOf = new Map((list ? dir.readerContactsOfList(list.id) : []).map((c) => [c.id, c.userId!]));
-    const users = ball.contactIds.map((id) => readerOf.get(id)).filter((u): u is string => u !== undefined);
-    if (users.length > 0) return { kind: 'user', userIds: [...new Set(users)].sort(), by: 'addressed' };
-    return { kind: 'contact', contactIds: ball.contactIds, addresses: ball.addresses };
-  }
-  if (ball.kind === 'none') return { kind: 'none' };
-
-  const readers = list ? dir.readersOfList(list.id) : [];
-  if (readers.length === 1) return { kind: 'user', userIds: [readers[0]!], by: 'reader' };
-  // 宛先・CC・メンション: 相手が求めたシグナルの保持者に、読者の Contact のアドレスが入っている（0030）
-  const addressed = new Set<string>();
-  if (t.request && requestIsOurs(dir, p, t) === false) {
-    const held = contactsOf(dir, t.request.holders, p.signals[t.request.signalId]?.at);
-    for (const r of list ? dir.readerContactsOfList(list.id) : []) if (held.includes(r.id)) addressed.add(r.userId!);
-  }
-  if (addressed.size > 0) return { kind: 'user', userIds: [...addressed].sort(), by: 'addressed' };
-  return { kind: 'triage' };
+export function listKindOf(dir: Directory, dataSourceId: string): ListKind {
+  const ds = dir.dataSource(dataSourceId);
+  if (!ds || ds.kind === 'notes') return 'personal';
+  if (ds.shared) return 'shared';
+  return dir.credentialRef(ds.credentialRefId)?.principal.kind === 'user' ? 'personal' : 'shared';
 }
 
-/**
- * 状態を持つデータソースの上でボールを持っている人（写しの holders。0010 の黒子・0031）。ソースの状態が正なので、
- * 持ち主がいなければシグナルのボールより先に効く。読者のユーザーがいればその人たちの番、いなければその相手。
- * 完了・片付けのスレッドと、だれにも解決できないアカウントだけのときは効かない
- */
-function holderTurn(dir: Directory, t: Thread): Turn | null {
-  if (t.dismissed || t.closedAtSource || !t.source || t.source.holders.length === 0) return null;
+/** 状態を持つソース（課題のトラッカー・PR）。担当はソースの担当者で、Murmur では担当しない（0038 の決定 1） */
+export function isStatefulSource(ds: DataSource | undefined): boolean {
+  return ds?.kind === 'service' && (ds.channel === 'jira' || ds.channel === 'bitbucket');
+}
+
+/** そのアドレスがリストの読者のものなら、その User（読者がそのリストで名乗ったアドレス。0030 の決定 7・0038 の決定 4） */
+export function readerOfAddress(dir: Directory, dataSourceId: string, ref: AddressRef, at?: string): string | null {
+  const ds = dir.dataSource(dataSourceId);
+  if (ds?.kind === 'notes') return ref.channel === 'note' && ref.value === ds.ownerUserId ? ds.ownerUserId : null;
+  const list = dir.listOfDataSource(dataSourceId);
+  if (!list) return null;
+  const contactId = dir.contactIdOfAddress(ref, at);
+  const userId = contactId ? dir.contact(contactId)?.userId : undefined;
+  return userId !== undefined && dir.readersOfList(list.id).includes(userId) ? userId : null;
+}
+
+/** リスト宛てのアドレス（データソースの窓口）。見るときに読者へ展開する（0038 の決定 2） */
+export function isListAddress(ds: DataSource | undefined, ref: AddressRef): boolean {
+  return ds?.kind === 'service' && ds.selfAddresses.some((a) => sameAddress(a, ref));
+}
+
+/** 担当（0038 の決定 1）。個人リストは本人が暗黙の担当なので出さない（自分の番は名指しで決まる） */
+export interface Assignee {
+  /** source = ソースの担当者（写しの holders）、claim = 担当する操作 */
+  by: 'source' | 'claim';
+  /** 読者の担当 */
+  userIds: string[];
+  /** 読者でない担当のうち Contact のあるもの（名前を出すため。番の種類は変えない） */
+  contactIds: string[];
+  /** 読者でない担当のうち Contact のないもの */
+  addresses: AddressRef[];
+}
+
+export function assigneeOf(dir: Directory, t: Thread): Assignee | null {
+  if (listKindOf(dir, t.dataSourceId) === 'personal') return null;
   const ds = dir.dataSource(t.dataSourceId);
-  if (ds?.kind !== 'service') return null;
-  const list = dir.listOfDataSource(t.dataSourceId);
-  const readers = list ? dir.readersOfList(list.id) : [];
-  const users = new Set<string>();
-  const contacts = new Set<string>();
-  const unresolved: AddressRef[] = [];
-  for (const value of t.source.holders) {
-    const contactId = dir.contactIdOfAddress({ channel: ds.channel, value });
-    const contact = contactId ? dir.contact(contactId) : undefined;
-    if (!contact) {
-      unresolved.push({ channel: ds.channel, value });
+  if (isStatefulSource(ds)) {
+    const holders = t.source?.holders ?? [];
+    if (ds?.kind !== 'service' || holders.length === 0) return null;
+    const out: Assignee = { by: 'source', userIds: [], contactIds: [], addresses: [] };
+    for (const value of holders) {
+      const ref = { channel: ds.channel, value };
+      const user = readerOfAddress(dir, t.dataSourceId, ref);
+      if (user) {
+        if (!out.userIds.includes(user)) out.userIds.push(user);
+        continue;
+      }
+      const contactId = dir.contactIdOfAddress(ref);
+      if (contactId && dir.contact(contactId)) {
+        if (!out.contactIds.includes(contactId)) out.contactIds.push(contactId);
+      } else out.addresses.push(ref);
+    }
+    out.userIds.sort();
+    out.contactIds.sort();
+    return out;
+  }
+  return t.ownerUserId ? { by: 'claim', userIds: [t.ownerUserId], contactIds: [], addresses: [] } : null;
+}
+
+/** 残っている名指し 1 つ（アドレスへの名指し。リスト宛ては含めない） */
+export interface AttentionItem {
+  address: AddressRef;
+  /** そのアドレスが読者のものなら、その User（本人だけが外せる）。null は読者でない（読者なら誰でも外せる） */
+  userId: string | null;
+  /** 読者でないアドレスの Contact（名前を出すため） */
+  contactId: string | null;
+  /** 最後に名指ししたシグナル */
+  signalId: string;
+  at: string;
+}
+
+/** 残っている名指し（0038 の決定 2〜4）。list はリスト宛ての名指しが残っている読者 */
+export interface Attention {
+  named: AttentionItem[];
+  list: { userIds: string[]; signalId: string; at: string } | null;
+}
+
+export function attentionOf(dir: Directory, t: Thread): Attention {
+  const ds = dir.dataSource(t.dataSourceId);
+  const named: AttentionItem[] = [];
+  /** リスト宛てのシグナル（窓口のアドレスの名指しと、グループのチャネルの宛先のない投稿） */
+  const listSignals: (LogPos & { from: AddressRef })[] = [];
+  for (const n of t.attention.named) {
+    if (isListAddress(ds, n.address)) {
+      listSignals.push({ ...n.last, from: n.from });
       continue;
     }
-    if (contact.userId !== undefined && readers.includes(contact.userId)) users.add(contact.userId);
-    else contacts.add(contact.id);
+    if (!isPending(n)) continue;
+    const userId = readerOfAddress(dir, t.dataSourceId, n.address, n.last.at);
+    const contactId = userId ? null : dir.contactIdOfAddress(n.address, n.last.at);
+    named.push({ address: n.address, userId, contactId: contactId && dir.contact(contactId) ? contactId : null, signalId: n.last.signalId, at: n.last.at });
   }
-  if (users.size > 0) return { kind: 'user', userIds: [...users].sort(), by: 'holder' };
-  // だれにも解決できないアカウントだけのときは効かない（シグナルのボールに任せる）。解決できた相手がいれば、残りはアドレスのまま並べる
-  if (contacts.size > 0) return { kind: 'contact', contactIds: [...contacts].sort(), addresses: unresolved };
-  return null;
+  if (ds?.kind === 'service' && ds.group) listSignals.push(...t.attention.broadcasts);
+
+  let list: Attention['list'] = null;
+  const lst = dir.listOfDataSource(t.dataSourceId);
+  if (listSignals.length > 0 && lst) {
+    const users: string[] = [];
+    let latest: LogPos | null = null;
+    for (const u of dir.readersOfList(lst.id)) {
+      const acked = t.attention.listAcks[u];
+      // 送り主本人の投稿は、その人には名指しにならない
+      const pending = listSignals.filter((x) => (!acked || comparePos(x, acked) > 0) && readerOfAddress(dir, t.dataSourceId, x.from, x.at) !== u);
+      if (pending.length === 0) continue;
+      users.push(u);
+      for (const x of pending) if (!latest || comparePos(x, latest) > 0) latest = x;
+    }
+    if (latest) list = { userIds: users.sort(), signalId: latest.signalId, at: latest.at };
+  }
+  return { named, list };
 }
 
-export function isMyTurn(turn: Turn, viewer: Viewer): boolean {
-  return turn.kind === 'user' && turn.userIds.includes(viewer.userId);
+/** どの見え方にも数えるか（片付けていない・ソースで完了していない） */
+export function isOpen(t: Thread): boolean {
+  return !t.dismissed && !t.closedAtSource;
+}
+
+/** 自分の番の理由（0038 の決定 6）。空なら自分の番ではない */
+export type MyTurnReason = 'assignee' | 'named' | 'list';
+
+export function myTurnOf(dir: Directory, viewer: Viewer, t: Thread): MyTurnReason[] {
+  if (!isOpen(t)) return [];
+  const out: MyTurnReason[] = [];
+  if (assigneeOf(dir, t)?.userIds.includes(viewer.userId)) out.push('assignee');
+  const a = attentionOf(dir, t);
+  if (a.named.some((n) => n.userId === viewer.userId)) out.push('named');
+  if (a.list?.userIds.includes(viewer.userId)) out.push('list');
+  return out;
+}
+
+export function isMyTurn(dir: Directory, viewer: Viewer, t: Thread): boolean {
+  return myTurnOf(dir, viewer, t).length > 0;
+}
+
+/** 仕分け待ち: 共有リストで、開いていて、担当がいない（0038 の決定 6） */
+export function isTriage(dir: Directory, t: Thread): boolean {
+  return isOpen(t) && listKindOf(dir, t.dataSourceId) === 'shared' && assigneeOf(dir, t) === null;
+}
+
+/** 相手待ち: 開いていて、読者でないアドレスへの名指しが残っている */
+export function isAwaiting(dir: Directory, t: Thread): boolean {
+  return isOpen(t) && attentionOf(dir, t).named.some((n) => n.userId === null);
 }
 
 /**
  * リンク先のスレッドから導出したボール（主に個人のメモのスレッドから見る。どのスレッドからでも同じ計算）。
  * 見えるリンク先だけを見る。片付けたリンク先は数えない
  * - my_turn: どれかが Viewer の番
- * - waiting: 全部が相手待ち
+ * - waiting: 全部が相手待ち（読者でないアドレスへの名指しが残っている）
  * - none: それ以外
  * 見えるリンクがなければ null（見えないリンクは、あることも出さない。0033 の 3）
  */
@@ -101,10 +186,9 @@ export function derivedBall(dir: Directory, viewer: Viewer, p: Projections, t: T
   if (visible.length === 0) return null;
   const linked = visible.filter((x) => !x.dismissed);
   if (linked.length === 0) return { kind: 'none' };
-  const turns = linked.map((x) => ({ id: x.id, turn: turnOf(dir, p, x) }));
-  const mine = turns.filter((x) => isMyTurn(x.turn, viewer)).map((x) => x.id);
+  const mine = linked.filter((x) => isMyTurn(dir, viewer, x)).map((x) => x.id);
   if (mine.length > 0) return { kind: 'my_turn', threadIds: mine };
-  if (turns.every((x) => x.turn.kind === 'contact')) return { kind: 'waiting', threadIds: turns.map((x) => x.id) };
+  if (linked.every((x) => isAwaiting(dir, x))) return { kind: 'waiting', threadIds: linked.map((x) => x.id) };
   return { kind: 'none' };
 }
 

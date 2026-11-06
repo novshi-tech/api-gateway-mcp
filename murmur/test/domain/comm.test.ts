@@ -1,102 +1,111 @@
 import { describe, expect, it } from 'vitest';
-import { deriveComm, type AddressRef, type ThreadLogEntry } from '../../src/domain';
+import { deriveComm, isPending, type AddressRef, type CommState, type ThreadLogEntry } from '../../src/domain';
 
-// 通信状態の導出（0030）。ボールはアドレスだけで畳む（どちら側かは決めない。sides.test.ts）
+// 通信状態の導出（0030・0038）。名指しはアドレスと順番だけで畳む（リスト宛てか・読者かは決めない。turn.test.ts）
 
 const at = (h: number) => `2026-10-16T${String(h).padStart(2, '0')}:00:00.000Z`;
 const US: AddressRef = { channel: 'email', value: 'support@ubs.example' };
 const CAROL: AddressRef = { channel: 'email', value: 'carol@example.com' };
 const DAVE: AddressRef = { channel: 'email', value: 'info@dave.example' };
 let seq = 0;
-const signal = (h: number, from: AddressRef, to: AddressRef[], needsResponse: boolean | null = true, replyExpectedBy?: string): ThreadLogEntry => ({
+const signal = (h: number, from: AddressRef, to: AddressRef[], replyExpectedBy?: string): ThreadLogEntry => ({
   seq: ++seq,
   at: at(h),
   kind: 'signal',
   signalId: `sig${seq}`,
   from,
   to,
-  needsResponse,
   replyExpectedBy,
 });
-/** 相手（Carol）から support@ へ */
-const fromCarol = (h: number, needsResponse: boolean | null = true) => signal(h, CAROL, [US], needsResponse);
-/** support@ から Carol へ（こちらからのシグナルは判断しない = null） */
-const toCarol = (h: number, replyExpectedBy?: string) => signal(h, US, [CAROL], null, replyExpectedBy);
+const ack = (h: number, untilSignalId: string, addresses: AddressRef[], list = false, userId = 'u_alice'): ThreadLogEntry => ({
+  seq: ++seq,
+  at: at(h),
+  kind: 'acknowledged',
+  untilSignalId,
+  addresses,
+  list,
+  actorUserId: userId,
+});
 const dismissed = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'dismissed', reason: 'r' });
 const reopened = (h: number): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'reopened' });
 const claimed = (h: number, userId: string | null): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'claimed', userId });
+const overdue = (h: number, signalId: string): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind: 'overdue', signalId, replyExpectedBy: at(h - 1) });
 const other = (h: number, kind: 'note' | 'linked' | 'attribute'): ThreadLogEntry => ({ seq: ++seq, at: at(h), kind });
 
-const holders = (s: ReturnType<typeof deriveComm>) => (s.ball.kind === 'request' ? s.ball.request.holders : null);
-const requestedBy = (s: ReturnType<typeof deriveComm>) => (s.ball.kind === 'request' ? s.ball.request.requestedBy : null);
+/** 名指しが残っているアドレスの値 */
+const pending = (s: CommState) => s.attention.named.filter((n) => isPending(n)).map((n) => n.address.value);
 
-describe('deriveComm（H2・H8）', () => {
-  it('空ならボールはなし', () => {
-    expect(deriveComm([])).toMatchObject({ ball: { kind: 'none' }, request: null, dismissed: false });
+describe('deriveComm（H2・H8・0038）', () => {
+  it('空なら名指しも担当もない', () => {
+    expect(deriveComm([])).toMatchObject({ attention: { named: [], broadcasts: [], listAcks: {} }, ownerUserId: null, dismissed: false });
   });
 
-  it('求めるシグナル → 保持者はその宛先、求めた人は送り主。未判断（null）も求めている側に倒す', () => {
-    const a = deriveComm([fromCarol(9)]);
-    expect(holders(a)).toEqual([US]);
-    expect(requestedBy(a)).toEqual(CAROL);
-    const b = deriveComm([fromCarol(9), toCarol(10)]);
-    expect(holders(b)).toEqual([CAROL]);
-    expect(requestedBy(b)).toEqual(US);
-    expect(deriveComm([fromCarol(9, null)]).ball.kind).toBe('request');
+  it('H8 宛先が名指しされる（送り主は除く）。アドレスごとに最後の名指しを持ち、ほかの人の発言では消えない', () => {
+    const a = signal(9, CAROL, [US, DAVE, CAROL]);
+    const b = signal(10, DAVE, [CAROL]);
+    const s = deriveComm([a, b]);
+    expect(pending(s).sort()).toEqual([CAROL.value, DAVE.value, US.value].sort());
+    expect(s.attention.named.find((n) => n.address.value === DAVE.value)).toMatchObject({ last: { signalId: a.signalId }, from: CAROL });
+    expect(s.attention.named.find((n) => n.address.value === CAROL.value)).toMatchObject({ last: { signalId: b.signalId }, from: DAVE });
   });
 
-  it('求めないシグナル: 求めた人以外からなら応えたとみなして空、求めた人（追伸・お礼）からなら変えない', () => {
-    expect(deriveComm([fromCarol(9), toCarol(10), fromCarol(11, false)]).ball).toEqual({ kind: 'none' });
-    const s = deriveComm([fromCarol(9), fromCarol(10, false)]);
-    expect(holders(s)).toEqual([US]);
-    expect(deriveComm([fromCarol(9, false)]).ball).toEqual({ kind: 'none' });
-    // 別のアドレス（相手側の別の人）の一言でも空になる（0030 の分かっている代償）
-    expect(deriveComm([fromCarol(9), signal(10, DAVE, [US], false)]).ball).toEqual({ kind: 'none' });
+  it('H8 宛先のないシグナルは broadcasts（グループのチャネルならリスト宛て）', () => {
+    const a = signal(9, CAROL, []);
+    expect(deriveComm([a]).attention.broadcasts).toEqual([{ signalId: a.signalId, at: a.at, seq: a.seq, from: CAROL }]);
   });
 
-  it('宛先がなければ（グループのチャネル）「送り主以外」が持つ', () => {
-    const s = deriveComm([signal(9, CAROL, [])]);
-    expect(s.ball).toMatchObject({ kind: 'request', request: { holders: [], except: CAROL, requestedBy: CAROL } });
+  it('H8 外すのはそのシグナルまで。それより後に名指しされれば、また残る。発言しただけでは外れない', () => {
+    const a = signal(9, CAROL, [US]);
+    const reply = signal(10, US, [CAROL]);
+    const s1 = deriveComm([a, reply]);
+    expect(pending(s1).sort()).toEqual([CAROL.value, US.value].sort());
+    const s2 = deriveComm([a, reply, ack(11, a.signalId!, [US])]);
+    expect(pending(s2)).toEqual([CAROL.value]);
+    expect(s2.attention.named.find((n) => n.address.value === US.value)?.ackedThrough).toMatchObject({ signalId: a.signalId, userId: 'u_alice' });
+    const again = signal(12, CAROL, [US]);
+    expect(pending(deriveComm([a, reply, ack(11, a.signalId!, [US]), again])).sort()).toEqual([CAROL.value, US.value].sort());
   });
 
-  it('since は同じ送り主が求め続けているあいだの最初の時刻', () => {
-    expect(deriveComm([fromCarol(9), fromCarol(10)]).request?.since).toBe(at(9));
-    expect(deriveComm([fromCarol(9), toCarol(10), fromCarol(11)]).request?.since).toBe(at(11));
+  it('H8 リスト宛ての外しは User ごとに位置を持つ。より前の位置への外しでは戻らない', () => {
+    const a = signal(9, CAROL, [US]);
+    const b = signal(10, CAROL, [US]);
+    const s = deriveComm([a, b, ack(11, b.signalId!, [], true, 'u_bob'), ack(12, a.signalId!, [], true, 'u_bob')]);
+    expect(s.attention.listAcks).toEqual({ u_bob: { signalId: b.signalId, at: b.at, seq: b.seq } });
   });
 
-  it('時刻順に畳む（同時刻は seq 順）。入力の並びには依存しない', () => {
-    const xs = [fromCarol(9), toCarol(10), fromCarol(11, false)];
-    expect(deriveComm([...xs].reverse())).toEqual(deriveComm(xs));
+  it('H8 移し替えでなくなったシグナルまでの外しは効かない', () => {
+    const a = signal(9, CAROL, [US]);
+    expect(pending(deriveComm([a, ack(10, 'gone', [US])]))).toEqual([US.value]);
   });
 
-  it('片付けたら開き直すまで「なし」。間のシグナルは activeSinceDismissed で知らせ、開き直すとそこから決まる', () => {
-    const xs = [fromCarol(9), dismissed(10)];
-    expect(deriveComm(xs)).toMatchObject({ ball: { kind: 'none' }, dismissed: true, dismissedAt: at(10), activeSinceDismissed: false });
-    const later = [...xs, toCarol(11)];
-    expect(deriveComm(later)).toMatchObject({ ball: { kind: 'none' }, activeSinceDismissed: true });
-    expect(holders(deriveComm([...later, reopened(12)]))).toEqual([CAROL]);
+  it('H4 担当する → その人、引き継ぐ → 別の人、手放す → なし。名指しは変えない', () => {
+    const a = signal(9, CAROL, [US]);
+    expect(deriveComm([a, claimed(10, 'u_bob')]).ownerUserId).toBe('u_bob');
+    expect(deriveComm([a, claimed(10, 'u_bob'), claimed(11, 'u_alice')]).ownerUserId).toBe('u_alice');
+    const released = deriveComm([a, claimed(10, 'u_bob'), claimed(11, null)]);
+    expect(released.ownerUserId).toBeNull();
+    expect(pending(released)).toEqual([US.value]);
   });
 
-  it('H4 持つとボールはその人へ。その後の求めるシグナルで保持者に移る。手放すとこちら', () => {
-    expect(deriveComm([fromCarol(9), claimed(10, 'u_alice')])).toMatchObject({ ball: { kind: 'claimed', userId: 'u_alice' }, ownerUserId: 'u_alice' });
-    const xs = [fromCarol(9), claimed(10, 'u_alice'), toCarol(11)];
-    expect(holders(deriveComm(xs))).toEqual([CAROL]);
-    expect(deriveComm([...xs, fromCarol(12)])).toMatchObject({ ownerUserId: 'u_alice', ball: { kind: 'request' } });
-    expect(deriveComm([...xs, fromCarol(12), claimed(13, null)])).toMatchObject({ ball: { kind: 'claimed', userId: null }, ownerUserId: null });
-    // 持っても、最後に求めたシグナルは残る（クエリ層の未応答に使う）
-    expect(deriveComm([fromCarol(9), claimed(10, 'u_alice')]).request?.since).toBe(at(9));
-    expect(deriveComm([fromCarol(9), dismissed(10), claimed(11, 'u_alice')])).toMatchObject({ ball: { kind: 'none' }, ownerUserId: 'u_alice' });
+  it('片付けたら開き直すまで片付けたまま。間のシグナルは activeSinceDismissed で知らせる', () => {
+    const s = deriveComm([signal(9, CAROL, [US]), dismissed(10), signal(11, CAROL, [US])]);
+    expect(s).toMatchObject({ dismissed: true, activeSinceDismissed: true });
+    expect(deriveComm([signal(9, CAROL, [US]), dismissed(10), reopened(11)])).toMatchObject({ dismissed: false, activeSinceDismissed: false });
   });
 
-  it('H4 返事期待は記録した送信から。その送り主以外からシグナルが来れば消える', () => {
-    const xs = [fromCarol(9), toCarol(10, at(20))];
-    expect(deriveComm(xs)).toMatchObject({ replyExpectedBy: at(20), replyExpectedFrom: US });
-    expect(deriveComm([...xs, fromCarol(11, false)])).toMatchObject({ replyExpectedBy: null, replyExpectedFrom: null });
-    expect(deriveComm([...xs, toCarol(11)]).replyExpectedBy).toBe(at(20));
+  it('H4 返事期待は記録した送信から。その送信の宛先の名指しが全部外れれば消え、期限超過も解消する', () => {
+    const sent = signal(9, US, [CAROL, DAVE], at(12));
+    const late = overdue(13, sent.signalId!);
+    expect(deriveComm([sent, late])).toMatchObject({ replyExpectedBy: at(12), replyExpectedSignalId: sent.signalId, overdue: true });
+    // 返事が来ただけでは消えない（名指しは本人か読者の操作で外れる）
+    expect(deriveComm([sent, late, signal(14, CAROL, [US])])).toMatchObject({ replyExpectedBy: at(12), overdue: true });
+    // 片方だけ外しても続く
+    expect(deriveComm([sent, late, ack(14, sent.signalId!, [CAROL])])).toMatchObject({ replyExpectedBy: at(12), overdue: true });
+    expect(deriveComm([sent, late, ack(14, sent.signalId!, [CAROL, DAVE])])).toMatchObject({ replyExpectedBy: null, replyExpectedSignalId: null, overdue: false });
   });
 
-  it('H2 メモ・リンク・属性はボールを動かさない', () => {
-    expect(deriveComm([other(9, 'note'), other(10, 'linked'), other(11, 'attribute')])).toEqual(deriveComm([]));
-    expect(holders(deriveComm([fromCarol(9), toCarol(10), other(11, 'linked')]))).toEqual([CAROL]);
+  it('H2 メモ・リンク・属性は名指しを作らない', () => {
+    const s = deriveComm([other(9, 'note'), other(10, 'linked'), other(11, 'attribute')]);
+    expect(s.attention).toEqual({ named: [], broadcasts: [], listAcks: {} });
   });
 });

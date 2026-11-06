@@ -48,7 +48,7 @@ async function main() {
       const who = decider.kind === 'hint' ? 'ヒント' : 'AI';
       const m = v.metrics;
       console.log(
-        `  H6 ingest: 全体 ${pct(m.correct, m.total)} / 構造の区切り ${pct(m.structural.correct, m.structural.total)} / ${who}の区切り ${pct(m.ai.correct, m.ai.total)} / 求めているか ${pct(m.needsResponse.correct, m.needsResponse.total)}`,
+        `  H6 ingest: 全体 ${pct(m.correct, m.total)} / 構造の区切り ${pct(m.structural.correct, m.structural.total)} / ${who}の区切り ${pct(m.ai.correct, m.ai.total)}`,
       );
       if (m.confidences.length) console.log(`  confidence: ${m.confidences.map((c) => c.toFixed(2)).join(' ')}`);
       if (v.errors.length) {

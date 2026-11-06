@@ -2,10 +2,12 @@ import { sameAddress } from './comm';
 import type { Directory } from './directory';
 import type { AddressRef, DataSource } from './entities';
 import type { Direction } from './events';
-import type { Ball, Projections, SignalRecord, Thread } from './projections';
+import type { SignalRecord, Thread } from './projections';
 
-// クエリ層の「どちら側か」（0030）。イベントと fold はアドレスだけを持ち、こちらからか・どの Contact かは、
+// クエリ層の「こちらのアドレスか」（0030）。イベントと fold はアドレスだけを持ち、こちらからか・どの Contact かは、
 // ここでそのときのマスタから決める。名寄せを後から直せば、過去のスレッドの見え方も直る。
+// 誰の番には使わない（0038。誰の番は担当と名指しで決まる。turn.ts）。使うのは、取り込みの判断（AI を呼ぶか、区切りの同じ相手）と、
+// タイムラインの向き・相手の一覧の表示だけ
 
 /**
  * そのデータソースで「こちら」のアドレスか（at 時点）。
@@ -59,49 +61,17 @@ function sortAddresses(refs: AddressRef[]): AddressRef[] {
   return [...refs].sort((x, y) => (key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : 0));
 }
 
-/** スレッドの最後に求めたシグナルが、こちらからのものか */
-export function requestIsOurs(dir: Directory, p: Projections, t: Thread): boolean | null {
-  const r = t.request;
-  if (!r) return null;
-  const at = p.signals[r.signalId]?.at;
-  return isOurs(dir, dir.dataSource(t.dataSourceId), r.requestedBy, at);
-}
-
-/**
- * fold が畳んだボールを、どちら側かに解決する。
- * - 持った・手放した → その人・こちら
- * - こちらが求めた → 相手（保持者の Contact と、解決できなかったアドレス）。保持者がいなければ（宛先のない起票、
- *   窓口のアドレスだけに送ったもの）、待っている相手がいないのでボールなし
- * - 相手が求めた → 持ち主がいればその人、いなければこちら
- */
-export function resolveBall(dir: Directory, p: Projections, t: Thread): Ball {
-  const b = t.ball;
-  if (b.kind === 'none') return { kind: 'none' };
-  if (b.kind === 'claimed') return b.userId ? { kind: 'user', userId: b.userId } : { kind: 'us' };
-  if (requestIsOurs(dir, p, t)) {
-    const at = p.signals[b.request.signalId]?.at;
-    const ds = dir.dataSource(t.dataSourceId);
-    const holders = resolveAddresses(dir, b.request.holders, at, (r) => isOurs(dir, ds, r, at));
-    if (holders.contactIds.length === 0 && holders.addresses.length === 0) return { kind: 'none' };
-    return { kind: 'contact', ...holders };
-  }
-  return t.ownerUserId ? { kind: 'user', userId: t.ownerUserId } : { kind: 'us' };
-}
-
 export interface CommView {
-  ball: Ball;
   /** 相手の Contact（相手からのシグナルの送り主と、こちらからのシグナルの宛先） */
   counterpartContactIds: string[];
   /** 相手のうち、Contact に解決できなかったアドレス（0030。名寄せすると counterpartContactIds に移る） */
   counterpartAddresses: AddressRef[];
   lastInboundAt: string | null;
   lastOutboundAt: string | null;
-  /** こちらの返事を待たせている最初の時刻（相手が求め続けているあいだ） */
-  unansweredSince: string | null;
 }
 
 /** スレッドの通信状態をクエリ時のマスタで見る */
-export function commView(dir: Directory, p: Projections, t: Thread): CommView {
+export function commView(dir: Directory, t: Thread): CommView {
   const ds = dir.dataSource(t.dataSourceId);
   let lastInboundAt: string | null = null;
   let lastOutboundAt: string | null = null;
@@ -122,13 +92,10 @@ export function commView(dir: Directory, p: Projections, t: Thread): CommView {
       add([e.from], e.at);
     }
   }
-  const ours = requestIsOurs(dir, p, t);
   return {
-    ball: resolveBall(dir, p, t),
     counterpartContactIds: [...counterparts].sort(),
     counterpartAddresses: sortAddresses(unresolved),
     lastInboundAt,
     lastOutboundAt,
-    unansweredSince: ours === false ? t.request!.since : null,
   };
 }

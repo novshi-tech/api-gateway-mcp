@@ -5,7 +5,9 @@ import type { Channel, ServiceDataSource } from './entities';
 import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type FileRef, type PayloadOf, type ThreadChoice, type ThreadedBy } from './events';
 import { indexKey, type Projections, type SignalRecord, type Thread } from './projections';
-import { commView, directionOf, isOurs, resolveBall } from './sides';
+import { addressKey, comparePos, isPending, sameAddress } from './comm';
+import { commView, directionOf, isOurs } from './sides';
+import { isListAddress, readerOfAddress } from './turn';
 
 // Ingest の判断部分（純関数）。AI の呼び出しそのものはシェル（src/ingest/）が行う。
 // 判断はスレッドの区切りと「返事や対応を求めているか」だけ（計画 v2 の Ingest）。業務の知識は使わない。
@@ -156,14 +158,22 @@ function withSameCounterpart(dir: Directory, p: Projections, ds: ServiceDataSour
   });
 }
 
-/** 2. 同じ相手で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド（受信だけ） */
+/**
+ * 2. 同じ相手で、こちらが返事を待っているスレッドが 1 本だけなら、そのスレッド（受信だけ）。
+ * 返事を待っている = 読者でないアドレスへの名指しが残っていて、その相手がまだそのスレッドで発言していない（0038）。
+ * 発言したかは区切りの判断にだけ使う（名指しは発言では外れない）。グループのチャネルはどの相手でも、ほかはその送り主への名指し
+ */
 export function awaitingThread(dir: Directory, p: Projections, ds: ServiceDataSource, sig: SignalPayload, ours: boolean): Thread | null {
   if (ours) return null;
   const waiting = threadsOf(p, ds.id).filter((t) => {
-    if (resolveBall(dir, p, t).kind !== 'contact') return false;
-    if (ds.group) return true;
-    const lastOut = [...t.signalIds].reverse().map((id) => p.signals[id]!).find((s) => directionOf(dir, s) === 'outbound');
-    return lastOut !== undefined && lastOut.to.some((r) => r.channel === sig.from.channel && sameValue(r.value, sig.from.value));
+    if (t.closedAtSource) return false;
+    const unanswered = t.attention.named.filter((n) => {
+      if (!isPending(n) || isListAddress(ds, n.address) || readerOfAddress(dir, t.dataSourceId, n.address, n.last.at) !== null) return false;
+      // 名指しのあとに、その相手が発言していない
+      return !t.log.some((e) => e.kind === 'signal' && e.from !== undefined && sameAddress(e.from, n.address) && comparePos(e, n.last) > 0);
+    });
+    if (ds.group) return unanswered.length > 0;
+    return unanswered.some((n) => addressKey(n.address) === addressKey(sig.from));
   });
   return waiting.length === 1 ? waiting[0]! : null;
 }
@@ -185,7 +195,7 @@ function threadsOf(p: Projections, dataSourceId: string): Thread[] {
 }
 
 function lastActivity(dir: Directory, p: Projections, t: Thread): string {
-  const v = commView(dir, p, t);
+  const v = commView(dir, t);
   const a = v.lastInboundAt ?? '';
   const b = v.lastOutboundAt ?? '';
   return a > b ? a : b;
@@ -227,9 +237,10 @@ function toCandidate(dir: Directory, p: Projections, t: Thread): Candidate {
 }
 
 /**
- * - choose: 候補のどれかの続きか、新しいスレッドかを選ぶ（+ 返事や対応を求めているか）
- * - new: 新しいスレッドに決まっている。件名を書き、返事や対応を求めているかを判断する
- * - fixed: 既存のスレッドに決まっている。返事や対応を求めているかだけを判断する
+ * - choose: 候補のどれかの続きか、新しいスレッドかを選ぶ
+ * - new: 新しいスレッドに決まっている。件名を書く
+ * - fixed: 既存のスレッドに決まっている。0038 から AI を呼ばない（型とプロンプトは記録を取り直すまで残す）
+ * プロンプトと構造化出力の needs_response は、記録（H6 の再生）を取り直すまで残す。答えは使わない（0038 の未決 2）
  */
 export type IngestMode = 'choose' | 'new' | 'fixed';
 
@@ -253,12 +264,12 @@ export interface IngestOutcome {
   threadId: string;
   newThread: boolean;
   by: ThreadedBy;
-  needsResponse: boolean | null;
 }
 
 /**
- * 区切りを決め、AI の判断が要らなければイベントまで作る。こちらからのシグナル（観測された送信）には「求めているか」を判断しない
- * （null のまま。fold は「求めている」として畳むので、ボールは宛先へ移る。0030）
+ * 区切りを決め、AI の判断が要らなければイベントまで作る（0038）。AI を呼ぶのは、受信で、区切りを選ぶとき（choose）と、
+ * 新しいスレッドの件名を書くとき（new）だけ。アンカーでスレッドが決まる連絡（fixed）とこちらからのシグナルは AI を呼ばない。
+ * 「返事や対応を求めているか」は判断しない（名指しは宛先で決まる）
  */
 export function planIngest(
   p: Projections,
@@ -269,7 +280,7 @@ export function planIngest(
 ): IngestPlan {
   const ours = isOurs(ctx.dir, ds, sig.from, ctx.now);
   const threading = planThreading(ctx.dir, p, ds, sig, ours, policy);
-  if (ours && threading.kind !== 'choose') {
+  if (threading.kind === 'existing' || (ours && threading.kind === 'new')) {
     const choice: ThreadChoice =
       threading.kind === 'existing'
         ? { kind: 'existing', threadId: threading.threadId }
@@ -283,13 +294,12 @@ export function planIngest(
           by: threading.by,
           confidence: 1,
           reason: threading.reason,
-          needsResponse: null,
         }),
       ],
-      outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by: threading.by, needsResponse: null },
+      outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by: threading.by },
     };
   }
-  const mode: IngestMode = threading.kind === 'choose' ? 'choose' : threading.kind === 'new' ? 'new' : 'fixed';
+  const mode: IngestMode = threading.kind === 'choose' ? 'choose' : 'new';
   return {
     kind: 'needs_decision',
     request: {
@@ -298,7 +308,6 @@ export function planIngest(
       ours,
       dataSource: { id: ds.id, name: ds.name, description: ds.description, channel: ds.channel, group: ds.group },
       threading,
-      thread: threading.kind === 'existing' ? toCandidate(ctx.dir, p, p.threads[threading.threadId]!) : undefined,
       candidates: threading.kind === 'choose' ? threading.candidates : [],
     },
   };
@@ -322,7 +331,7 @@ export type AiIngestDecision = z.infer<typeof AiIngestDecision>;
 /**
  * Decider の出力を検証して SignalThreaded にする。
  * - 候補にないスレッドを選んだら新しいスレッドに倒す
- * - 「求めているか」は答えをそのまま使う。答えがなければ「求めている」に倒す
+ * - 「求めているか」（needs_response）の答えは使わない（0038）
  */
 export function finalizeIngest(
   ctx: CoreContext,
@@ -355,11 +364,6 @@ export function finalizeIngest(
     }
   }
 
-  let needsResponse: boolean | null = null;
-  if (!request.ours) {
-    needsResponse = raw.needs_response !== false;
-    if (raw.needs_response === null) notes.push('[「求めているか」の判断がないため「求めている」]');
-  }
   const reason = [...notes, raw.reason.trim()].filter((x) => x).join(' ') || '(理由なし)';
   return {
     events: [
@@ -369,10 +373,9 @@ export function finalizeIngest(
         by,
         confidence: raw.confidence,
         reason,
-        needsResponse,
       }),
     ],
-    outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by, needsResponse },
+    outcome: { threadId: choice.threadId, newThread: choice.kind === 'new', by },
   };
 }
 

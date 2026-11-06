@@ -1,4 +1,4 @@
-import { visibleThreadOrThrow } from './commands';
+import { acknowledgeAttention, visibleThreadOrThrow } from './commands';
 import type { CoreContext } from './context';
 import { DomainError } from './errors';
 import { draft, type AddressRef, type Anchors, type DraftEvent, type ThreadChoice, type ThreadedBy } from './events';
@@ -30,6 +30,8 @@ export interface RecordSentInput {
   sourceThreadId?: string;
   /** UTC の ISO 8601（シェルがそろえる） */
   replyExpectedBy?: string;
+  /** 送ったスレッドの、送る前までの自分への名指し（自分のアドレスとリスト宛て）を一緒に外す（0038 の決定 3。明示の指定） */
+  acknowledge?: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export interface RecordSentInput {
  * - 同じ sent_ref の観測された送信が先に届いていれば、そのシグナルに記録を重ねる（H5。reply_to が違えば移す）
  * - 同じ sent_ref の記録が既にあれば何もしない（冪等）
  * - source のスレッドがあれば経路 sent で結ぶ（Murmur が張るリンクの唯一の例外。スタンドの操作の一部）
+ * - acknowledge なら、送ったスレッドの自分への名指しを送る前の分まで外す
  */
 export function recordSent(
   p: Projections,
@@ -134,6 +137,10 @@ export function recordSent(
     threadId = choice.threadId;
   }
 
+  if (input.acknowledge && p.threads[threadId]) {
+    events.push(...acknowledgeAttention(p, viewer, ctx.dir, { threadId, reason: `返事を送った（${input.sentRef}）` }));
+  }
+
   if (source && source.id !== threadId && !source.links.some((l) => l.threadId === threadId)) {
     events.push(
       draft('ThreadLinked', { a: source.id, b: threadId, op: 'link', route: 'sent', actorUserId: viewer.userId, reason: `送信 ${input.sentRef}` }),
@@ -142,7 +149,7 @@ export function recordSent(
   return { events, threadId, signalId };
 
   function threaded(id: string, choice: ThreadChoice, by: ThreadedBy, reason: string): DraftEvent {
-    return draft('SignalThreaded', { signalId: id, thread: choice, by, confidence: 1, reason, needsResponse: null, actorUserId: viewer.userId });
+    return draft('SignalThreaded', { signalId: id, thread: choice, by, confidence: 1, reason, actorUserId: viewer.userId });
   }
 }
 

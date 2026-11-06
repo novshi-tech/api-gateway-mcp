@@ -16,6 +16,8 @@ import {
   searchContacts,
   unbindContact,
   unresolvedAddresses,
+  acknowledgeAttention,
+  isStaleProjections,
   claimThread,
   deriveViewer,
   planOverdue,
@@ -110,7 +112,12 @@ export class MurmurService {
   /** 投影を読み、取りこぼしたイベントがあれば追いつく */
   async state(): Promise<Projections> {
     const { repo } = this.deps;
-    const saved = (await repo.projections.load()) ?? emptyProjections();
+    let saved = (await repo.projections.load()) ?? emptyProjections();
+    if (isStaleProjections(saved)) {
+      // 投影の形が古い（0038 で名指しを足した前のもの）。イベントから作り直す
+      await repo.projections.clear();
+      saved = emptyProjections();
+    }
     const missing = await repo.events.read(saved.lastSeq);
     if (missing.length === 0) return saved;
     const { projections, changes } = foldChanges(missing, saved);
@@ -392,6 +399,23 @@ export class MurmurService {
     return this.getThread(userId, input.threadId);
   }
 
+  /** 名指しを外す（0038 の決定 3・4） */
+  async acknowledge(userId: string, input: { threadId: string; untilSignalId?: string; addresses?: AddressRef[]; reason?: string }) {
+    const { viewer } = await this.viewer(userId);
+    await this.run((p, ctx) => ({ events: acknowledgeAttention(p, viewer, ctx.dir, input), result: undefined }));
+    return this.getThread(userId, input.threadId);
+  }
+
+  /** 複数のスレッドの自分への名指しを、それぞれの最新のシグナルまでまとめて外す。外したスレッドの数を返す */
+  async acknowledgeMany(userId: string, input: { threadIds: string[]; reason?: string }) {
+    const { viewer } = await this.viewer(userId);
+    const acknowledged = await this.run((p, ctx) => {
+      const events = input.threadIds.flatMap((threadId) => acknowledgeAttention(p, viewer, ctx.dir, { threadId, reason: input.reason }));
+      return { events, result: events.length };
+    });
+    return { acknowledged };
+  }
+
   async linkThreads(userId: string, input: { threadId: string; otherThreadId: string; reason?: string }) {
     const { viewer } = await this.viewer(userId);
     await this.run((p) => ({ events: linkThreads(p, viewer, input), result: undefined }));
@@ -436,7 +460,7 @@ export class MurmurService {
     return this.getThread(userId, input.threadId);
   }
 
-  async moveSignal(userId: string, input: { signalId: string; to: MoveTarget; needsResponse?: boolean; reason: string }) {
+  async moveSignal(userId: string, input: { signalId: string; to: MoveTarget; reason: string }) {
     const { viewer } = await this.viewer(userId);
     const threadId = await this.run((p, ctx) => {
       const { events, threadId } = moveSignal(p, viewer, ctx, input);

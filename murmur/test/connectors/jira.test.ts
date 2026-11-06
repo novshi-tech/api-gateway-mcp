@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JiraComment, JiraIssue } from '../../src/connectors/jira/issue';
 import { adfText, commentSignal, createdSignal, itemsOfIssue, mentions, mirrorOf, toUtc } from '../../src/connectors/jira/normalize';
-import { createPersonalDataSource, Directory, planMasterEdit, resolveBall, turnOf, type Seed } from '../../src/domain';
+import { assigneeOf, attentionOf, createPersonalDataSource, deriveViewer, Directory, myTurnOf, planMasterEdit, type Seed } from '../../src/domain';
 import { counterIds, makeService } from '../helpers/service';
 import { answer, seed } from '../helpers/world';
 
@@ -69,7 +69,7 @@ describe('H9 Jira の写像（純関数）', () => {
     expect(createdSignal('ds_j', issue({ assignee: MORI }))!.to).toEqual([]);
   });
 
-  it('コメント: 宛先はメンション → 担当者 → 起票した人（書いた本人は除く）。messageId は <課題キー>#c<ID>', () => {
+  it('コメント: 宛先はメンションした人だけ（書いた本人は除く）。messageId は <課題キー>#c<ID>', () => {
     const withMention = comment('46922', KATO, doc([mention(ME, '野瀬'), text(' 確認お願いします')]));
     expect(commentSignal('ds_j', issue(), withMention)).toMatchObject({
       from: { channel: 'jira', value: KATO },
@@ -79,10 +79,9 @@ describe('H9 Jira の写像（純関数）', () => {
       sourceRef: 'jira:SPW-2040#c46922',
       occurredAt: '2026-11-04T04:37:51.825Z',
     });
-    // メンションなし: 担当者（加藤）が書いたので起票した人（森）へ
-    expect(commentSignal('ds_j', issue(), comment('1', KATO, doc([text('済みです')])))!.to).toEqual([{ channel: 'jira', value: MORI }]);
-    // 森が書いたら担当者（加藤）へ
-    expect(commentSignal('ds_j', issue(), comment('2', MORI, doc([text('ありがとう')])))!.to).toEqual([{ channel: 'jira', value: KATO }]);
+    // メンションなし: 宛先なし（担当者や起票した人に補わない。0038 の未決 3）
+    expect(commentSignal('ds_j', issue(), comment('1', KATO, doc([text('済みです')])))!.to).toEqual([]);
+    expect(commentSignal('ds_j', issue(), comment('2', MORI, doc([text('ありがとう')])))!.to).toEqual([]);
   });
 
   it('ADF: 段落・改行・メンション・リンクのカードをテキストに。PR の URL は結び候補', () => {
@@ -125,7 +124,7 @@ function jiraSeed(): { seed: Seed; dataSourceId: string } {
 }
 
 describe('H9 H5 H8 Jira の写像を取り込む（個人リスト）', () => {
-  it('写しでスレッドができ、担当者が本人なら本人の番。コメントのメンションでも番は担当者のまま。完了で誰の番でもない', async () => {
+  it('写しでスレッドができ、担当者が本人なら本人の番。コメントのメンションも名指しとして残る。完了で誰の番でもない', async () => {
     const { seed: s, dataSourceId: ds } = jiraSeed();
     const { service, clock } = await makeService(s, { decide: () => answer({ needs_response: true }) });
     clock.set('2026-11-04T05:00:00.000Z');
@@ -138,7 +137,9 @@ describe('H9 H5 H8 Jira の写像を取り込む（個人リスト）', () => {
     const [t] = Object.values(p.threads).filter((x) => x.dataSourceId === ds);
     expect(t).toMatchObject({ title: '物件の立ち上げ', sourceKey: 'SPW-2040', closedAtSource: false });
     expect(t!.signalIds).toHaveLength(2);
-    expect(turnOf(dir, p, t!)).toEqual({ kind: 'user', userIds: ['u_bob'], by: 'holder' });
+    // 個人リストは本人が暗黙の担当（担当は出さない）。番は名指しで決まる
+    expect(assigneeOf(dir, t!)).toBeNull();
+    expect(myTurnOf(dir, deriveViewer(dir, 'u_bob'), t!)).toEqual(['named']);
 
     // 同じ更新がもう一度届いても（重なり・通知と Cron の両方）二重にならない
     for (const item of itemsOfIssue(ds, issue({ assignee: ME }), [], since)) await service.ingestItem(item);
@@ -147,7 +148,7 @@ describe('H9 H5 H8 Jira の写像を取り込む（個人リスト）', () => {
     await service.ingestItem(mirrorOf(ds, issue({ assignee: ME, status: ['完了', 'done'], updated: '2026-11-04T15:00:00.000+0900' })));
     const done = (await service.state()).threads[t!.id]!;
     expect(done.closedAtSource).toBe(true);
-    expect(turnOf(dir, await service.state(), done).kind).toBe('none');
+    expect(myTurnOf(dir, deriveViewer(dir, 'u_bob'), done)).toEqual([]);
   });
 
   it('スタンドが記録した起票とコメントは、あとで取り込んでも 1 本のまま（H5）。相手がマスタになければアドレスのまま', async () => {
@@ -164,7 +165,9 @@ describe('H9 H5 H8 Jira の写像を取り込む（個人リスト）', () => {
     const threads = Object.values(p.threads).filter((x) => x.dataSourceId === ds);
     expect(threads).toHaveLength(1);
     expect(threads[0]!.signalIds).toHaveLength(2);
-    // 写しの担当者（加藤）は読者でないので相手の番。加藤はマスタにいないので、写しは効かずシグナルのボール（宛先のアドレス）
-    expect(resolveBall(await service.directory(), p, threads[0]!)).toEqual({ kind: 'contact', contactIds: [], addresses: [{ channel: 'jira', value: KATO }] });
+    // 加藤への名指しが残り、相手待ち（加藤はマスタにいないので、アドレスのまま）
+    expect(attentionOf(await service.directory(), threads[0]!).named).toEqual([
+      { address: { channel: 'jira', value: KATO }, userId: null, contactId: null, signalId: expect.any(String), at: '2026-11-04T04:40:00.000Z' },
+    ]);
   });
 });

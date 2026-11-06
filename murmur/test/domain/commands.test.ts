@@ -45,12 +45,11 @@ describe('片付けと開き直し', () => {
 });
 
 describe('シグナルの移し替え', () => {
-  it('H6 同じデータソースの新しいスレッドへ移し、「求めているか」も直せる（追記で、元の判断は残る）', () => {
+  it('H6 同じデータソースの新しいスレッドへ移す（追記で、元の判断は残る）', () => {
     const { log, ctx, threadId, signalId } = world();
     const { events, threadId: to } = moveSignal(log.state(), alice, ctx, {
       signalId,
       to: { kind: 'new', title: '照明の交換' },
-      needsResponse: true,
       reason: '1 通に 2 つの話',
     });
     expect(events).toHaveLength(1);
@@ -58,7 +57,7 @@ describe('シグナルの移し替え', () => {
       by: 'human',
       actorUserId: 'u_alice',
       thread: { kind: 'new', title: '照明の交換' },
-      needsResponse: true,
+      needsResponse: null,
     });
     log.push(events, '2026-10-16T10:00:00.000Z');
     const p = log.state();
@@ -67,11 +66,9 @@ describe('シグナルの移し替え', () => {
     expect(log.events.filter((e) => e.type === 'SignalThreaded')).toHaveLength(4);
   });
 
-  it('H6 既存のスレッドへ戻せる。同じ置き先・同じ判断なら何もしない', () => {
+  it('H6 同じ置き先なら何もしない', () => {
     const { log, ctx, threadId, signalId } = world();
     expect(moveSignal(log.state(), alice, ctx, { signalId, to: { kind: 'existing', threadId }, reason: 'x' }).events).toEqual([]);
-    const flip = moveSignal(log.state(), alice, ctx, { signalId, to: { kind: 'existing', threadId }, needsResponse: false, reason: 'お礼だけ' });
-    expect(flip.events).toHaveLength(1);
   });
 
   it('H3 データソースをまたいでは移せない。見えないシグナルは not_found', () => {
@@ -84,12 +81,9 @@ describe('シグナルの移し替え', () => {
     expect(() => moveSignal(log.state(), alice, ctx, { signalId, to: { kind: 'new', title: 't' }, reason: '' })).toThrow(/reason/);
   });
 
-  it('H6 観測された送信には「求めているか」を付けられない', () => {
+  it('H6 観測された送信も移せる', () => {
     const { log, ctx } = world();
     const sent = ingestPure(log, ctx, email({ from: 'support@ubs.example', to: ['carol@example.com'], sourceRef: 'o1', anchors: { inReplyTo: '<m1>' } }));
-    expect(() =>
-      moveSignal(log.state(), alice, ctx, { signalId: sent.signalId!, to: { kind: 'new', title: 't' }, needsResponse: true, reason: 'x' }),
-    ).toThrow(/outbound/);
     const ok = moveSignal(log.state(), alice, ctx, { signalId: sent.signalId!, to: { kind: 'new', title: 't' }, reason: 'x' });
     expect(ok.events[0]!.type === 'SignalThreaded' && ok.events[0]!.payload.needsResponse).toBeNull();
   });
@@ -100,7 +94,7 @@ describe('個人のメモ（add_note）', () => {
     const { log, ctx, threadId: support } = world();
     const first = addNote(log.state(), alice, ctx, { body: 'Carol さんの雨漏り\n電話で状況を聞いた' });
     log.push(first.events, '2026-10-16T10:00:00.000Z');
-    expect(log.state().threads[first.threadId]).toMatchObject({ dataSourceId: 'ds_notes_alice', title: 'Carol さんの雨漏り', ball: { kind: 'none' } });
+    expect(log.state().threads[first.threadId]).toMatchObject({ dataSourceId: 'ds_notes_alice', title: 'Carol さんの雨漏り', attention: { named: [], broadcasts: [] } });
     expect(log.state().signals[first.signalId]).toMatchObject({ channel: 'note', threadedBy: 'self', from: { channel: 'note', value: 'u_alice' } });
 
     const second = addNote(log.state(), alice, ctx, { threadId: first.threadId, body: '見積を頼む' });
@@ -116,7 +110,7 @@ describe('個人のメモ（add_note）', () => {
     expect(() => addNote(log.state(), eve, ctx, { body: 'x' })).toThrow(/notes/);
   });
 
-  it('H3 メモに書き手の印を付けられる。省略は本人。タイムラインに出るが、誰の番やボールは変えない（0031 の 3・0032）', () => {
+  it('H3 メモに書き手の印を付けられる。省略は本人。タイムラインに出るが、誰の番は変えない（0031 の 3・0032）', () => {
     const { log, ctx } = world();
     const a = addNote(log.state(), alice, ctx, { title: 'PR のレビュー対応', body: '着手する' });
     log.push(a.events, '2026-10-16T10:00:00.000Z');
@@ -126,7 +120,7 @@ describe('個人のメモ（add_note）', () => {
     const p = log.state();
     expect(p.signals[a.signalId]!.author).toEqual({ kind: 'user' });
     expect(p.signals[b.signalId]!.author).toEqual({ kind: 'agent', name: 'orchestrator' });
-    expect(p.threads[a.threadId]).toMatchObject({ ball: before.ball, ownerUserId: before.ownerUserId });
+    expect(p.threads[a.threadId]).toMatchObject({ attention: before.attention, ownerUserId: before.ownerUserId });
     const timeline = getThreadView(dir, alice, p, a.threadId)!.timeline;
     expect(timeline.map((e) => e.signal?.author)).toEqual([{ kind: 'user' }, { kind: 'agent', name: 'orchestrator' }]);
   });
@@ -140,30 +134,29 @@ describe('個人のメモ（add_note）', () => {
     const moved = moveSignal(log.state(), alice, ctx, { signalId: b.signalId, to: { kind: 'existing', threadId: a.threadId }, reason: '同じ件' });
     log.push(moved.events, '2026-10-16T10:10:00.000Z');
     expect(log.state().threads[a.threadId]!.signalIds).toEqual([a.signalId, b.signalId]);
-    expect(log.state().signals[b.signalId]!.needsResponse).toBeNull();
   });
 });
 
-describe('持ち主（claim_thread）', () => {
-  it('H4 読者が持つ・引き継ぐ・手放す。読者でない人には持たせられない。同じ持ち主なら何もしない', () => {
+describe('担当する（claim_thread）', () => {
+  it('H4 読者が担当する・引き継ぐ・手放す。読者でない人には担当させられない。同じ担当なら何もしない。個人リストでは断る', () => {
     const { log, threadId, privateThread } = world();
     const claim = claimThread(log.state(), alice, dir, { threadId, userId: 'u_alice', reason: '持つ' });
     expect(claim).toHaveLength(1);
     log.push(claim, '2026-10-16T10:00:00.000Z');
-    expect(view(log.state(), threadId).ball).toEqual({ kind: 'user', userId: 'u_alice' });
+    expect(view(log.state(), threadId).assignee).toEqual({ by: 'claim', userIds: ['u_alice'], contactIds: [], addresses: [] });
     expect(claimThread(log.state(), alice, dir, { threadId, userId: 'u_alice' })).toEqual([]);
     expect(claimThread(log.state(), alice, dir, { threadId, userId: 'u_bob' })).toHaveLength(1);
     expect(claimThread(log.state(), bob, dir, { threadId, userId: null })).toHaveLength(1);
     expect(() => claimThread(log.state(), alice, dir, { threadId, userId: 'u_eve' })).toThrow(/not a reader/);
-    expect(() => claimThread(log.state(), alice, dir, { threadId: privateThread, userId: 'u_bob' })).toThrow(/not a reader/);
+    expect(() => claimThread(log.state(), alice, dir, { threadId: privateThread, userId: 'u_alice' })).toThrow(/personal list/);
     expect(() => claimThread(log.state(), bob, dir, { threadId: privateThread, userId: 'u_bob' })).toThrow(/not found/);
   });
 
-  it('H2 個人のメモのスレッドは持ち主を持たない', () => {
+  it('H2 個人のメモのスレッドは担当を持たない', () => {
     const { log, ctx } = world();
     const n = addNote(log.state(), alice, ctx, { body: 'メモ' });
     log.push(n.events, '2026-10-16T10:00:00.000Z');
-    expect(() => claimThread(log.state(), alice, dir, { threadId: n.threadId, userId: 'u_alice' })).toThrow(/no owner/);
+    expect(() => claimThread(log.state(), alice, dir, { threadId: n.threadId, userId: 'u_alice' })).toThrow(/no assignee/);
   });
 });
 

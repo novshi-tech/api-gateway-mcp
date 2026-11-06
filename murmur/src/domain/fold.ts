@@ -22,6 +22,14 @@ export function foldChanges(events: readonly DomainEvent[], base?: Projections):
 
 export class FoldError extends Error {}
 
+/**
+ * 保存された投影の形が今の fold と違うか（作り直しが要るか）。投影はいつでもイベントから作り直せる（H1）。
+ * 0038 で、スレッドに名指し（attention）を足し、ボールをやめた
+ */
+export function isStaleProjections(p: Projections): boolean {
+  return Object.values(p.threads).some((t) => (t as Partial<Thread>).attention === undefined);
+}
+
 /** fold の途中で書き換えたもの。スレッドは recompute、シグナルは addSignal・置き先・記録の統合で書き換わる */
 interface Changes {
   threads: Set<string>;
@@ -84,6 +92,22 @@ function apply(s: Projections, e: DomainEvent, c: Changes): void {
       if (f.title !== undefined) t.title = f.title;
       t.sourceKey = p.threadKey;
       t.log.push({ seq: e.seq, at: e.at, kind: 'mirrored', fields: p.fields });
+      recompute(s, t, e.at, c);
+      return;
+    }
+    case 'AttentionAcknowledged': {
+      const p = e.payload;
+      const t = mustThread(s, p.threadId);
+      t.log.push({
+        seq: e.seq,
+        at: e.at,
+        kind: 'acknowledged',
+        addresses: p.addresses,
+        list: p.list,
+        untilSignalId: p.untilSignalId,
+        actorUserId: p.actorUserId,
+        reason: p.reason,
+      });
       recompute(s, t, e.at, c);
       return;
     }
@@ -158,7 +182,7 @@ function onRecorded(s: Projections, e: DomainEvent, p: PayloadOf<'OutboundRecord
   }
 }
 
-type NewSignal = Omit<SignalRecord, 'at' | 'seq' | 'threadId' | 'threadedBy' | 'needsResponse'>;
+type NewSignal = Omit<SignalRecord, 'at' | 'seq' | 'threadId' | 'threadedBy'>;
 
 function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): void {
   const record: SignalRecord = {
@@ -178,7 +202,6 @@ function addSignal(s: Projections, e: DomainEvent, p: NewSignal, c: Changes): vo
     seq: e.seq,
     threadId: null,
     threadedBy: null,
-    needsResponse: null,
   };
   s.signals[p.signalId] = record;
   s.index.sourceRefs[indexKey(p.dataSourceId, p.sourceRef)] = p.signalId;
@@ -210,7 +233,6 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
   }
   sig.threadId = t.id;
   sig.threadedBy = p.by;
-  sig.needsResponse = p.needsResponse;
   c.signals.add(sig.signalId);
   t.log.push({
     seq: sig.seq,
@@ -219,7 +241,6 @@ function onThreaded(s: Projections, e: DomainEvent, p: PayloadOf<'SignalThreaded
     signalId: sig.signalId,
     from: sig.from,
     to: sig.to,
-    needsResponse: sig.needsResponse,
     replyExpectedBy: sig.recorded?.replyExpectedBy ?? undefined,
   });
   recompute(s, t, e.at, c);

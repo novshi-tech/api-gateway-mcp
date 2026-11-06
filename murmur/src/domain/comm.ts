@@ -1,27 +1,24 @@
 import { sameValue } from './directory';
 import type { AddressRef } from './events';
-import type { CommState, FoldedBall, Request, ThreadLogEntry } from './projections';
+import type { AttentionState, CommState, LogPos, Naming, ThreadLogEntry } from './projections';
 
 /**
- * 通信状態の導出（0030）。スレッドに綴じたもの（シグナルのアドレス・「返事や対応を求めているか」・持ち主・片付け）だけを
- * 時刻順に畳み込む。マスタを読まないので、どちら側のボールかは決めない（クエリ層の sides.ts が決める）。本文や属性・リンク・メモは読まない。
+ * 通信状態の導出（0030・0038）。スレッドに綴じたもの（シグナルのアドレス・担当する操作・名指しを外す操作・片付け）だけを
+ * 時刻順に畳み込む。マスタを読まないので、リスト宛てか・読者かは決めない（クエリ層の turn.ts が決める）。本文や属性・リンク・メモは読まない。
  *
- * ボールの移り方（アドレスが同じかどうかだけで決まる）:
- * - 返事や対応を求めるシグナル（needsResponse が false でない。null は「求めている」） → 保持者はその宛先、求めた人は送り主。
- *   宛先がなければ（グループのチャネル）「チャネルの中で送り主以外」
- * - 求めないシグナル → 送り主が求めた人でなければ応えたとみなしてボールを空にする。求めた人（追伸・お礼）なら変えない
- * - 持った・引き継いだ → その人。手放した → こちら
- * - 片付けた → 開き直すまで「なし」。その間もシグナルは綴じ、開き直したら綴じた分から決まる
- * - ソースの側で完了した（写しの closed） → 片付けと同じく「なし」。完了が外れたら綴じた分から決まる
+ * 名指し（アドレスと順番だけで決まる）:
+ * - シグナルの宛先（送り主は除く）が名指しされる。アドレスごとに最後に名指ししたシグナルを持つ。上書きしない（ほかの人の発言で消えない）
+ * - 宛先のないシグナルは broadcasts に残す（グループのチャネルならリスト宛て。クエリ層が決める）
+ * - 名指しを外す（acknowledged）: そのシグナルまでの名指しを外す。それより後に名指しされれば、また残る。発言しただけでは外れない
+ * - 担当する・引き継ぐ → その人。手放した → なし
+ * - 片付けた・ソースの側で完了した → どの見え方にも数えない（名指しは畳んだまま。開き直せば効く）
  *
- * 返事期待: 記録した送信の期限が返事期待になり、その送り主以外からシグナルが来れば消える（遅れて返事が来れば期限超過も解消する）。
+ * 返事期待: 記録した送信の期限が返事期待になり、その送信の宛先の名指しが全部外れれば消える（遅れて外せば期限超過も解消する）。
  * 期限超過は ReplyOverdue がその送信を指しているときだけ
  */
 export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
-  let ball: FoldedBall = { kind: 'none' };
   const state: CommState = {
-    ball,
-    request: null,
+    attention: { named: [], broadcasts: [], listAcks: {} },
     dismissed: false,
     dismissedAt: null,
     dismissReason: null,
@@ -29,45 +26,40 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
     ownerUserId: null,
     replyExpectedBy: null,
     replyExpectedSignalId: null,
-    replyExpectedFrom: null,
     overdue: false,
     closedAtSource: false,
   };
-  for (const e of sortLog(entries)) {
+  const sorted = sortLog(entries);
+  const named = new Map<string, Naming>();
+  const positions = new Map<string, LogPos & { to: AddressRef[] }>();
+  const acks: { addresses: AddressRef[]; list: boolean; untilSignalId: string; userId: string }[] = [];
+  let overdueSignalId: string | null = null;
+
+  for (const e of sorted) {
     switch (e.kind) {
       case 'signal': {
         const from = e.from!;
-        const to = e.to ?? [];
-        if (state.replyExpectedFrom && !sameAddress(state.replyExpectedFrom, from)) clearReplyExpected(state);
+        const pos: LogPos = { signalId: e.signalId!, at: e.at, seq: e.seq };
+        const to = uniqueAddresses((e.to ?? []).filter((r) => !sameAddress(r, from)));
+        positions.set(pos.signalId, { ...pos, to });
+        if (to.length === 0) state.attention.broadcasts.push({ ...pos, from });
+        for (const r of to) {
+          const key = addressKey(r);
+          named.set(key, { address: named.get(key)?.address ?? { channel: r.channel, value: r.value }, last: pos, from, ackedThrough: null });
+        }
         if (e.replyExpectedBy) {
           state.replyExpectedBy = e.replyExpectedBy;
-          state.replyExpectedSignalId = e.signalId ?? null;
-          state.replyExpectedFrom = from;
-          state.overdue = false;
-        }
-        if (e.needsResponse === false) {
-          if (state.request && !sameAddress(state.request.requestedBy, from)) {
-            state.request = null;
-            if (ball.kind === 'request') ball = { kind: 'none' };
-          }
-        } else {
-          const prev = state.request;
-          const request: Request = {
-            holders: to,
-            except: to.length === 0 ? from : null,
-            requestedBy: from,
-            since: prev && sameAddress(prev.requestedBy, from) ? prev.since : e.at,
-            signalId: e.signalId!,
-          };
-          state.request = request;
-          ball = { kind: 'request', request };
+          state.replyExpectedSignalId = pos.signalId;
+          overdueSignalId = null;
         }
         if (state.dismissed) state.activeSinceDismissed = true;
         break;
       }
+      case 'acknowledged':
+        acks.push({ addresses: e.addresses ?? [], list: e.list ?? false, untilSignalId: e.untilSignalId!, userId: e.actorUserId! });
+        break;
       case 'claimed':
         state.ownerUserId = e.userId ?? null;
-        ball = { kind: 'claimed', userId: state.ownerUserId };
         break;
       case 'dismissed':
         state.dismissed = true;
@@ -82,7 +74,7 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
         state.activeSinceDismissed = false;
         break;
       case 'overdue':
-        if (e.signalId !== undefined && e.signalId === state.replyExpectedSignalId) state.overdue = true;
+        if (e.signalId !== undefined && e.signalId === state.replyExpectedSignalId) overdueSignalId = e.signalId;
         break;
       case 'mirrored':
         if (e.fields?.closed !== undefined) state.closedAtSource = e.fields.closed;
@@ -94,17 +86,62 @@ export function deriveComm(entries: readonly ThreadLogEntry[]): CommState {
         break;
     }
   }
-  const closed = state.dismissed || state.closedAtSource;
-  state.ball = closed ? { kind: 'none' } : ball;
-  if (closed) state.overdue = false;
+
+  // 外した位置は最後にまとめて当てる（外す操作はシグナルの位置で効く。ログの中の順番には依らない）
+  for (const a of acks) {
+    const until = positions.get(a.untilSignalId);
+    if (!until) continue; // そのシグナルが移し替えられた
+    const at: LogPos = { signalId: until.signalId, at: until.at, seq: until.seq };
+    for (const r of a.addresses) {
+      const n = named.get(addressKey(r));
+      if (n && (!n.ackedThrough || comparePos(at, n.ackedThrough) > 0)) n.ackedThrough = { ...at, userId: a.userId };
+    }
+    if (a.list) {
+      const prev = state.attention.listAcks[a.userId];
+      if (!prev || comparePos(at, prev) > 0) state.attention.listAcks[a.userId] = at;
+    }
+  }
+  state.attention.named = [...named.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([, n]) => n);
+
+  // 返事期待: その送信の宛先の名指しが 1 つでも残っていれば続く
+  if (state.replyExpectedSignalId) {
+    const sent = positions.get(state.replyExpectedSignalId);
+    const waiting = sent !== undefined && (sent.to.length === 0 || sent.to.some((r) => isPending(named.get(addressKey(r)), sent)));
+    if (!waiting) {
+      state.replyExpectedBy = null;
+      state.replyExpectedSignalId = null;
+      overdueSignalId = null;
+    }
+  }
+  state.overdue = overdueSignalId !== null && !(state.dismissed || state.closedAtSource);
   return state;
 }
 
-function clearReplyExpected(state: CommState): void {
-  state.replyExpectedBy = null;
-  state.replyExpectedSignalId = null;
-  state.replyExpectedFrom = null;
-  state.overdue = false;
+/** その名指しが、位置 since 以降のシグナルの分まで外れていないか（since を省けば最後の名指しで見る） */
+export function isPending(n: Naming | undefined, since?: LogPos): boolean {
+  if (!n) return false;
+  if (since && comparePos(n.last, since) < 0) return false;
+  return !n.ackedThrough || comparePos(n.last, n.ackedThrough) > 0;
+}
+
+/** ログの位置の比較（時刻、同じなら seq） */
+export function comparePos(a: Pick<LogPos, 'at' | 'seq'>, b: Pick<LogPos, 'at' | 'seq'>): number {
+  return a.at < b.at ? -1 : a.at > b.at ? 1 : a.seq - b.seq;
+}
+
+/** 名指しのアドレスのキー（大文字小文字の違いは 1 つにまとめる） */
+export function addressKey(r: AddressRef): string {
+  return `${r.channel}\n${r.value.toLowerCase()}`;
+}
+
+export function emptyAttention(): AttentionState {
+  return { named: [], broadcasts: [], listAcks: {} };
+}
+
+function uniqueAddresses(refs: AddressRef[]): AddressRef[] {
+  const out: AddressRef[] = [];
+  for (const r of refs) if (!out.some((x) => sameAddress(x, r))) out.push(r);
+  return out;
 }
 
 export function sameAddress(a: AddressRef, b: AddressRef): boolean {
