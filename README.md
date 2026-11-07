@@ -14,7 +14,7 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
 ```
 
 - **Claude は認証情報を見ません。** API キーや OAuth のトークンは、ユーザーがゲートウェイの Web 画面で登録し、暗号化して保存されます。Claude が受け取るのは、寿命 15 分のゲートウェイのトークンだけです。
-- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、Slack、Jira、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
+- **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、Slack、Jira、Confluence、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
 - **使い方はスキルで配ります。** API の呼び方は、Claude のスキル(プラグイン)にまとめて配布します。コネクタの URL を含めていないので、どのデプロイでも同じプラグインを使えます。
 
 Claude の Cowork で動作を確認しています。MCP の OAuth に従っているので、ほかの Claude のクライアントや ChatGPT のコネクタにも対応する設計ですが、まだ確認していません。設計の詳細は [docs/concept.md](docs/concept.md) と [docs/auth-design.md](docs/auth-design.md) にあります。
@@ -87,6 +87,7 @@ curl -H "Authorization: Bearer $TOKEN" "https://<ゲートウェイ>/api/freee/a
 | `heddleway-freee` | `freee` | `freee` | 会計・人事労務・請求書・販売の API |
 | `heddleway-slack` | `slack` | `slack` | チャンネル・DM の履歴とスレッド、検索、投稿・返信、リアクション(ユーザー本人として) |
 | `heddleway-atlassian` | `jira` | `jira` | Jira Cloud の課題の検索・作成・更新、コメント、遷移、担当者 |
+| | `confluence` | `confluence` | Confluence Cloud のページの検索(CQL)・取得・作成・更新、コメント、添付、ラベル |
 
 インストールの方法:
 
@@ -309,6 +310,15 @@ npm run secret -- <名前> put OAUTH_GOOGLE_CLIENT_SECRET
 
 - 上流は `https://api.atlassian.com` です。Jira の API はサイトごとに `/ex/jira/<cloudid>/rest/api/3/...` の下にあり、クラウド ID は `/oauth/token/accessible-resources` で調べます。
 - REST の呼び出し先の例: `/api/jira/oauth/token/accessible-resources`、`/api/jira/ex/jira/<cloudid>/rest/api/3/search/jql`
+
+#### Confluence(`confluence`)
+
+Jira と同じ Atlassian のアプリ(`OAUTH_ATLASSIAN_CLIENT_ID` / `OAUTH_ATLASSIAN_CLIENT_SECRET`)を使います。Confluence だけを使う場合も、上の Jira の手順でアプリを作ります。
+
+- Permissions で Confluence API を追加し、**Granular scopes** に `src/catalog.ts` の `CONFLUENCE_SCOPE` にあるスコープ(`read:page:confluence`・`write:page:confluence` など)を付けます。User identity API の `read:me` も付けます。
+- ユーザーは Web 画面で、Jira とは別に Confluence をつなぎます(サービスごとに、そのスコープだけで同意します)。
+- 上流は `https://api.atlassian.com` です。Confluence の API はサイトごとに `/ex/confluence/<cloudid>/wiki/api/v2/...`(v2)と `/ex/confluence/<cloudid>/wiki/rest/api/...`(v1。CQL の検索など)の下にあります。
+- REST の呼び出し先の例: `/api/confluence/oauth/token/accessible-resources`、`/api/confluence/ex/confluence/<cloudid>/wiki/api/v2/pages/<pageId>?body-format=storage`
 
 #### board(`board`)
 

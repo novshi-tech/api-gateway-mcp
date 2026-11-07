@@ -63,6 +63,25 @@ const JIRA_SCOPE = [
   "offline_access",
 ].join(" ");
 
+// Granular scopes: the v2 API takes only these, and the v1 endpoints still used (CQL search,
+// attachment upload and download) accept them too.
+const CONFLUENCE_SCOPE = [
+  "read:space:confluence",
+  "read:page:confluence",
+  "write:page:confluence",
+  "read:hierarchical-content:confluence",
+  "read:comment:confluence",
+  "write:comment:confluence",
+  "read:attachment:confluence",
+  "write:attachment:confluence",
+  "readonly:content.attachment:confluence",
+  "read:label:confluence",
+  "write:label:confluence",
+  "read:content-details:confluence",
+  "read:me",
+  "offline_access",
+].join(" ");
+
 export function catalog(env: Env): Services {
   const services: Services = {
     freee: {
@@ -118,6 +137,21 @@ export function catalog(env: Env): Services {
         authorization_url: "https://auth.atlassian.com/authorize",
         token_url: "https://auth.atlassian.com/oauth/token",
         scope: JIRA_SCOPE,
+        authorize_params: { audience: "api.atlassian.com", prompt: "consent" },
+        refresh_scope: false,
+      },
+    },
+    // The same Atlassian app as Jira, connected separately. Calls go to /ex/confluence/<cloudid>/wiki/...
+    confluence: {
+      display_name: "Confluence",
+      provider: "Atlassian",
+      base_url: "https://api.atlassian.com",
+      auth: {
+        type: "oauth2",
+        client: "atlassian",
+        authorization_url: "https://auth.atlassian.com/authorize",
+        token_url: "https://auth.atlassian.com/oauth/token",
+        scope: CONFLUENCE_SCOPE,
         authorize_params: { audience: "api.atlassian.com", prompt: "consent" },
         refresh_scope: false,
       },
