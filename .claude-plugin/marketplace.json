@@ -76,7 +76,7 @@
         "url": "novshi-tech/heddleway",
         "path": "plugins/heddleway-atlassian"
       },
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "API ゲートウェイ経由で Jira(課題の検索・作成・更新・コメント・遷移)と Confluence(ページの検索・取得・作成・更新、コメント、添付)を操作するスキル。heddleway プラグインと一緒に使う。",
       "dependencies": [
         "heddleway"
