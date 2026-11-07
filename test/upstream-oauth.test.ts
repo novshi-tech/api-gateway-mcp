@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { env, SELF } from "cloudflare:test";
+import { createExecutionContext, env, SELF } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { publicUrl } from "../src/config";
 import { buildServer } from "../src/mcp";
@@ -184,7 +184,7 @@ describe("refreshing upstream tokens", () => {
     expect((await callFreee(alice, cred.id)).status).toBe(403);
     expect(await refreshCalls("revoked-e")).toBe(1);
 
-    const server = buildServer(env, { userId: alice, name: alice });
+    const server = buildServer(env, { userId: alice, name: alice }, createExecutionContext());
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "test", version: "0" });

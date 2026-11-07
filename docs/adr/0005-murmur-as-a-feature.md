@@ -10,6 +10,7 @@ Murmur(チームの仕事の記憶)を、ゲートウェイの機能にする。
 1. **ゲートウェイは Murmur なしでも動く。** Murmur は機能として無効にでき、無効なら今のゲートウェイと同じ。デプロイの設定に Murmur の束縛(D1・キュー)がなければ無効
 2. **コードの境界は vertical slice。** ゲートウェイの中核と Murmur は互いの実装を import しない。env を受け取るのは Worker の入口だけで、Murmur には Murmur の束縛と秘密だけを渡す。ゲートウェイは Murmur にトークンや鍵を渡さず、「この人の接続で、この口を読む」能力(関数)だけを渡す。Murmur は実行時の依存を足さない
 3. **MCP のツールは `list_credentials` と `issue_token` の 2 つのまま。** Murmur の API は REST で、`issue_token` で発行した短命のトークンで認可する。使い方はプラグイン `api-gateway-murmur` のスキル
+   - **[0007](0007-call-apis-from-mcp-tools.md) で改めた(2026-11-07)**: どのサービスも MCP のツール `api_get`・`api_request` から呼べるようにした。Murmur にも同じトークンの確かめを通って届く。Murmur 専用のツールは作らない
 4. **デプロイのドメインは変えない。** 各デプロイの `PUBLIC_URL` の下に Murmur の API・Webhook・画面が入る。利用者のコネクタの URL と、上流の OAuth のアプリのコールバックはそのまま
 5. **プラグイン名(`api-gateway-*`)は変えない。** 変えると利用者が入れ直すことになる。製品の総称(「○○ Gateway」)の単語は保留
    - **[0006](0006-name-heddleway.md) で改めた(2026-11-05)**: 製品の名前を Heddleway にし、プラグイン名も `heddleway-*` に変える

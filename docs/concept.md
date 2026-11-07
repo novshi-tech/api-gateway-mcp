@@ -24,7 +24,7 @@ Cowork / ChatGPT
   │ ① MCP(OAuth、ユーザー単位)
   ▼
 Worker
-  ├─ MCP: 短命トークンの発行など、少数のツール
+  ├─ MCP: 短命トークンの発行と、小さい呼び出しを中継するツール(api_get / api_request、docs/adr/0007)
   └─ REST: /<service>/<path> を上流に中継する ──④ 認証情報を注入──▶ freee / Graph / Board / 自社ツール
         ▲
         │ ③ 短命トークンで呼び出す

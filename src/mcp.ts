@@ -4,6 +4,7 @@ import { z } from "zod";
 import { organizationName, publicUrl } from "./config";
 import { feature, features } from "./features";
 import { IDENTITY_CREDENTIAL, identityCredentialId, serviceOfIdentityCredential } from "./identity";
+import { callApi, DEFAULT_MAX_CHARS, MAX_MAX_CHARS } from "./mcp-api";
 import { getDirectory, getServices } from "./services";
 import { GATEWAY_TOKEN_TTL_SECONDS, signToken } from "./tokens";
 import { vaultFor } from "./vault";
@@ -36,7 +37,7 @@ function instructions(organization: string, idp: string, base: string): string {
   );
 }
 
-export function buildServer(env: Env, props: McpProps): McpServer {
+export function buildServer(env: Env, props: McpProps, ctx: ExecutionContext): McpServer {
   const base = publicUrl(env);
   const organization = organizationName(env);
   const idp = IDP_NAMES[env.IDP_TYPE as string] ?? (env.IDP_TYPE as string);
@@ -46,6 +47,28 @@ export function buildServer(env: Env, props: McpProps): McpServer {
     { instructions: instructions(organization, idp, base) },
   );
   const vault = vaultFor(env, props.userId);
+
+  // Credential IDs to the credential each service uses, at most one per service.
+  async function resolveCredentials(ids: string[]): Promise<{ creds: Record<string, string> } | { error: string }> {
+    const creds: Record<string, string> = {};
+    const services = await getServices(env);
+    for (const id of new Set(ids)) {
+      const identityService = serviceOfIdentityCredential(id);
+      if (identityService !== null) {
+        const known = feature(env, identityService) || (Object.hasOwn(services, identityService) && services[identityService].auth.type === "identity");
+        if (!known) return { error: `unknown credential: ${id}` };
+        if (creds[identityService]) return { error: `more than one credential for service: ${identityService}` };
+        creds[identityService] = IDENTITY_CREDENTIAL;
+        continue;
+      }
+      const info = await vault.get(id);
+      if (!info) return { error: `unknown credential: ${id}` };
+      if (info.needsReconnect) return { error: `credential ${id} must be reconnected by the user at ${base}/` };
+      if (creds[info.service]) return { error: `more than one credential for service: ${info.service}` };
+      creds[info.service] = id;
+    }
+    return { creds };
+  }
 
   server.registerTool(
     "list_credentials",
@@ -84,6 +107,7 @@ export function buildServer(env: Env, props: McpProps): McpServer {
         "Pass at most one credential per service. Send requests to `<base_url>/<service>/<upstream path>` " +
         "with `Authorization: Bearer <token>`; the gateway replaces that header with the upstream credentials. " +
         "Request a new token when it expires. " +
+        "For a few small JSON calls, api_get and api_request reach the same APIs without a token or a script. " +
         "Always set an explicit User-Agent header (for example `heddleway-client`): Cloudflare rejects some default client user agents such as Python-urllib with error 1010.",
       inputSchema: {
         credential_ids: z.array(z.string()).min(1).describe("Credential IDs from list_credentials"),
@@ -93,23 +117,9 @@ export function buildServer(env: Env, props: McpProps): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ credential_ids }) => {
-      const creds: Record<string, string> = {};
-      const services = await getServices(env);
-      for (const id of new Set(credential_ids)) {
-        const identityService = serviceOfIdentityCredential(id);
-        if (identityService !== null) {
-          const known = feature(env, identityService) || (Object.hasOwn(services, identityService) && services[identityService].auth.type === "identity");
-          if (!known) return error(`unknown credential: ${id}`);
-          if (creds[identityService]) return error(`more than one credential for service: ${identityService}`);
-          creds[identityService] = IDENTITY_CREDENTIAL;
-          continue;
-        }
-        const info = await vault.get(id);
-        if (!info) return error(`unknown credential: ${id}`);
-        if (info.needsReconnect) return error(`credential ${id} must be reconnected by the user at ${base}/`);
-        if (creds[info.service]) return error(`more than one credential for service: ${info.service}`);
-        creds[info.service] = id;
-      }
+      const resolved = await resolveCredentials(credential_ids);
+      if ("error" in resolved) return error(resolved.error);
+      const creds = resolved.creds;
       const { token, expiresAt } = await signToken(
         env.SIGNING_KEY,
         base,
@@ -128,13 +138,90 @@ export function buildServer(env: Env, props: McpProps): McpServer {
     },
   );
 
+  // Calling an upstream API from a tool, without a script (docs/adr/0007). Reads and writes are
+  // separate tools so that clients can run reads without asking and ask before each write.
+  const callInput = {
+    credential_id: z.string().describe("Credential ID from list_credentials; it decides the service"),
+    path: z
+      .string()
+      .describe("Upstream path, starting with /, as after `<base_url>/<service>` (for example `/api/1/deals`). Non-ASCII characters may be written as they are."),
+    query: z
+      .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
+      .optional()
+      .describe("Query parameters; an array repeats the key"),
+    headers: z.record(z.string(), z.string()).optional().describe("Extra request headers. Authorization is set by the gateway."),
+    max_chars: z
+      .number()
+      .int()
+      .min(1000)
+      .max(MAX_MAX_CHARS)
+      .optional()
+      .describe(`Longest body returned, in characters (default ${DEFAULT_MAX_CHARS}). Longer bodies are cut and marked truncated.`),
+  };
+  const callNote =
+    "Returns the status, selected response headers and the body (JSON parsed, otherwise text). " +
+    "Binary bodies (files) are not returned: download or upload files with a script and issue_token. " +
+    "For loops over many requests, bulk data or files, use a script instead.";
+
+  async function runCall(method: string, args: { credential_id: string; path: string; query?: Record<string, string | number | boolean | string[]>; headers?: Record<string, string>; max_chars?: number; json?: unknown; text?: string }) {
+    const resolved = await resolveCredentials([args.credential_id]);
+    if ("error" in resolved) return error(resolved.error);
+    const [[service, credential]] = Object.entries(resolved.creds);
+    const outcome = await callApi(env, ctx, base, props.userId, {
+      method,
+      service,
+      credential,
+      path: args.path,
+      query: args.query,
+      headers: args.headers,
+      json: args.json,
+      text: args.text,
+      maxChars: args.max_chars ?? DEFAULT_MAX_CHARS,
+    });
+    if ("error" in outcome) return error(outcome.error);
+    return { ...json({ gateway, service, ...outcome.result }), ...(outcome.status >= 400 ? { isError: true } : {}) };
+  }
+
+  server.registerTool(
+    "api_get",
+    {
+      title: "GET an upstream API",
+      description:
+        `Sends a GET request to an upstream API through the API gateway of "${organization}", with the user's credential, and returns the response. ` +
+        callNote,
+      inputSchema: callInput,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async (args) => runCall("GET", args),
+  );
+
+  server.registerTool(
+    "api_request",
+    {
+      title: "Send a request to an upstream API",
+      description:
+        `Sends a POST, PUT, PATCH or DELETE request to an upstream API through the API gateway of "${organization}", with the user's credential, and returns the response. ` +
+        "These requests can change or delete data upstream: confirm the content with the user first. " +
+        "Use it also for reads that an API only offers as POST, such as GraphQL queries and search endpoints. " +
+        callNote,
+      inputSchema: {
+        method: z.enum(["POST", "PUT", "PATCH", "DELETE"]),
+        ...callInput,
+        json: z.unknown().optional().describe("JSON body; sent with Content-Type: application/json unless headers say otherwise"),
+        text: z.string().optional().describe("Raw text body, instead of json; set Content-Type in headers (default text/plain)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ method, ...args }) => runCall(method, args),
+  );
+
   return server;
 }
 
 export const mcpHandler: ExportedHandler<Env> = {
   async fetch(request, env, ctx) {
     const props = (ctx as ExecutionContext & { props: McpProps }).props;
-    const server = buildServer(env, props);
+    const server = buildServer(env, props, ctx);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { env, runInDurableObject, SELF } from "cloudflare:test";
+import { createExecutionContext, env, runInDurableObject, SELF } from "cloudflare:test";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { beforeEach, describe, expect, it } from "vitest";
 import { handleProxy } from "../src/proxy";
@@ -315,7 +315,7 @@ describe("identity upstreams", () => {
 
 describe("mcp tools", () => {
   async function connect(userId: string) {
-    const server = buildServer(env, { userId, name: userId });
+    const server = buildServer(env, { userId, name: userId }, createExecutionContext());
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "test", version: "0" });
@@ -363,10 +363,112 @@ describe("mcp tools", () => {
     expect(res.status).toBe(200);
   });
 
-  it("marks every tool read-only so clients do not ask before each call", async () => {
+  it("marks every tool but api_request read-only so clients do not ask before each call", async () => {
     const client = await connect(alice);
     const { tools } = await client.listTools();
-    for (const tool of tools) expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    expect(tools.map((t) => t.name).sort()).toEqual(["api_get", "api_request", "issue_token", "list_credentials"]);
+    for (const tool of tools) {
+      if (tool.name === "api_request") expect(tool.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      else expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    }
+  });
+
+  describe("api calls", () => {
+    type Echo = { method: string; url: string; headers: Record<string, string>; body: string };
+
+    async function call(client: Client, name: string, args: Record<string, unknown>) {
+      const result = await client.callTool({ name, arguments: args });
+      return { isError: result.isError === true, raw: text(result) };
+    }
+
+    it("GETs an upstream API with the user's credential", async () => {
+      const cred = await addBoard(alice);
+      const client = await connect(alice);
+      const { isError, raw } = await call(client, "api_get", {
+        credential_id: cred.id,
+        path: "/v1/clients/日本",
+        query: { page: 2, tag: ["a", "b"], q: "a b" },
+        headers: { "x-extra": "1", authorization: "Bearer mine" },
+      });
+      expect(isError).toBe(false);
+      const out = JSON.parse(raw);
+      expect(out).toMatchObject({ service: "board", status: 200, gateway: { organization: "Acme" } });
+      expect(out.headers["content-type"]).toContain("application/json");
+      expect(out.headers["set-cookie"]).toBeUndefined();
+      const echo = out.body as Echo;
+      expect(echo.method).toBe("GET");
+      expect(echo.url).toBe("https://api.the-board.jp/v1/clients/%E6%97%A5%E6%9C%AC?page=2&tag=a&tag=b&q=a+b");
+      expect(echo.headers).toMatchObject({ "x-api-key": "the-key", authorization: "Bearer board-token", "x-extra": "1", "user-agent": "heddleway-mcp" });
+    });
+
+    it("sends a JSON or text body with api_request", async () => {
+      const cred = await addBoard(alice);
+      const client = await connect(alice);
+      const posted = JSON.parse((await call(client, "api_request", { method: "POST", credential_id: cred.id, path: "/v1/projects", json: { name: "案件" } })).raw);
+      expect(posted.body).toMatchObject({ method: "POST", body: JSON.stringify({ name: "案件" }), headers: { "content-type": "application/json" } });
+
+      const patched = JSON.parse(
+        (await call(client, "api_request", { method: "PATCH", credential_id: cred.id, path: "/v1/x", text: "<a/>", headers: { "content-type": "application/xml" } })).raw,
+      );
+      expect(patched.body).toMatchObject({ method: "PATCH", body: "<a/>", headers: { "content-type": "application/xml" } });
+
+      const both = await call(client, "api_request", { method: "PUT", credential_id: cred.id, path: "/v1/x", json: {}, text: "" });
+      expect(both.isError).toBe(true);
+      const get = await client.callTool({ name: "api_request", arguments: { method: "GET", credential_id: cred.id, path: "/v1/x" } });
+      expect(get.isError).toBe(true);
+    });
+
+    it("reaches identity services", async () => {
+      const client = await connect(alice);
+      const out = JSON.parse((await call(client, "api_get", { credential_id: "identity:murmur", path: "/me" })).raw);
+      expect(out.body.url).toBe("https://murmur.example/api/me");
+      expect(out.body.headers.authorization).toMatch(/^Bearer ey/);
+    });
+
+    it("cuts long bodies and leaves binary bodies out", async () => {
+      const cred = await addBoard(alice);
+      const client = await connect(alice);
+      const long = JSON.parse((await call(client, "api_request", { method: "POST", credential_id: cred.id, path: "/v1/x", text: "x".repeat(5000), max_chars: 1000 })).raw);
+      expect(long).toMatchObject({ truncated: true });
+      expect(long.body).toHaveLength(1000);
+      expect(long.total_chars).toBeGreaterThan(5000);
+
+      const binary = JSON.parse((await call(client, "api_request", { method: "POST", credential_id: cred.id, path: "/binary", text: "abc" })).raw);
+      expect(binary.body).toBeUndefined();
+      expect(binary.body_omitted).toContain("issue_token");
+      expect(binary.headers["content-type"]).toBe("application/octet-stream");
+    });
+
+    it("returns redirects instead of following them", async () => {
+      const cred = await addBoard(alice);
+      const client = await connect(alice);
+      const out = JSON.parse((await call(client, "api_get", { credential_id: cred.id, path: "/redirect" })).raw);
+      expect(out.status).toBe(302);
+      expect(out.headers.location).toBe("https://download.example.com/file");
+    });
+
+    it("keeps the path inside the service and refuses other users' credentials", async () => {
+      const cred = await addBoard(alice);
+      const theirs = await addBoard(bob);
+      const client = await connect(alice);
+      for (const path of ["/../serper/search", "/%2e%2e/serper/search", "relative"]) {
+        const out = await call(client, "api_get", { credential_id: cred.id, path });
+        expect(out.isError, path).toBe(true);
+        expect(out.raw, path).not.toContain('"status"');
+      }
+      expect((await call(client, "api_get", { credential_id: theirs.id, path: "/v1/clients" })).isError).toBe(true);
+      expect((await call(client, "api_get", { credential_id: "identity:board", path: "/v1/clients" })).isError).toBe(true);
+    });
+
+    it("marks upstream errors as tool errors with the body", async () => {
+      const client = await connect(alice);
+      const freee = await upstream("freee");
+      const cred = await vaultFor(env, alice).addOAuth(freee, { access_token: "a", refresh_token: "revoked-x", expires_at: Date.now() - 1000 });
+      if ("error" in cred) throw new Error(cred.error);
+      const out = await call(client, "api_get", { credential_id: cred.id, path: "/api/1/companies" });
+      expect(out.isError).toBe(true);
+      expect(JSON.parse(out.raw).status).toBeGreaterThanOrEqual(400);
+    });
   });
 
   it("issues a token for an identity service without a stored credential", async () => {
