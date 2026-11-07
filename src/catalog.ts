@@ -63,8 +63,9 @@ const JIRA_SCOPE = [
   "offline_access",
 ].join(" ");
 
-// Granular scopes: the v2 API takes only these, and the v1 endpoints still used (CQL search,
-// attachment upload and download) accept them too.
+// Granular scopes only: the v2 API takes only these, and the v1 endpoints still used (CQL search,
+// attachment upload and download) accept them too. Classic scopes (e.g. readonly:content.attachment:confluence)
+// are not listed on the app's Granular scopes tab, and Atlassian refuses the authorization for them.
 const CONFLUENCE_SCOPE = [
   "read:space:confluence",
   "read:page:confluence",
@@ -74,7 +75,6 @@ const CONFLUENCE_SCOPE = [
   "write:comment:confluence",
   "read:attachment:confluence",
   "write:attachment:confluence",
-  "readonly:content.attachment:confluence",
   "read:label:confluence",
   "write:label:confluence",
   "read:content-details:confluence",
