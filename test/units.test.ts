@@ -228,6 +228,8 @@ describe("Slack and Atlassian token conventions", () => {
     const scopes = url.searchParams.get("scope")?.split(" ");
     expect(scopes).toEqual(expect.arrayContaining(["read:page:confluence", "write:page:confluence", "offline_access"]));
     expect(scopes?.some((s) => s.includes("jira"))).toBe(false);
+    // Granular only ("<action>:<resource>:confluence"), apart from the identity scopes.
+    expect(scopes?.filter((s) => !["read:me", "offline_access"].includes(s)).every((s) => /^(read|write):[a-z-]+:confluence$/.test(s))).toBe(true);
     expect(url.searchParams.get("audience")).toBe("api.atlassian.com");
   });
 
