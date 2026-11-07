@@ -67,6 +67,7 @@ python3 $GW POST confluence $W/rest/api/content/<pageId>/child/attachment -H X-A
 - storage 形式の書き方: 段落 `<p>`、見出し `<h1>`〜`<h6>`、箇条書き `<ul><li>`、表 `<table><tbody><tr><th>`/`<td>`、リンク `<a href="...">`。`&`・`<` は実体参照にする。ユーザーの名指しは `<ac:link><ri:user ri:account-id="<accountId>"/></ac:link>`、ほかのページへのリンクは `<ac:link><ri:page ri:content-title="タイトル"/></ac:link>`。目次などのマクロは `<ac:structured-macro ac:name="toc"/>`。
 - インラインコメントは `GET .../pages/<pageId>/inline-comments`。返信は `POST .../footer-comments`(または `inline-comments`)に `parentCommentId` を付ける。新しいインラインコメントは本文中の選択位置が要るので、基本はフッターコメントを使う。
 - 添付の一覧は v2、ダウンロードとアップロードは v1(上の例)。アップロードには `X-Atlassian-Token: no-check` ヘッダーが要る。同じファイル名で上げると新しい版になる(`.../child/attachment` に `PUT`)。
+- ダウンロードは、ゲートウェイを通した呼び出しが `302` で `https://api.media.atlassian.com/file/.../binary?token=...`(署名付きで、ゲートウェイを通らない)へ転送され、`gw_request.py` がそれをたどって保存する。コードを動かす環境のネットワークが `api.media.atlassian.com` を許可していないと、`Tunnel connection failed: 403` などで失敗する。そのときは、ユーザーにそのドメインを許可してもらう(Team / Enterprise ではコード実行のネットワーク設定)。転送先の URL はトークンを含むので、会話やファイルに残さない。
 - ラベルは `GET .../pages/<pageId>/labels`。付けるのは v1 の `POST .../rest/api/content/<pageId>/label` に `[{"prefix": "global", "name": "議事録"}]`。
 - `accountId` から表示名を引くのは v1 の `GET .../rest/api/user?accountId=<id>`。
 
