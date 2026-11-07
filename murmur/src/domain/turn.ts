@@ -111,7 +111,7 @@ function signalsOf(t: Thread): (LogPos & { from: AddressRef; to: AddressRef[] })
 /**
  * リスト宛てのシグナル（0038 の決定 2）。シグナルごとに持つ（同じ窓口への名指しが後の 1 通で上書きされない）:
  * - 窓口のアドレス（データソースの selfAddresses）が宛先にある
- * - グループのチャネルで宛先がない
+ * - グループのチャネル（Teams・Slack）で宛先がない。状態を持つソース（Jira など）は共有リストでも含めない
  * - 個人リストで、こちらでない送り主から、本人のアドレスが宛先にない受信（エイリアス・BCC・配布リスト宛て）
  */
 export function listSignalsOf(dir: Directory, t: Thread): (LogPos & { from: AddressRef })[] {
@@ -121,7 +121,8 @@ export function listSignalsOf(dir: Directory, t: Thread): (LogPos & { from: Addr
   return signalsOf(t)
     .filter((x) => {
       if (x.to.some((r) => isListAddress(ds, r))) return true;
-      if (x.to.length === 0) return ds.group;
+      // 宛先のない投稿をリスト宛てにするのはチャットのチャネルだけ。状態を持つソース（Jira のメンションのないコメント・担当者のいない起票）は名指しなし（0038 の未決 3）
+      if (x.to.length === 0) return ds.group && !isStatefulSource(ds);
       return personal && !isOurs(dir, ds, x.from, x.at) && !x.to.some((r) => isOurs(dir, ds, r, x.at));
     })
     .map(({ signalId, at, seq, from }) => ({ signalId, at, seq, from }));

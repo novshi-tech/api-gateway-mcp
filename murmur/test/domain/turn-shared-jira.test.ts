@@ -123,3 +123,21 @@ describe('Jira の共有リストで、読者でない担当者の課題が読�
     expect(myTurnOf(dir, naoki, t)).toEqual([]);
   });
 });
+
+describe('Jira の共有リストの宛先のない連絡（0038 の未決 3）', () => {
+  it('H8 メンションのないコメントは、共有リスト（group）でもリスト宛てにならない。読者の番に出ない', () => {
+    const groupSeed = Seed.parse({ ...seed, dataSources: seed.dataSources.map((d) => (d.kind === 'service' ? { ...d, group: true } : d)) });
+    const gdir = new Directory(groupSeed);
+    const viewer = deriveViewer(gdir, 'u_naoki');
+    const log = new EventLog();
+    const ctx = { dir: gdir, now: '2026-11-05T05:52:07.000Z', newId: ((n) => (prefix: string) => `${prefix}_${++n}`)(0) };
+    const plan = planMirror(log.state(), ctx, mirror('SPW-2486', { closed: false, holders: [], title: '巡回チェック', statusLabel: 'To Do', due: null }));
+    if (plan.kind !== 'mirrored') throw new Error('mirror not applied');
+    log.push(plan.events, ctx.now);
+    ingestPure(log, { ...ctx, now: '2026-11-05T05:52:08.000Z' }, created('SPW-2486', YAMAMOTO, []), answer(true));
+    const t = log.state().threads[plan.threadId]!;
+    expect(attentionOf(gdir, t).list).toBeNull();
+    expect(myTurnOf(gdir, viewer, t)).toEqual([]);
+    expect(isTriage(gdir, t)).toBe(true);
+  });
+});
