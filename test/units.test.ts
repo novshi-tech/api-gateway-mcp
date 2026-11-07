@@ -221,6 +221,16 @@ describe("Slack and Atlassian token conventions", () => {
     expect(jiraUrl.searchParams.get("prompt")).toBe("consent");
   });
 
+  it("connects Confluence through the same Atlassian client as Jira, with its own scopes", () => {
+    const confluence = services.confluence.auth as OAuth2Auth;
+    expect(confluence.client).toBe(jira.client);
+    const url = new URL(upstreamAuthorizationUrl(confluence, client, params));
+    const scopes = url.searchParams.get("scope")?.split(" ");
+    expect(scopes).toEqual(expect.arrayContaining(["read:page:confluence", "write:page:confluence", "offline_access"]));
+    expect(scopes?.some((s) => s.includes("jira"))).toBe(false);
+    expect(url.searchParams.get("audience")).toBe("api.atlassian.com");
+  });
+
   it("reads Slack's user token from authed_user, not the bot token at the top level", async () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json({ ok: true, access_token: "xoxb-bot", authed_user: { id: "U1", access_token: "xoxp-user", token_type: "user" } }),
