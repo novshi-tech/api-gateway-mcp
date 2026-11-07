@@ -2,7 +2,7 @@
 
 エージェントのための、チームのゲートウェイです(a team gateway for agents。名前は [docs/adr/0006](docs/adr/0006-name-heddleway.md))。Claude から、既存のコネクタではできない API 呼び出しを行うための汎用の API ゲートウェイで、通り抜ける連絡を Murmur(チームの仕事の記憶)がスレッドとして整理します。Cloudflare Workers で動くリモート MCP サーバーとして、自分の組織の Cloudflare アカウントにデプロイします。
 
-Claude(Cowork など)のコード実行のサンドボックスから、freee や Microsoft 365 などの API を、スクリプトで直接呼べるようになります。一覧の全件取得や集計、ファイルのダウンロード・アップロードのように、コネクタのツールでは手間のかかる作業を、Claude がスクリプトを書いて進めます。
+Claude(Cowork など)のコード実行のサンドボックスから、freee や Microsoft 365 などの API を、スクリプトで直接呼べるようになります。一覧の全件取得や集計、ファイルのダウンロード・アップロードのように、コネクタのツールでは手間のかかる作業を、Claude がスクリプトを書いて進めます。1 件の取得や登録のような小さい呼び出しは、コネクタのツール `api_get` / `api_request` から、スクリプトなしで呼べます([docs/adr/0007](docs/adr/0007-call-apis-from-mcp-tools.md))。
 
 ## しくみ
 
@@ -12,6 +12,8 @@ Claude ──MCP(OAuth でサインイン)──▶ ゲートウェイ ─┐
   ▼                                                 ▼
 サンドボックスのスクリプト ──REST /api/<service>/...──▶ freee・Graph・Gmail などの API
 ```
+
+小さい呼び出しは、MCP のツール `api_get`(読み取り。確認なしで呼べる)と `api_request`(POST・PUT・PATCH・DELETE。呼ぶたびに確認が出る)で、ゲートウェイが同じ中継を通して呼びます。返すのはテキストだけで、長いボディは切り詰め、ファイル(バイナリ)はスクリプトに任せます。
 
 - **Claude は認証情報を見ません。** API キーや OAuth のトークンは、ユーザーがゲートウェイの Web 画面で登録し、暗号化して保存されます。Claude が受け取るのは、寿命 15 分のゲートウェイのトークンだけです。
 - **よく使うサービスは組み込みです。** freee、Microsoft Graph、Google(Gmail・Drive・Calendar・Docs・Analytics)、Slack、Jira、Confluence、board、gBizINFO、Serper は `src/catalog.ts` にあり、OAuth のクライアントを登録すれば使えます。ほかのサービスは、デプロイの設定の `SERVICES` に書くか、管理画面から、ベース URL と認証方式(ヘッダーか OAuth 2.0)を書いて足します。OAuth のトークンの更新もゲートウェイが受け持ちます。
@@ -52,7 +54,7 @@ Claude の Cowork で動作を確認しています。MCP の OAuth に従って
    - Team / Enterprise: Owner が組織の設定で同じ URL を追加し、各メンバーが接続します。
 2. プラグイン `heddleway` と、使う提供元のプラグイン(`heddleway-google` など)をインストールします(下の「スキル」)。「Claude につなぐ」から zip でダウンロードできます。
 3. 各ユーザーは `https://<ゲートウェイ>/` にサインインし、連携先の認証情報を登録します(OAuth のサービスは「接続」)。
-4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、`issue_token` でトークンを受け取り、スクリプトで REST を呼びます。
+4. あとは Claude に頼むだけです。Claude は `list_credentials` で認証情報を確かめ、小さい呼び出しは `api_get` / `api_request` で、大量の呼び出しやファイルは `issue_token` でトークンを受け取ってスクリプトで REST を呼びます。
 5. 許可したアプリ(Claude、Murmur など)は、Web 画面のトップの「アクセスを許可したアプリ」に 1 回の許可ごとに出ます。「取り消す」で、そのアプリのアクセストークンとリフレッシュトークンが使えなくなります。
 
 ### 複数の組織で使う

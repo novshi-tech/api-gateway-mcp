@@ -118,7 +118,7 @@ describe("Murmur on", () => {
   });
 
   it("lists identity:murmur once (the feature takes the name over the configured identity service) and issues tokens for it", async () => {
-    const server = buildServer(on, { userId: bob, name: bob });
+    const server = buildServer(on, { userId: bob, name: bob }, createExecutionContext());
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "test", version: "0" });
@@ -128,6 +128,9 @@ describe("Murmur on", () => {
     expect(listed.credentials.filter((c) => c.id === "identity:murmur")).toEqual([{ id: "identity:murmur", service: "murmur", label: "Murmur(サインイン中のユーザー)" }]);
     const issued = text(await client.callTool({ name: "issue_token", arguments: { credential_ids: ["identity:murmur"] } })) as { token: string };
     expect((await call(on, "/api/murmur/me", { headers: { authorization: `Bearer ${issued.token}` } })).status).toBe(200);
+    // The MCP tools reach the feature too, through the same check of the gateway token.
+    const got = text(await client.callTool({ name: "api_get", arguments: { credential_id: "identity:murmur", path: "/me" } })) as { status: number; service: string };
+    expect(got).toMatchObject({ status: 200, service: "murmur" });
   });
 
   it("can be turned off from the home page", async () => {

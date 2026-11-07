@@ -41,7 +41,9 @@ function forwardHeaders(incoming: Headers, injected: Record<string, string>): He
   return headers;
 }
 
-export async function handleProxy(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+// `via` names the entrance in the audit log: the REST endpoint, or the MCP tools (src/mcp.ts),
+// which build the same request with a gateway token of their own.
+export async function handleProxy(request: Request, env: Env, ctx: ExecutionContext, via: "rest" | "mcp" = "rest"): Promise<Response> {
   const url = new URL(request.url);
   const rest = url.pathname.slice(API_PREFIX.length);
   const slash = rest.indexOf("/");
@@ -93,6 +95,7 @@ export async function handleProxy(request: Request, env: Env, ctx: ExecutionCont
     user: claims.sub,
     credential: credentialId,
     service,
+    via,
   });
 }
 
